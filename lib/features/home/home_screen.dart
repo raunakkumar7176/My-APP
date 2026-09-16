@@ -277,7 +277,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       .onSurface
                       .withValues(alpha: 0.5),
                 ),
-                onTap: () => context.push('/create-test'),
+                onTap: () => context.push('/tests/create'),
               ),
               const Divider(height: 1),
               ListTile(

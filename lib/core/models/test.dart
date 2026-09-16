@@ -1,5 +1,3 @@
-import 'test_kind.dart';
-
 enum TestStatus { draft, scheduled, live, ready, published, completed, ended, evaluated, cancelled, archived, expired, unknown }
 
 TestStatus _parseTestStatus(String? value) {
@@ -116,12 +114,6 @@ final class Test {
   /// update can round-trip every key the client does not know about.
   final Map<String, dynamic>? config;
   final Map<String, dynamic>? settings;
-
-  /// Self-family kind read from `settings.test_kind` (missing → self).
-  TestKind get testKind => TestKind.fromSettings(settings);
-
-  /// User-facing type: Challenge with Friends / Group Test / Self-family kind.
-  String get typeLabel => testTypeLabel(testMode: testMode, kind: testKind);
 
   bool get isScheduled => status == TestStatus.scheduled;
   bool get isLive => status == TestStatus.live;

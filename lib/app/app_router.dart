@@ -3,9 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import '../core/models/attempt.dart';
-import '../core/models/question.dart';
-import '../core/models/test.dart';
 import '../core/services/auth_service.dart';
 import '../core/services/profile_service.dart';
 import '../features/auth/login_screen.dart';
@@ -18,15 +15,12 @@ import '../features/study/material_list_screen.dart';
 import '../features/study/subject_list_screen.dart';
 import '../features/study/syllabus_detail_screen.dart';
 import '../features/study/syllabus_screen.dart';
-import '../features/test/test_creation_screen.dart';
-import '../features/test/test_detail_screen.dart';
-import '../features/test/test_listing_screen.dart';
-import '../core/models/answer.dart';
-import '../core/models/result.dart';
-import '../core/models/self_reflection.dart';
-import '../features/test/question_review_screen.dart';
-import '../features/test/test_result_screen.dart';
-import '../features/test/test_taking_screen.dart';
+import '../features/test/screens/question_review_screen.dart';
+import '../features/test/screens/test_creation_screen.dart';
+import '../features/test/screens/test_detail_screen.dart';
+import '../features/test/screens/test_listing_screen.dart';
+import '../features/test/screens/test_result_screen.dart';
+import '../features/test/screens/test_taking_screen.dart';
 
 final class AppRouter {
   AppRouter._();
@@ -145,81 +139,67 @@ final class AppRouter {
           );
         },
       ),
-      GoRoute(
-        path: '/create-test',
-        name: 'create-test',
-        builder: (context, state) => const TestCreationScreen(),
-      ),
-      GoRoute(
-        path: '/edit-test/:testId',
-        name: 'edit-test',
-        builder: (context, state) {
-          final testId = state.pathParameters['testId']!;
-          return TestCreationScreen(testId: testId);
-        },
-      ),
+      // ── Test system (R4 restart): routes carry ids only ──
       GoRoute(
         path: '/tests',
         name: 'test-listing',
         builder: (context, state) {
-          final initialTab = state.uri.queryParameters['tab'];
-          return TestListingScreen(
-            initialTab: initialTab != null ? int.tryParse(initialTab) ?? 0 : 0,
-          );
+          final tab = int.tryParse(state.uri.queryParameters['tab'] ?? '') ?? 0;
+          return TestListingScreen(initialTab: tab);
         },
+        routes: [
+          GoRoute(
+            path: 'drafts',
+            name: 'test-listing-drafts',
+            builder: (context, state) => const TestListingScreen(initialTab: 3),
+          ),
+          GoRoute(
+            path: 'create',
+            name: 'test-create',
+            builder: (context, state) => const TestCreationScreen(),
+          ),
+          GoRoute(
+            path: ':testId',
+            name: 'test-detail',
+            builder: (context, state) =>
+                TestDetailScreen(testId: state.pathParameters['testId']!),
+            routes: [
+              GoRoute(
+                path: 'edit',
+                name: 'test-edit',
+                builder: (context, state) =>
+                    TestCreationScreen(testId: state.pathParameters['testId']!),
+              ),
+            ],
+          ),
+        ],
+      ),
+      // Legacy paths kept as redirects so old links keep working.
+      GoRoute(path: '/create-test', redirect: (_, _) => '/tests/create'),
+      GoRoute(
+        path: '/edit-test/:testId',
+        redirect: (_, state) => '/tests/${state.pathParameters['testId']}/edit',
       ),
       GoRoute(
-        path: '/tests/drafts',
-        name: 'test-listing-drafts',
-        builder: (context, state) => const TestListingScreen(initialTab: 3),
+        path: '/attempts/:attemptId/take',
+        name: 'attempt-take',
+        builder: (context, state) => TestTakingScreen(
+          attemptId: state.pathParameters['attemptId']!,
+          testId: state.uri.queryParameters['test'] ?? '',
+          accessCode: state.uri.queryParameters['code'],
+        ),
       ),
       GoRoute(
-        path: '/test-detail',
-        name: 'test-detail',
-        builder: (context, state) {
-          final test = state.extra as dynamic;
-          return TestDetailScreen(test: test as Test);
-        },
+        path: '/attempts/:attemptId/result',
+        name: 'attempt-result',
+        builder: (context, state) =>
+            TestResultScreen(attemptId: state.pathParameters['attemptId']!),
       ),
       GoRoute(
-        path: '/test-taking',
-        name: 'test-taking',
-        builder: (context, state) {
-          final data = state.extra as Map<String, dynamic>;
-          return TestTakingScreen(
-            attempt: data['attempt'] as Attempt,
-            questions: data['questions'] as List<Question>,
-            test: data['test'] as Test,
-          );
-        },
-      ),
-      GoRoute(
-        path: '/test-result',
-        name: 'test-result',
-        builder: (context, state) {
-          final data = state.extra as Map<String, dynamic>;
-          return TestResultScreen(
-            result: data['result'] as Result,
-            test: data['test'] as Test,
-            questions: data['questions'] as List<Question>,
-            answers: data['answers'] as Map<String, Answer>,
-            selfReflection: data['selfReflection'] as SelfReflection?,
-            allResults: data['allResults'] as List<Result>?,
-          );
-        },
-      ),
-      GoRoute(
-        path: '/question-review',
-        name: 'question-review',
-        builder: (context, state) {
-          final data = state.extra as Map<String, dynamic>;
-          return QuestionReviewScreen(
-            test: data['test'] as Test,
-            questions: data['questions'] as List<Question>,
-            answers: data['answers'] as Map<String, Answer>,
-            result: data['result'] as Result,
-          );
-        },
+        path: '/attempts/:attemptId/review',
+        name: 'attempt-review',
+        builder: (context, state) =>
+            QuestionReviewScreen(attemptId: state.pathParameters['attemptId']!),
       ),
     ],
     errorBuilder: (context, state) => Scaffold(
