@@ -48,15 +48,18 @@ abstract final class TestLifecycle {
 
   /// Effective schedule phase from the window alone (instants compared, so
   /// the zone of [now] / [startsAt] / [endsAt] does not matter). Mirrors
-  /// `_fn_start_attempt_core`: blocked while `now() < starts_at`, ended once
-  /// `now() > ends_at` — exactly at either boundary the test is available.
+  /// the live `_fn_start_attempt_core` (R4_7_6 body): TEST_NOT_STARTED while
+  /// `now() < starts_at`, TEST_ENDED once `now() >= ends_at` (hard block, not
+  /// bypassed by allow_late_join). Exactly at starts_at is available; exactly
+  /// at ends_at is ended — the same closed boundary the attempt deadline
+  /// (`LEAST(now() + duration, ends_at)`) uses.
   static SchedulePhase phase({
     required DateTime? startsAt,
     required DateTime? endsAt,
     required DateTime now,
   }) {
     if (startsAt != null && now.isBefore(startsAt)) return SchedulePhase.notStarted;
-    if (endsAt != null && now.isAfter(endsAt)) return SchedulePhase.ended;
+    if (endsAt != null && !now.isBefore(endsAt)) return SchedulePhase.ended;
     return SchedulePhase.active;
   }
 
@@ -71,7 +74,6 @@ abstract final class TestLifecycle {
     required DateTime? startsAt,
     required DateTime? endsAt,
     required DateTime now,
-    bool allowLateJoin = false,
     String Function(DateTime)? formatDateTime,
   }) {
     String fmt(DateTime d) => formatDateTime?.call(d) ?? d.toString();
@@ -86,7 +88,7 @@ abstract final class TestLifecycle {
           case SchedulePhase.notStarted:
             return 'Test starts at ${fmt(startsAt!)}.';
           case SchedulePhase.ended:
-            return allowLateJoin ? null : 'Test ended.';
+            return 'Test ended.';
           case SchedulePhase.active:
             return null;
         }

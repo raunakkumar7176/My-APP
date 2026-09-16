@@ -96,7 +96,6 @@ class TestDetailController extends DisposableNotifier {
       startsAt: t.startsAt,
       endsAt: t.endsAt,
       now: _clock(),
-      allowLateJoin: t.allowLateJoin,
       formatDateTime: formatDateTime,
     );
   }

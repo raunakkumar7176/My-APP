@@ -19,14 +19,8 @@ void main() {
   final endsAt = DateTime.utc(2026, 9, 16, 18, 4);
   const minute = Duration(minutes: 1);
 
-  String? reason(TestStatus status, DateTime now, {bool lateJoin = false}) =>
-      TestLifecycle.startBlockReason(
-        status: status,
-        startsAt: startsAt,
-        endsAt: endsAt,
-        now: now,
-        allowLateJoin: lateJoin,
-      );
+  String? reason(TestStatus status, DateTime now) => TestLifecycle.startBlockReason(
+      status: status, startsAt: startsAt, endsAt: endsAt, now: now);
 
   group('SchedulePhase boundaries (mirror _fn_start_attempt_core)', () {
     test('1 minute before starts_at -> notStarted', () {
@@ -41,8 +35,14 @@ void main() {
       expect(TestLifecycle.phase(startsAt: startsAt, endsAt: endsAt, now: startsAt.add(minute)),
           SchedulePhase.active);
     });
-    test('exactly at ends_at -> active (server: now() > ends_at ends)', () {
+    test('exactly at ends_at -> ended (live R4_7_6: now() >= ends_at is TEST_ENDED)', () {
       expect(TestLifecycle.phase(startsAt: startsAt, endsAt: endsAt, now: endsAt),
+          SchedulePhase.ended);
+      expect(
+          TestLifecycle.phase(
+              startsAt: startsAt,
+              endsAt: endsAt,
+              now: endsAt.subtract(const Duration(seconds: 1))),
           SchedulePhase.active);
     });
     test('1 minute after ends_at -> ended', () {
@@ -69,7 +69,7 @@ void main() {
     test('published + active window -> startable', () {
       expect(reason(TestStatus.published, startsAt.add(minute)), isNull);
       expect(reason(TestStatus.published, startsAt), isNull);
-      expect(reason(TestStatus.published, endsAt), isNull);
+      expect(reason(TestStatus.published, endsAt), 'Test ended.');
     });
     test('published + expired window -> "Test ended."', () {
       expect(reason(TestStatus.published, endsAt.add(minute)), 'Test ended.');
@@ -86,8 +86,28 @@ void main() {
     test('live + future start -> not started (server applies starts_at to every status)', () {
       expect(reason(TestStatus.live, startsAt.subtract(minute)), startsWith('Test starts at'));
     });
-    test('expired window + allow_late_join -> startable (mirrors server)', () {
-      expect(reason(TestStatus.published, endsAt.add(minute), lateJoin: true), isNull);
+    test('ends_at is a hard block regardless of allow_late_join (live R4_7_6)', () {
+      final t = Test(
+        id: 't', createdBy: 'u', title: 'x', status: TestStatus.published,
+        startsAt: startsAt, endsAt: endsAt, allowLateJoin: true,
+      );
+      expect(
+          TestLifecycle.startBlockReason(
+              status: t.status, startsAt: t.startsAt, endsAt: t.endsAt, now: endsAt),
+          'Test ended.');
+    });
+    test('deadline boundary is consistent: LEAST(now+duration, ends_at) expires at ends_at', () {
+      // Server: deadline = LEAST(now() + duration_sec, ends_at).
+      final now = endsAt.subtract(const Duration(minutes: 10));
+      final candidates = [now.add(const Duration(hours: 1)), endsAt];
+      final deadline = candidates.reduce((a, b) => a.isBefore(b) ? a : b);
+      expect(deadline, endsAt);
+      // Client timer fires onTimeUp when remaining <= 0, i.e. now >= deadline,
+      // the same closed boundary as the ended phase.
+      final remaining = deadline.difference(endsAt);
+      expect(remaining <= Duration.zero, isTrue);
+      expect(TestLifecycle.phase(startsAt: startsAt, endsAt: endsAt, now: deadline),
+          SchedulePhase.ended);
     });
     test('terminal statuses stay blocked regardless of window', () {
       for (final s in [TestStatus.completed, TestStatus.ended, TestStatus.evaluated]) {
