@@ -13,7 +13,6 @@ class QuestionCard extends StatelessWidget {
     required this.totalQuestions,
     required this.onOptionSelected,
     required this.onMarkReview,
-    this.onTextAnswerChanged,
     this.interactive = true,
     super.key,
   });
@@ -23,22 +22,16 @@ class QuestionCard extends StatelessWidget {
   final Answer? answer;
   final int questionNumber;
   final int totalQuestions;
-  final ValueChanged<String?> onOptionSelected;
-
-  /// Typed answers (numeric / short answer). Falls back to [onOptionSelected]
-  /// when not provided.
-  final ValueChanged<String?>? onTextAnswerChanged;
+  /// Called with the option's index in the server's `options` array
+  /// (`QuestionOption.index`), which is what the backend stores and scores.
+  final ValueChanged<int?> onOptionSelected;
   final VoidCallback onMarkReview;
   final bool interactive;
 
-  /// The typed answer to show for a question without options. Older answers
-  /// stored the text in `selected_option_id`, so fall back to it.
-  String? get _typedAnswer => answer?.textAnswer ?? answer?.selectedOptionId;
-
   @override
   Widget build(BuildContext context) {
-    final selectedId = answer?.selectedOptionId;
-    final isMarked = answer?.isMarkedForReview ?? false;
+    final selectedIndex = answer?.selectedOption;
+    final isMarked = answer?.markedForReview ?? false;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -54,12 +47,10 @@ class QuestionCard extends StatelessWidget {
               (opt) => _buildOptionTile(
                 context,
                 option: opt,
-                isSelected: selectedId == opt.id,
+                isSelected: selectedIndex == opt.index,
               ),
             ),
-          if (!question.hasOptions && interactive) _buildTextInput(context),
-          if (!question.hasOptions && !interactive && _typedAnswer != null)
-            _buildReadOnlyAnswer(context),
+          if (!question.hasOptions) _buildUnsupported(context),
         ],
       ),
     );
@@ -140,7 +131,7 @@ class QuestionCard extends StatelessWidget {
         ),
         child: InkWell(
           borderRadius: BorderRadius.circular(10),
-          onTap: interactive ? () => onOptionSelected(option.id) : null,
+          onTap: interactive ? () => onOptionSelected(option.index) : null,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             child: Row(
@@ -186,34 +177,30 @@ class QuestionCard extends StatelessWidget {
     );
   }
 
-  Widget _buildTextInput(BuildContext context) {
-    final onChanged = onTextAnswerChanged ?? onOptionSelected;
-    return TextFormField(
-      // Keyed per question so the field state follows the page, and seeded
-      // with the stored answer so it survives navigating away and back.
-      key: ValueKey('text-answer-${question.id}'),
-      initialValue: _typedAnswer ?? '',
-      decoration: InputDecoration(
-        hintText: 'Type your answer here...',
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-      ),
-      maxLines: 3,
-      onChanged: (value) => onChanged(value.isEmpty ? null : value),
-    );
-  }
-
-  Widget _buildReadOnlyAnswer(BuildContext context) {
+  /// BACKEND GAP (verified live 2026-09-16): `answers` has no text column and
+  /// `rpc_save_answers` only accepts an option index, so typed-answer
+  /// questions cannot be answered or scored yet. Say so instead of faking it.
+  Widget _buildUnsupported(BuildContext context) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey.shade300),
+        border: Border.all(color: Colors.orange.shade300),
         borderRadius: BorderRadius.circular(10),
-        color: Colors.grey.shade50,
+        color: Colors.orange.shade50,
       ),
-      child: Text(
-        _typedAnswer!,
-        style: Theme.of(context).textTheme.bodyMedium,
+      child: Row(
+        children: [
+          const Icon(Icons.info_outline, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Typed answers are not supported on this backend yet. '
+              'This question cannot be answered or scored.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+        ],
       ),
     );
   }

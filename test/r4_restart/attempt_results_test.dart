@@ -99,7 +99,7 @@ void main() {
       final tests = FakeTestRepository()..rows['t-1'] = _test();
       final answers = FakeAnswerRepository()
         ..existing = const [
-          Answer(attemptId: 'a-1', questionId: 'q-1', selectedOptionId: 'b', isAnswered: true),
+          Answer(attemptId: 'a-1', questionId: 'q-1', selectedOption: 1),
         ];
       final c = AttemptController(
         attemptId: 'a-1', testId: 't-1',
@@ -110,7 +110,7 @@ void main() {
 
       expect(attempts.calls, ['start:t-1']);
       expect(qs.calls, ['safe:t-1']);
-      expect(c.answerFor('q-1')?.selectedOptionId, 'b');
+      expect(c.answerFor('q-1')?.selectedOption, 1);
       expect(c.answeredCount, 1);
       c.dispose();
     });
@@ -131,19 +131,19 @@ void main() {
       );
       await c.load();
 
-      c.selectOption('q-1', 'a');
-      c.setTextAnswer('q-2', ' 42 ');
+      // Selection is by server-array index (live: answers.selected_option int).
+      c.selectOption('q-1', 1);
       c.toggleMarkForReview('q-2');
-      expect(c.answeredCount, 2);
+      expect(c.answeredCount, 1);
       expect(c.markedCount, 1);
-      expect(c.answerFor('q-2')!.textAnswer, ' 42 ');
-      expect(c.answerFor('q-2')!.selectedOptionId, ' 42 ',
-          reason: 'mirrored until the live save contract is verified');
+      expect(c.answerFor('q-1')!.selectedOption, 1);
+      expect(c.answerFor('q-1')!.toRpcJson(),
+          {'question_id': 'q-1', 'selected_option': 1, 'marked_for_review': false});
 
-      c.setTextAnswer('q-2', '   ');
-      expect(c.answerFor('q-2')!.isAnswered, isFalse);
-      expect(c.answerFor('q-2')!.textAnswer, isNull);
-      expect(c.answerFor('q-2')!.isMarkedForReview, isTrue, reason: 'review flag kept');
+      c.selectOption('q-1', null);
+      expect(c.answerFor('q-1')!.isAnswered, isFalse);
+      expect(c.answerFor('q-2')!.markedForReview, isTrue, reason: 'review flag kept');
+      c.selectOption('q-1', 0);
 
       answers.failNextSave = true;
       await c.autosaveIfDirty();
@@ -175,7 +175,7 @@ void main() {
         autosaveInterval: const Duration(hours: 1),
       );
       await c.load();
-      c.selectOption('q-1', 'a');
+      c.selectOption('q-1', 0);
 
       final first = c.submit(timedOut: false);
       await expectLater(c.submit(timedOut: false), throwsA(isA<ValidationError>()));
@@ -183,8 +183,8 @@ void main() {
 
       expect(answers.saves.length, 1);
       expect(attempts.calls, ['submit:a-1:false']);
-      expect(result.attemptId, 'a-1');
-      expect(AttemptLaunchStore.takeResult('a-1')?.id, result.id);
+      expect(result?.attemptId, 'a-1');
+      expect(AttemptLaunchStore.takeResult('a-1')?.id, result?.id);
       expect(c.isInteractive, isFalse);
       c.dispose();
     });
@@ -202,7 +202,7 @@ void main() {
       );
       await c.load();
       expect(c.isInteractive, isFalse);
-      c.selectOption('q-1', 'a');
+      c.selectOption('q-1', 0);
       expect(c.answerFor('q-1'), isNull);
       c.dispose();
     });
@@ -223,7 +223,7 @@ void main() {
       expect(c.error, isNull, reason: 'taking still works; answers are write-only');
       expect(c.answersUnreadable, isTrue);
       expect(c.isInteractive, isTrue);
-      c.selectOption('q-1', 'a');
+      c.selectOption('q-1', 0);
       expect(c.answeredCount, 1);
       c.dispose();
     });

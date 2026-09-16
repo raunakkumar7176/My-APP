@@ -93,7 +93,7 @@ class AttemptController extends ChangeNotifier {
 
   int get answeredCount => _answersById.values.where((a) => a.isAnswered).length;
   int get markedCount =>
-      _answersById.values.where((a) => a.isMarkedForReview).length;
+      _answersById.values.where((a) => a.markedForReview).length;
 
   // ── loading ──
 
@@ -186,35 +186,16 @@ class AttemptController extends ChangeNotifier {
       _answersById[questionId] ??
       Answer(attemptId: _attempt!.id, questionId: questionId);
 
-  void selectOption(String questionId, String? optionId) {
+  /// Selects an option by its index in the server's `options` array
+  /// (`QuestionOption.index`) — the value `rpc_save_answers` validates and
+  /// `fn_score_attempt` compares against `correct_option`. Null clears.
+  ///
+  /// Typed (numeric / short-answer) questions have no storage on the live
+  /// backend (no `text_answer` column): BACKEND GAP — nothing is recorded.
+  void selectOption(String questionId, int? optionIndex) {
     if (!isInteractive) return;
-    final current = _answerOrNew(questionId);
-    _answersById[questionId] = Answer(
-      attemptId: current.attemptId,
-      questionId: questionId,
-      selectedOptionId: optionId,
-      textAnswer: null,
-      isMarkedForReview: current.isMarkedForReview,
-      isAnswered: optionId != null,
-    );
-    _markDirty();
-  }
-
-  /// Typed answers (numeric / short). Stored in `text_answer` and mirrored
-  /// into `selected_option_id` until the live save contract is verified
-  /// (R4.1), so server behaviour is unchanged from the previous client.
-  void setTextAnswer(String questionId, String? text) {
-    if (!isInteractive) return;
-    final value = (text == null || text.trim().isEmpty) ? null : text;
-    final current = _answerOrNew(questionId);
-    _answersById[questionId] = Answer(
-      attemptId: current.attemptId,
-      questionId: questionId,
-      selectedOptionId: value,
-      textAnswer: value,
-      isMarkedForReview: current.isMarkedForReview,
-      isAnswered: value != null,
-    );
+    _answersById[questionId] =
+        _answerOrNew(questionId).withSelection(optionIndex);
     _markDirty();
   }
 
@@ -222,7 +203,7 @@ class AttemptController extends ChangeNotifier {
     if (!isInteractive) return;
     final current = _answerOrNew(questionId);
     _answersById[questionId] =
-        current.copyWith(isMarkedForReview: !current.isMarkedForReview);
+        current.withMarkedForReview(!current.markedForReview);
     _markDirty();
   }
 
@@ -251,9 +232,10 @@ class AttemptController extends ChangeNotifier {
     }
   }
 
-  /// Flushes answers, submits, and returns the server-computed result.
+  /// Flushes answers and submits. Returns the server result when the RPC
+  /// includes it, else null (the result screen reads the row via RLS).
   /// Re-entrancy safe: a second call while submitting throws.
-  Future<Result> submit({required bool timedOut}) async {
+  Future<Result?> submit({required bool timedOut}) async {
     if (_submitting) {
       throw const ValidationError(message: 'Submission already in progress.');
     }
@@ -273,7 +255,7 @@ class AttemptController extends ChangeNotifier {
         }
       }
       final result = await _attempts.submit(_attempt!.id, timedOut: timedOut);
-      AttemptLaunchStore.putResult(result);
+      if (result != null) AttemptLaunchStore.putResult(result);
       _attempt = Attempt(
         id: _attempt!.id,
         testId: _attempt!.testId,

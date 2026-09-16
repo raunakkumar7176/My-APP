@@ -40,16 +40,30 @@ final class QuestionOption {
   const QuestionOption({
     required this.id,
     required this.text,
+    this.index = -1,
   });
 
+  /// Option id as stored in the `options` jsonb (may be empty for options
+  /// created by the client). Not used to identify answers.
   final String id;
   final String text;
 
-  factory QuestionOption.fromJson(Map<String, dynamic> json) {
-    return QuestionOption(
-      id: json['id'] as String,
-      text: json['text'] as String,
-    );
+  /// Position in the server's `options` array. This is what the live
+  /// `answers.selected_option` / `questions.correct_option` refer to, so it
+  /// must survive display shuffling.
+  final int index;
+
+  /// Parses one element of the safe RPC's `options` array at [index].
+  /// Elements are `{id, text}` objects; a bare string is tolerated.
+  factory QuestionOption.fromJson(Object? json, {int index = -1}) {
+    if (json is Map) {
+      return QuestionOption(
+        id: (json['id'] ?? '').toString(),
+        text: (json['text'] ?? '').toString(),
+        index: index,
+      );
+    }
+    return QuestionOption(id: '', text: json?.toString() ?? '', index: index);
   }
 
   Map<String, dynamic> toJson() {
@@ -136,9 +150,12 @@ final class Question {
 
   factory Question.fromJson(Map<String, dynamic> json) {
     final rawOptions = json['options'] as List<dynamic>?;
-    final parsedOptions = rawOptions
-        ?.map((e) => QuestionOption.fromJson(e as Map<String, dynamic>))
-        .toList();
+    final parsedOptions = rawOptions == null
+        ? null
+        : [
+            for (var i = 0; i < rawOptions.length; i++)
+              QuestionOption.fromJson(rawOptions[i], index: i),
+          ];
 
     return Question(
       id: json['id'] as String,

@@ -1,55 +1,64 @@
+/// One saved answer, mirroring the LIVE `public.answers` row
+/// (verified 2026-09-16):
+///   attempt_id uuid, question_id uuid, selected_option integer NULL,
+///   marked_for_review boolean, updated_at timestamptz.
+///
+/// `selected_option` is the **index into the question's `options` array as
+/// returned by `get_test_questions_safe`** (server order), not an option id.
+/// There is no `text_answer` column: typed answers are a BACKEND GAP.
+/// "Answered" is derived (`selected_option IS NOT NULL`); no flag exists.
 final class Answer {
   const Answer({
     required this.attemptId,
     required this.questionId,
-    this.selectedOptionId,
-    this.textAnswer,
-    this.isMarkedForReview = false,
-    this.isAnswered = false,
+    this.selectedOption,
+    this.markedForReview = false,
+    this.updatedAt,
   });
 
   final String attemptId;
   final String questionId;
-  final String? selectedOptionId;
-  final String? textAnswer;
-  final bool isMarkedForReview;
-  final bool isAnswered;
+  final int? selectedOption;
+  final bool markedForReview;
+  final DateTime? updatedAt;
 
-  Answer copyWith({
-    String? selectedOptionId,
-    String? textAnswer,
-    bool? isMarkedForReview,
-    bool? isAnswered,
-  }) {
+  bool get isAnswered => selectedOption != null;
+
+  /// Copy with an explicit new selection (null clears it).
+  Answer withSelection(int? selectedOption) => Answer(
+        attemptId: attemptId,
+        questionId: questionId,
+        selectedOption: selectedOption,
+        markedForReview: markedForReview,
+        updatedAt: updatedAt,
+      );
+
+  Answer withMarkedForReview(bool marked) => Answer(
+        attemptId: attemptId,
+        questionId: questionId,
+        selectedOption: selectedOption,
+        markedForReview: marked,
+        updatedAt: updatedAt,
+      );
+
+  /// Element of `p_answers` for `rpc_save_answers(uuid, jsonb)`. Only the
+  /// fields the server validates/stores are sent.
+  Map<String, dynamic> toRpcJson() => {
+        'question_id': questionId,
+        'selected_option': selectedOption,
+        'marked_for_review': markedForReview,
+      };
+
+  /// Parses a live `answers` row.
+  factory Answer.fromRow(Map<String, dynamic> row) {
     return Answer(
-      attemptId: attemptId,
-      questionId: questionId,
-      selectedOptionId: selectedOptionId ?? this.selectedOptionId,
-      textAnswer: textAnswer ?? this.textAnswer,
-      isMarkedForReview: isMarkedForReview ?? this.isMarkedForReview,
-      isAnswered: isAnswered ?? this.isAnswered,
-    );
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      'attempt_id': attemptId,
-      'question_id': questionId,
-      'selected_option_id': selectedOptionId,
-      'text_answer': textAnswer,
-      'is_marked_for_review': isMarkedForReview,
-      'is_answered': isAnswered,
-    };
-  }
-
-  factory Answer.fromJson(Map<String, dynamic> json) {
-    return Answer(
-      attemptId: json['attempt_id'] as String,
-      questionId: json['question_id'] as String,
-      selectedOptionId: json['selected_option_id'] as String?,
-      textAnswer: json['text_answer'] as String?,
-      isMarkedForReview: (json['is_marked_for_review'] as bool?) ?? false,
-      isAnswered: (json['is_answered'] as bool?) ?? false,
+      attemptId: row['attempt_id'] as String,
+      questionId: row['question_id'] as String,
+      selectedOption: (row['selected_option'] as num?)?.toInt(),
+      markedForReview: (row['marked_for_review'] as bool?) ?? false,
+      updatedAt: row['updated_at'] != null
+          ? DateTime.tryParse(row['updated_at'] as String)
+          : null,
     );
   }
 
@@ -60,18 +69,9 @@ final class Answer {
           runtimeType == other.runtimeType &&
           attemptId == other.attemptId &&
           questionId == other.questionId &&
-          selectedOptionId == other.selectedOptionId &&
-          textAnswer == other.textAnswer &&
-          isMarkedForReview == other.isMarkedForReview &&
-          isAnswered == other.isAnswered;
+          selectedOption == other.selectedOption &&
+          markedForReview == other.markedForReview;
 
   @override
-  int get hashCode => Object.hash(
-        attemptId,
-        questionId,
-        selectedOptionId,
-        textAnswer,
-        isMarkedForReview,
-        isAnswered,
-      );
+  int get hashCode => Object.hash(attemptId, questionId, selectedOption, markedForReview);
 }

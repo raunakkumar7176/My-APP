@@ -19,8 +19,10 @@ abstract interface class AttemptRepository {
 
   Future<StartedAttempt> startByCode(String code);
 
-  /// Returns the server-computed result row.
-  Future<Result> submit(String attemptId, {required bool timedOut});
+  /// Submits and scores on the server. Returns the `results` row when the
+  /// RPC includes one in its response; null otherwise (the result screen
+  /// then reads the row via RLS). The live return shape is NOT VERIFIED.
+  Future<Result?> submit(String attemptId, {required bool timedOut});
 }
 
 class SupabaseAttemptRepository implements AttemptRepository {
@@ -49,19 +51,37 @@ class SupabaseAttemptRepository implements AttemptRepository {
       }, TestErrorContext.start);
 
   @override
-  Future<Result> submit(String attemptId, {required bool timedOut}) =>
+  Future<Result?> submit(String attemptId, {required bool timedOut}) =>
       _guard(() async {
         final response = await _client.rpc('rpc_submit_attempt', params: {
           'p_attempt': attemptId,
           'p_timed_out': timedOut,
         });
         AppLogger.rpcShape('rpc_submit_attempt', response);
-        final data =
-            response is List && response.isNotEmpty ? response.first : response;
-        if (data is Map<String, dynamic>) return Result.fromJson(data);
-        throw const DataError(
-            message: 'Unexpected response from server after submission.');
+        return resultFromSubmitResponse(response, attemptId: attemptId);
       }, TestErrorContext.submit);
+
+  /// A `results` row is recognised by its `attempt_id` + a score-like key;
+  /// an `attempts` row, a status message or null yield null (not an error —
+  /// the submission itself succeeded).
+  static Result? resultFromSubmitResponse(dynamic response, {required String attemptId}) {
+    final data =
+        response is List && response.isNotEmpty ? response.first : response;
+    if (data is! Map) return null;
+    final json = Map<String, dynamic>.from(data);
+    final looksLikeResult = json['attempt_id'] == attemptId &&
+        (json.containsKey('score') ||
+            json.containsKey('marks_obtained') ||
+            json.containsKey('correct_count') ||
+            json.containsKey('percentage'));
+    if (!looksLikeResult) return null;
+    try {
+      return Result.fromJson(json);
+    } catch (e) {
+      AppLogger.warning('Submit response not parseable as Result: $e');
+      return null;
+    }
+  }
 
   /// The ONE place the start RPCs' response is normalized. Accepts both
   /// shapes that exist in the repo history (live shape: see R4.1):

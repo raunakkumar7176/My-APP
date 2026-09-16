@@ -21,7 +21,7 @@ class QuestionReviewCard extends StatelessWidget {
   final int totalQuestions;
 
   ReviewStatus get _status {
-    if (answer == null || !(answer!.isAnswered || answer!.selectedOptionId != null)) {
+    if (answer == null || !answer!.isAnswered) {
       return ReviewStatus.unanswered;
     }
     return ReviewStatus.answered;
@@ -29,7 +29,7 @@ class QuestionReviewCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final selectedId = answer?.selectedOptionId;
+    final selectedIndex = answer?.selectedOption;
     final status = _status;
 
     return Card(
@@ -50,12 +50,10 @@ class QuestionReviewCard extends StatelessWidget {
               ...question.options!.map((opt) => _buildOption(
                     context,
                     option: opt,
-                    isSelected: selectedId == opt.id,
+                    isSelected: selectedIndex == opt.index,
                   )),
-            if (!question.hasOptions && answer?.textAnswer != null)
-              _buildTextAnswer(context),
-            if (!question.hasOptions && answer?.textAnswer == null)
-              _buildUnanswered(context),
+            // Typed-answer questions have no storage on the live backend.
+            if (!question.hasOptions) _buildUnanswered(context),
             if (question.explanation != null &&
                 question.explanation!.isNotEmpty) ...[
               const SizedBox(height: 12),
@@ -226,24 +224,6 @@ class QuestionReviewCard extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildTextAnswer(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.primaryLight.withValues(alpha: 0.05),
-        border: Border.all(color: AppColors.primaryLight.withValues(alpha: 0.3)),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(
-        'Your answer: ${answer!.textAnswer}',
-        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: AppColors.primaryLight,
-            ),
       ),
     );
   }

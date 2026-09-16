@@ -56,6 +56,7 @@ class ResultsController extends ChangeNotifier {
   Map<String, Answer> _answersById = const {};
   bool _loading = false;
   bool _reviewLoaded = false;
+  bool _answersUnreadable = false;
   bool _busy = false;
   String? _error;
 
@@ -69,6 +70,10 @@ class ResultsController extends ChangeNotifier {
   bool get isLoading => _loading;
   bool get isBusy => _busy;
   bool get reviewLoaded => _reviewLoaded;
+
+  /// True when the backend forbids reading the user's saved answers (no
+  /// SELECT grant on answers, verified live); review then shows questions only.
+  bool get answersUnreadable => _answersUnreadable;
   String? get error => _error;
 
   TestKind get kind => BackendMapping.fromBackend(_test?.testMode, _test?.settings);
@@ -119,10 +124,16 @@ class ResultsController extends ChangeNotifier {
     _busy = true;
     notifyListeners();
     try {
-      final qs = await _questions.safeQuestions(r.testId);
-      final answers = await _answers.forAttempt(attemptId);
-      _questionsList = qs;
-      _answersById = {for (final a in answers) a.questionId: a};
+      _questionsList = await _questions.safeQuestions(r.testId);
+      try {
+        final answers = await _answers.forAttempt(attemptId);
+        _answersById = {for (final a in answers) a.questionId: a};
+      } on AnswerReadUnavailable {
+        // Live backend (2026-09-16): no SELECT on answers → the review can
+        // list questions/explanations but not the user's own selections.
+        _answersUnreadable = true;
+        _answersById = const {};
+      }
       _reviewLoaded = true;
     } on AppError catch (e) {
       _error = e.message;

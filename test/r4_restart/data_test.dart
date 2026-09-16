@@ -3,10 +3,8 @@
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:my_praperation/core/errors/app_error.dart';
-import 'package:my_praperation/core/models/answer.dart';
 import 'package:my_praperation/core/models/attempt.dart';
 import 'package:my_praperation/core/models/question.dart';
-import 'package:my_praperation/features/test/data/answer_repository.dart';
 import 'package:my_praperation/features/test/data/attempt_repository.dart';
 import 'package:my_praperation/features/test/data/question_repository.dart';
 import 'package:my_praperation/features/test/data/test_repository.dart';
@@ -125,58 +123,42 @@ void main() {
     });
   });
 
-  group('SupabaseAnswerRepository.answerFromRow (single normalization point)', () {
-    test('repo-DDL naming', () {
-      final a = SupabaseAnswerRepository.answerFromRow({
-        'attempt_id': 'a',
-        'question_id': 'q',
-        'selected_option_id': 'opt-b',
-        'text_answer': null,
-        'is_marked_for_review': true,
-        'is_answered': true,
-      });
-      expect(a.selectedOptionId, 'opt-b');
-      expect(a.isMarkedForReview, isTrue);
-      expect(a.isAnswered, isTrue);
+  group('Submit response parsing (rpc_submit_attempt return shape NOT VERIFIED)', () {
+    test('a results row is recognised and parsed', () {
+      final r = SupabaseAttemptRepository.resultFromSubmitResponse({
+        'id': 'r-1', 'attempt_id': 'a-1', 'test_id': 't-1', 'user_id': 'u-1',
+        'score': 3, 'max_score': 5, 'correct_count': 3,
+      }, attemptId: 'a-1');
+      expect(r?.id, 'r-1');
+      expect(r?.score, 3);
     });
 
-    test('owner-listed naming (selected_option / marked_for_review)', () {
-      final a = SupabaseAnswerRepository.answerFromRow({
-        'attempt_id': 'a',
-        'question_id': 'q',
-        'selected_option': 'opt-c',
-        'marked_for_review': false,
-        'updated_at': '2026-09-16T10:00:00Z',
-      });
-      expect(a.selectedOptionId, 'opt-c');
-      expect(a.isMarkedForReview, isFalse);
-      expect(a.isAnswered, isTrue, reason: 'derived from presence of a value');
+    test('an attempts row, a message, or null yields null (not an error)', () {
+      expect(SupabaseAttemptRepository.resultFromSubmitResponse({
+        'id': 'a-1', 'attempt_id': 'a-1', 'status': 'submitted',
+      }, attemptId: 'a-1'), isNull);
+      expect(SupabaseAttemptRepository.resultFromSubmitResponse(
+          {'message': 'ok'}, attemptId: 'a-1'), isNull);
+      expect(SupabaseAttemptRepository.resultFromSubmitResponse(null, attemptId: 'a-1'), isNull);
+      expect(SupabaseAttemptRepository.resultFromSubmitResponse(
+          [{'attempt_id': 'other', 'score': 1}], attemptId: 'a-1'), isNull);
     });
+  });
 
-    test('empty row is unanswered', () {
-      final a = SupabaseAnswerRepository.answerFromRow({
-        'attempt_id': 'a',
-        'question_id': 'q',
+  group('Safe-question options carry their server index', () {
+    test('Question.fromJson assigns index = position in the options array', () {
+      final q = Question.fromJson({
+        'id': 'q-1', 'test_id': 't-1', 'question': 'Q', 'difficulty': 'easy',
+        'marks': 1, 'status': 'approved', 'question_type': 'mcq',
+        'options': [
+          {'id': '', 'text': 'A'},
+          {'id': '', 'text': 'B'},
+          'C',
+        ],
       });
-      expect(a.isAnswered, isFalse);
-      expect(a.selectedOptionId, isNull);
-    });
-
-    test('write payload is unchanged from the historical contract', () {
-      const a = Answer(
-        attemptId: 'a',
-        questionId: 'q',
-        selectedOptionId: 'x',
-        isAnswered: true,
-      );
-      expect(a.toJson().keys.toSet(), {
-        'attempt_id',
-        'question_id',
-        'selected_option_id',
-        'text_answer',
-        'is_marked_for_review',
-        'is_answered',
-      });
+      expect(q.options!.map((o) => o.index), [0, 1, 2]);
+      expect(q.options![2].text, 'C', reason: 'bare strings tolerated');
+      expect(q.options![0].id, '', reason: 'ids may be empty; index is the identity');
     });
   });
 }

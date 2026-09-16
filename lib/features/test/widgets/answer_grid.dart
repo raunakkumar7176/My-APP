@@ -146,9 +146,8 @@ class AnswerGrid extends StatelessWidget {
 
   AnswerStatus _getStatus(Answer? answer) {
     if (answer == null) return AnswerStatus.unanswered;
-    final isAnswered =
-        answer.isAnswered || answer.selectedOptionId != null || answer.textAnswer != null;
-    final isMarked = answer.isMarkedForReview;
+    final isAnswered = answer.isAnswered;
+    final isMarked = answer.markedForReview;
     if (isMarked && isAnswered) return AnswerStatus.markedAndAnswered;
     if (isMarked) return AnswerStatus.markedReview;
     if (isAnswered) return AnswerStatus.answered;

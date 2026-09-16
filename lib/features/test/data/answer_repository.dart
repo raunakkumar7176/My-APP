@@ -6,17 +6,16 @@ import '../../../core/models/answer.dart';
 import '../../../core/services/supabase_service.dart';
 import '../domain/test_errors.dart';
 
-/// Answers are written ONLY via `rpc_save_answers` (the server validates the
-/// attempt, ownership and deadline) and read back for resume via the
-/// RLS-protected `answers` table.
+/// Answers are written ONLY via `rpc_save_answers(uuid, jsonb)` — the server
+/// verifies ownership, `in_progress` status and the deadline, validates each
+/// `selected_option` against the question's options array and upserts into
+/// `public.answers` (`selected_option integer`, `marked_for_review boolean`).
 ///
-/// R4.1 STATUS (live, 2026-09-16): `SELECT` on `public.answers` is DENIED to
-/// the authenticated role (42501). There is therefore NO client read path for
-/// saved answers today — [forAttempt] reports that as [AnswerReadUnavailable]
-/// (not a transient error) so callers can tell the user honestly. Column
-/// naming stays unverified; [answerFromRow] keeps accepting both candidate
-/// namings until a read path exists and the R4.1 script settles it. The write
-/// payload is unchanged from the historical client.
+/// LIVE (2026-09-16): `SELECT` on `public.answers` is denied to the
+/// authenticated role (42501), so there is no read path for resume today;
+/// [forAttempt] reports that as [AnswerReadUnavailable] (BACKEND GAP, not a
+/// transient error). [Answer.fromRow] is ready for whenever a read path
+/// (grant+policy or a read RPC) is added.
 /// Thrown when the backend does not permit reading answers back at all
 /// (missing GRANT/policy). Distinct from transient failures so the UI can
 /// explain "answers are saved but cannot be shown on resume" instead of
@@ -48,7 +47,7 @@ class SupabaseAnswerRepository implements AnswerRepository {
         if (answers.isEmpty) return;
         final response = await _client.rpc('rpc_save_answers', params: {
           'p_attempt': attemptId,
-          'p_answers': [for (final a in answers) a.toJson()],
+          'p_answers': [for (final a in answers) a.toRpcJson()],
         });
         AppLogger.rpcShape('rpc_save_answers', response);
       }, TestErrorContext.save);
@@ -70,26 +69,9 @@ class SupabaseAnswerRepository implements AnswerRepository {
         final list = rows as List;
         if (list.isNotEmpty) AppLogger.rpcShape('answers.select', list);
         return [
-          for (final r in list) answerFromRow(r as Map<String, dynamic>),
+          for (final r in list) Answer.fromRow(r as Map<String, dynamic>),
         ];
       }, TestErrorContext.load);
-
-  /// Single normalization point for an `answers` row (see class doc).
-  static Answer answerFromRow(Map<String, dynamic> row) {
-    final selected = (row['selected_option_id'] ?? row['selected_option']) as String?;
-    final text = row['text_answer'] as String?;
-    final marked = (row['is_marked_for_review'] ?? row['marked_for_review']) as bool?;
-    final answered = row['is_answered'] as bool?;
-    return Answer(
-      attemptId: row['attempt_id'] as String,
-      questionId: row['question_id'] as String,
-      selectedOptionId: selected,
-      textAnswer: text,
-      isMarkedForReview: marked ?? false,
-      // Without an explicit flag, "answered" means a value exists.
-      isAnswered: answered ?? (selected != null || text != null),
-    );
-  }
 
   static Future<T> _guard<T>(
       Future<T> Function() body, TestErrorContext context) async {

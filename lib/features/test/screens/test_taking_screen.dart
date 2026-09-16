@@ -40,7 +40,8 @@ class _TestTakingScreenState extends State<TestTakingScreen> {
   void initState() {
     super.initState();
     _owns = widget.controller == null;
-    _c = widget.controller ??
+    _c =
+        widget.controller ??
         AttemptController(
           attemptId: widget.attemptId,
           testId: widget.testId,
@@ -68,15 +69,16 @@ class _TestTakingScreenState extends State<TestTakingScreen> {
 
   Future<void> _submit({required bool timedOut}) async {
     try {
-      final result = await _c.submit(timedOut: timedOut);
+      // The RPC may or may not return the results row; the result screen
+      // reads it by attempt id either way.
+      await _c.submit(timedOut: timedOut);
       if (!mounted) return;
-      context.go('/attempts/${result.attemptId}/result');
+      context.go('/attempts/${_c.attempt?.id ?? widget.attemptId}/result');
     } on AppError catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(e.message),
-        backgroundColor: AppColors.error,
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message), backgroundColor: AppColors.error),
+      );
     }
   }
 
@@ -101,8 +103,14 @@ class _TestTakingScreenState extends State<TestTakingScreen> {
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Continue Test')),
-          FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Submit')),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Continue Test'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Submit'),
+          ),
         ],
       ),
     );
@@ -119,12 +127,22 @@ class _TestTakingScreenState extends State<TestTakingScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text('Leave Test?'),
         content: const Text(
-            'Your answers are saved automatically and you can resume this attempt '
-            'until its time limit ends. Submit now to get your result.'),
+          'Your answers are saved automatically and you can resume this attempt '
+          'until its time limit ends. Submit now to get your result.',
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop('stay'), child: const Text('Stay')),
-          TextButton(onPressed: () => Navigator.of(ctx).pop('leave'), child: const Text('Leave')),
-          FilledButton(onPressed: () => Navigator.of(ctx).pop('submit'), child: const Text('Submit & Leave')),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop('stay'),
+            child: const Text('Stay'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop('leave'),
+            child: const Text('Leave'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop('submit'),
+            child: const Text('Submit & Leave'),
+          ),
         ],
       ),
     );
@@ -149,7 +167,10 @@ class _TestTakingScreenState extends State<TestTakingScreen> {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(label),
-          Text(value, style: TextStyle(color: color, fontWeight: FontWeight.w600)),
+          Text(
+            value,
+            style: TextStyle(color: color, fontWeight: FontWeight.w600),
+          ),
         ],
       ),
     );
@@ -185,14 +206,19 @@ class _TestTakingScreenState extends State<TestTakingScreen> {
     // No fake timers: a missing server deadline is an error state, except
     // for a Practice attempt the server itself started untimed (dormant
     // until the backend supports it).
-    final untimedPractice = _c.deadlineAt == null && _c.kind == TestKind.practice;
+    final untimedPractice =
+        _c.deadlineAt == null && _c.kind == TestKind.practice;
     if (_c.deadlineAt == null && !untimedPractice) {
       return _message(
         icon: Icons.timer_off_outlined,
         title: 'Timer Not Available',
-        body: 'The server did not provide a deadline for this attempt. '
+        body:
+            'The server did not provide a deadline for this attempt. '
             'Please go back and start again.',
-        action: FilledButton(onPressed: () => context.go('/tests'), child: const Text('Back to Tests')),
+        action: FilledButton(
+          onPressed: () => context.go('/tests'),
+          child: const Text('Back to Tests'),
+        ),
       );
     }
 
@@ -206,15 +232,25 @@ class _TestTakingScreenState extends State<TestTakingScreen> {
       },
       child: Scaffold(
         appBar: AppBar(
-          leading: IconButton(icon: const Icon(Icons.close), onPressed: _onLeave),
+          leading: IconButton(
+            icon: const Icon(Icons.close),
+            onPressed: _onLeave,
+          ),
           title: kindLabel == null
               ? Text(_c.test?.title ?? '')
               : Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(_c.test?.title ?? '', maxLines: 1, overflow: TextOverflow.ellipsis),
-                    Text(kindLabel, style: Theme.of(context).textTheme.labelSmall),
+                    Text(
+                      _c.test?.title ?? '',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      kindLabel,
+                      style: Theme.of(context).textTheme.labelSmall,
+                    ),
                   ],
                 ),
           actions: [
@@ -234,14 +270,14 @@ class _TestTakingScreenState extends State<TestTakingScreen> {
         body: Column(
           children: [
             if (_c.answersUnreadable)
-              MaterialBanner(
-                padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
-                leading: const Icon(Icons.info_outline, size: 20),
-                content: const Text(
+              const MaterialBanner(
+                padding: EdgeInsets.fromLTRB(16, 8, 8, 8),
+                leading: Icon(Icons.info_outline, size: 20),
+                content: Text(
                   'Previously saved answers cannot be shown on this backend. '
                   'New answers are still saved and scored.',
                 ),
-                actions: const [SizedBox.shrink()],
+                actions: [SizedBox.shrink()],
               ),
             Expanded(
               child: PageView.builder(
@@ -257,7 +293,6 @@ class _TestTakingScreenState extends State<TestTakingScreen> {
                     questionNumber: index + 1,
                     totalQuestions: questions.length,
                     onOptionSelected: (id) => _c.selectOption(q.id, id),
-                    onTextAnswerChanged: (t) => _c.setTextAnswer(q.id, t),
                     onMarkReview: () => _c.toggleMarkForReview(q.id),
                     interactive: true,
                   );
@@ -337,7 +372,11 @@ class _TestTakingScreenState extends State<TestTakingScreen> {
             children: [
               Icon(icon, size: 56, color: AppColors.warning),
               const SizedBox(height: 16),
-              Text(title, style: Theme.of(context).textTheme.titleLarge, textAlign: TextAlign.center),
+              Text(
+                title,
+                style: Theme.of(context).textTheme.titleLarge,
+                textAlign: TextAlign.center,
+              ),
               const SizedBox(height: 8),
               Text(body, textAlign: TextAlign.center),
               const SizedBox(height: 20),
