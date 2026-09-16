@@ -233,6 +233,16 @@ class _TestTakingScreenState extends State<TestTakingScreen> {
         ),
         body: Column(
           children: [
+            if (_c.answersUnreadable)
+              MaterialBanner(
+                padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+                leading: const Icon(Icons.info_outline, size: 20),
+                content: const Text(
+                  'Previously saved answers cannot be shown on this backend. '
+                  'New answers are still saved and scored.',
+                ),
+                actions: const [SizedBox.shrink()],
+              ),
             Expanded(
               child: PageView.builder(
                 controller: _pages,

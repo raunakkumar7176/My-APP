@@ -61,6 +61,7 @@ class AttemptController extends ChangeNotifier {
   String? _error;
   int _currentIndex = 0;
   Timer? _autosaveTimer;
+  bool _answersUnreadable = false;
 
   Attempt? get attempt => _attempt;
   Test? get test => _test;
@@ -70,6 +71,11 @@ class AttemptController extends ChangeNotifier {
   bool get isDirty => _dirty;
   String? get error => _error;
   int get currentIndex => _currentIndex;
+
+  /// True when the backend forbids reading saved answers back (verified live:
+  /// no SELECT grant on `answers`). Answers are still saved server-side and
+  /// scored; they just cannot be shown again after leaving the screen.
+  bool get answersUnreadable => _answersUnreadable;
 
   TestKind get kind => BackendMapping.fromBackend(_test?.testMode, _test?.settings);
 
@@ -150,6 +156,9 @@ class AttemptController extends ChangeNotifier {
       for (final a in await _answers.forAttempt(_attempt!.id)) {
         _answersById[a.questionId] = a;
       }
+    } on AnswerReadUnavailable {
+      _answersUnreadable = true;
+      AppLogger.warning('answers SELECT forbidden for this role; resume shows no saved answers');
     } catch (e) {
       AppLogger.warning('Existing answers unavailable: $e');
     }

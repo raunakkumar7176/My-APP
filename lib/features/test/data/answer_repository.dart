@@ -10,16 +10,30 @@ import '../domain/test_errors.dart';
 /// attempt, ownership and deadline) and read back for resume via the
 /// RLS-protected `answers` table.
 ///
-/// R4.1 STATUS: the live `answers` column names are UNVERIFIED (owner list:
-/// `selected_option`, `marked_for_review`; repo DDL: `selected_option_id`,
-/// `is_marked_for_review`, `is_answered`, `text_answer`). Until the R4.1
-/// script settles it, this repository keeps the exact write payload the app
-/// has always sent (so server behaviour is unchanged) and normalizes READS in
-/// one place, [answerFromRow], accepting either naming. Once verified, delete
-/// the losing branch here — nowhere else needs to change.
+/// R4.1 STATUS (live, 2026-09-16): `SELECT` on `public.answers` is DENIED to
+/// the authenticated role (42501). There is therefore NO client read path for
+/// saved answers today — [forAttempt] reports that as [AnswerReadUnavailable]
+/// (not a transient error) so callers can tell the user honestly. Column
+/// naming stays unverified; [answerFromRow] keeps accepting both candidate
+/// namings until a read path exists and the R4.1 script settles it. The write
+/// payload is unchanged from the historical client.
+/// Thrown when the backend does not permit reading answers back at all
+/// (missing GRANT/policy). Distinct from transient failures so the UI can
+/// explain "answers are saved but cannot be shown on resume" instead of
+/// retrying.
+final class AnswerReadUnavailable implements Exception {
+  const AnswerReadUnavailable();
+
+  String get message => 'Saved answers cannot be loaded on this backend.';
+
+  @override
+  String toString() => 'AnswerReadUnavailable: $message';
+}
+
 abstract interface class AnswerRepository {
   Future<void> save(String attemptId, List<Answer> answers);
 
+  /// Throws [AnswerReadUnavailable] when the server forbids the read.
   Future<List<Answer>> forAttempt(String attemptId);
 }
 
@@ -41,11 +55,18 @@ class SupabaseAnswerRepository implements AnswerRepository {
 
   @override
   Future<List<Answer>> forAttempt(String attemptId) => _guard(() async {
-        final rows = await _client
-            .from('answers')
-            .select()
-            .eq('attempt_id', attemptId)
-            .order('question_id');
+        final dynamic rows;
+        try {
+          rows = await _client
+              .from('answers')
+              .select()
+              .eq('attempt_id', attemptId)
+              .order('question_id');
+        } on PostgrestException catch (e) {
+          // 42501 = no table privilege for this role (verified live 2026-09-16).
+          if (e.code == '42501') throw const AnswerReadUnavailable();
+          rethrow;
+        }
         final list = rows as List;
         if (list.isNotEmpty) AppLogger.rpcShape('answers.select', list);
         return [
@@ -78,6 +99,8 @@ class SupabaseAnswerRepository implements AnswerRepository {
       AppLogger.error('AnswerRepository PostgrestException: ${e.message}');
       throw DataError(message: TestErrors.map(e.message, context: context));
     } on AppError {
+      rethrow;
+    } on AnswerReadUnavailable {
       rethrow;
     } catch (e, st) {
       AppLogger.error('AnswerRepository unexpected: $e', stackTrace: st);

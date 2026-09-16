@@ -9,7 +9,7 @@ machine holds no credentials. Claude drives capture via `adb logcat`.
 
 | # | Check | Why it needs the device/live DB | Evidence line |
 |---|---|---|---|
-| 1 | `answers` real columns (`select *` row keys) | Owner list vs repo DDL conflict; `AnswerRepository.answerFromRow` accepts both until proven | `answers.select response shape: … keys=[…]` |
+| 1 | `answers` real columns | **VERIFIED-LIVE 2026-09-16: SELECT denied (42501)** — no read path exists; resume cannot show saved answers until a GRANT+policy or a read RPC is added (backend decision, see R4.1 doc). Column naming still needs the SQL script. | client now reports `answersUnreadable` |
 | 2 | `rpc_start_attempt` shape + `attempt_number` | jsonb (R4_3) vs row (R4_7_6, "not executed") | `rpc_start_attempt response shape` |
 | 3 | Repeat after submit allowed? | depends on live unique constraint / function body | Result → Repeat succeeds or server error text |
 | 4 | `get_test_questions_safe` keys (`status`, `explanation`, `marks`) and NO `correct_option` | drives readiness + review; security guard logs `SECURITY:` if violated | `get_test_questions_safe response shape` |

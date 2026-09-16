@@ -16,6 +16,15 @@ import 'package:my_praperation/features/test/state/results_controller.dart';
 
 import 'fakes.dart';
 
+/// Live-verified contract (2026-09-16): SELECT on answers is forbidden.
+class ForbiddenAnswerRepository implements AnswerRepository {
+  @override
+  Future<void> save(String attemptId, List<Answer> answers) async {}
+  @override
+  Future<List<Answer>> forAttempt(String attemptId) async =>
+      throw const AnswerReadUnavailable();
+}
+
 class FakeAnswerRepository implements AnswerRepository {
   final List<List<Answer>> saves = [];
   List<Answer> existing = const [];
@@ -195,6 +204,27 @@ void main() {
       expect(c.isInteractive, isFalse);
       c.selectOption('q-1', 'a');
       expect(c.answerFor('q-1'), isNull);
+      c.dispose();
+    });
+
+    test('forbidden answers read is reported, not treated as transient', () async {
+      AttemptLaunchStore.putLaunch(
+        started: (attempt: _attempt('a-1'), testTitle: null),
+        questions: const [_q1],
+        test: _test(),
+      );
+      final c = AttemptController(
+        attemptId: 'a-1', testId: 't-1',
+        attempts: FakeAttemptRepository(), questions: FakeQuestionRepository(),
+        answers: ForbiddenAnswerRepository(), tests: FakeTestRepository(),
+        autosaveInterval: const Duration(hours: 1),
+      );
+      await c.load();
+      expect(c.error, isNull, reason: 'taking still works; answers are write-only');
+      expect(c.answersUnreadable, isTrue);
+      expect(c.isInteractive, isTrue);
+      c.selectOption('q-1', 'a');
+      expect(c.answeredCount, 1);
       c.dispose();
     });
 
