@@ -46,6 +46,15 @@ abstract final class TestErrors {
     if (lower.contains('test_ended')) {
       return 'This test has ended.';
     }
+    if (lower.contains('test_already_deleted')) {
+      return 'This test has already been deleted.';
+    }
+    if (lower.contains('test_not_draft')) {
+      return 'Only draft tests can be deleted.';
+    }
+    if (lower.contains('auth_required')) {
+      return 'Your session has expired. Please log in again.';
+    }
     if (lower.contains('test_full')) {
       return 'This test has reached its maximum number of participants.';
     }
@@ -126,10 +135,12 @@ abstract final class TestErrors {
         return 'Failed to submit. Please try again.';
       case TestErrorContext.load:
         return 'Failed to load. Please try again.';
+      case TestErrorContext.delete:
+        return 'Failed to delete test. Please try again.';
       case TestErrorContext.generic:
         return 'Something went wrong. Please try again.';
     }
   }
 }
 
-enum TestErrorContext { generic, publish, start, save, submit, load }
+enum TestErrorContext { generic, publish, start, save, submit, load, delete }

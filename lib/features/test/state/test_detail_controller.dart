@@ -71,6 +71,14 @@ class TestDetailController extends DisposableNotifier {
       _test != null &&
       TestLifecycle.canPublish(isOwner: isOwner, status: _test!.status);
 
+  bool get canDelete =>
+      _test != null &&
+      TestLifecycle.canDelete(
+        isOwner: isOwner,
+        status: _test!.status,
+        isSoftDeleted: _test!.isSoftDeleted,
+      );
+
   /// Owner + test over + no batch known to be pending/processing. A batch
   /// that completed, partially completed or failed may be re-requested; the
   /// server answers idempotently (`reused`).
@@ -130,6 +138,25 @@ class TestDetailController extends DisposableNotifier {
         await _tests.publish(testId);
         await load();
       });
+
+  /// Soft-deletes a draft (server-enforced rule). The gate is re-checked here
+  /// so a stale screen cannot fire the RPC for a non-draft; on success the
+  /// local test is cleared so nothing on this screen can act on it again.
+  /// Throws [AppError] with a user-facing message; the test stays loaded on
+  /// failure so the screen keeps showing it.
+  Future<void> deleteDraft() => _action(() async {
+        if (!canDelete) {
+          throw const ValidationError(message: 'Only your draft tests can be deleted.');
+        }
+        await _tests.deleteDraft(testId);
+        _test = null;
+        _deleted = true;
+      });
+
+  bool _deleted = false;
+
+  /// True once this test was deleted in this session.
+  bool get isDeleted => _deleted;
 
   /// Starts (or resumes) an attempt and loads the safe questions.
   Future<LaunchedAttempt> start() => _action(() async {

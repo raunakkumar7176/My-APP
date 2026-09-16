@@ -29,7 +29,9 @@ class FakeTestRepository implements TestRepository {
   @override
   Future<Test?> getById(String testId) async {
     calls.add('getById:$testId');
-    return rows[testId];
+    // Mirrors the live query: `.eq('is_soft_deleted', false)`.
+    final t = rows[testId];
+    return t == null || t.isSoftDeleted ? null : t;
   }
 
   @override
@@ -42,7 +44,8 @@ class FakeTestRepository implements TestRepository {
   Future<List<Test>> listMyDrafts({int limit = 50}) async {
     calls.add('listMyDrafts');
     return rows.values
-        .where((t) => t.status == TestStatus.draft && t.createdBy == currentUser)
+        .where((t) =>
+            t.status == TestStatus.draft && t.createdBy == currentUser && !t.isSoftDeleted)
         .toList();
   }
 
@@ -83,6 +86,31 @@ class FakeTestRepository implements TestRepository {
       durationSec: input.durationSec,
       settings: input.settings ?? t.settings,
       config: input.config ?? t.config,
+    );
+  }
+
+  /// Mirrors `rpc_delete_test`: creator + draft + not already deleted, else
+  /// the server error codes the mapper knows. [failDeleteWith] simulates a
+  /// backend/network rejection.
+  Object? failDeleteWith;
+
+  @override
+  Future<void> deleteDraft(String testId) async {
+    calls.add('delete:$testId');
+    if (failDeleteWith != null) throw failDeleteWith!;
+    final t = rows[testId];
+    if (t == null) throw const DataError(message: 'Test not found.');
+    if (t.createdBy != currentUser) {
+      throw const DataError(message: 'You do not have permission to perform this action.');
+    }
+    if (t.isSoftDeleted) throw const DataError(message: 'This test has already been deleted.');
+    if (t.status != TestStatus.draft) {
+      throw const DataError(message: 'Only draft tests can be deleted.');
+    }
+    rows[testId] = Test(
+      id: t.id, createdBy: t.createdBy, title: t.title, status: t.status,
+      testMode: t.testMode, durationSec: t.durationSec, settings: t.settings,
+      isSoftDeleted: true, deletedAt: DateTime(2026, 9, 16),
     );
   }
 

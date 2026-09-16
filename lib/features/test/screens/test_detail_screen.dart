@@ -21,6 +21,8 @@ class TestDetailScreen extends StatefulWidget {
   State<TestDetailScreen> createState() => _TestDetailScreenState();
 }
 
+enum _MoreAction { delete }
+
 class _TestDetailScreenState extends State<TestDetailScreen> {
   late final TestDetailController _c;
   late final bool _owns;
@@ -112,9 +114,59 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
     if (mounted) await _c.refresh();
   }
 
+  /// Explicit confirmation; a single tap never deletes.
+  Future<void> _confirmDelete() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Test?'),
+        content: const Text(
+          'This draft test will be removed from your test list. '
+          'This cannot be undone from the app.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Delete Test'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await _delete();
+  }
+
+  Future<void> _delete() => _run(() async {
+        await _c.deleteDraft();
+        if (!mounted) return;
+        // Feedback on the root messenger so it survives leaving this route.
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(const SnackBar(content: Text('Test deleted.')));
+        // Opened from the listing → pop (the listing refreshes on return);
+        // cold-started deep link → go to My Drafts.
+        if (context.canPop()) {
+          context.pop();
+        } else {
+          context.go('/tests/drafts');
+        }
+      });
+
   @override
   Widget build(BuildContext context) {
     final test = _c.test;
+    if (_c.isDeleted) {
+      // Deleted in this session: nothing to act on while we navigate away.
+      return Scaffold(
+        appBar: AppBar(title: const Text('Test')),
+        body: const Center(child: Text('Test deleted.')),
+      );
+    }
     if (_c.isLoading && test == null) {
       return Scaffold(
         appBar: AppBar(title: const Text('Test')),
@@ -146,7 +198,31 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
     final startReason = _c.startBlockReason(formatDateTime: TestFormatters.dateTime);
 
     return Scaffold(
-      appBar: AppBar(title: Text(test.title)),
+      appBar: AppBar(
+        title: Text(test.title),
+        actions: [
+          // Draft-only secondary action, tucked into "More" (never a
+          // prominent destructive button on every detail screen).
+          if (_c.canDelete)
+            PopupMenuButton<_MoreAction>(
+              tooltip: 'More',
+              enabled: !_c.isBusy,
+              onSelected: (a) {
+                if (a == _MoreAction.delete) _confirmDelete();
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(
+                  value: _MoreAction.delete,
+                  child: ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(Icons.delete_outline),
+                    title: Text('Delete Test'),
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
       body: RefreshIndicator(
         onRefresh: _c.refresh,
         child: ListView(

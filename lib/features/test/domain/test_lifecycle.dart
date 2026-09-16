@@ -39,6 +39,15 @@ abstract final class TestLifecycle {
   static bool canPublish({required bool isOwner, required TestStatus status}) =>
       isOwner && status == TestStatus.draft;
 
+  /// V1 delete: creator + draft + not already soft-deleted. Mirrors
+  /// `rpc_delete_test`, which enforces the same rule server-side.
+  static bool canDelete({
+    required bool isOwner,
+    required TestStatus status,
+    required bool isSoftDeleted,
+  }) =>
+      isOwner && status == TestStatus.draft && !isSoftDeleted;
+
   /// Owner may request batch results once the test is over.
   static bool canGenerateResults({
     required bool isOwner,
