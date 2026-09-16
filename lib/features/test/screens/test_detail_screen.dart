@@ -177,10 +177,10 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
                   _row('Max participants', '${test.maxParticipants}'),
                 _row('Late join', test.allowLateJoin ? 'Allowed' : 'Not allowed'),
               ]),
-            if (_c.isOwner && (test.accessCode != null || test.joinCode != null))
+            if (_c.isOwner && (test.accessCode != null || _c.showsJoinCode))
               _section(context, 'Access', [
                 if (test.accessCode != null) _row('Access code', 'Set'),
-                if (test.joinCode != null) _row('Join code', test.joinCode!),
+                if (_c.showsJoinCode) _row('Join code', test.joinCode!),
               ]),
             if (_c.isOwner && _c.latestBatch != null)
               _section(context, 'Batch results', [

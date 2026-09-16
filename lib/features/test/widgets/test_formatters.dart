@@ -16,8 +16,10 @@ abstract final class TestFormatters {
     return '${minutes}m';
   }
 
-  static String dateTime(DateTime? d) {
-    if (d == null) return '--';
+  /// Always renders in the device's local zone (server values are instants).
+  static String dateTime(DateTime? value) {
+    if (value == null) return '--';
+    final d = value.toLocal();
     return '${d.day}/${d.month}/${d.year} '
         '${d.hour}:${d.minute.toString().padLeft(2, '0')}';
   }

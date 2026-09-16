@@ -124,18 +124,20 @@ void main() {
       }
     });
 
-    test('published: window enforced; live/ready: end enforced', () {
+    test('every startable status is subject to the starts_at/ends_at window', () {
       String? r(TestStatus s, {DateTime? starts, DateTime? ends}) =>
           TestLifecycle.startBlockReason(
               status: s, startsAt: starts, endsAt: ends, now: now);
       expect(r(TestStatus.published), isNull);
-      expect(r(TestStatus.published, starts: future), contains('not started'));
+      expect(r(TestStatus.published, starts: future), startsWith('Test starts at'));
       expect(r(TestStatus.published, ends: past), contains('ended'));
-      expect(r(TestStatus.scheduled, starts: future), contains('not started'));
+      expect(r(TestStatus.scheduled, starts: future), startsWith('Test starts at'));
       expect(r(TestStatus.scheduled, starts: past), isNull);
       expect(r(TestStatus.live, ends: past), contains('ended'));
       expect(r(TestStatus.live), isNull);
       expect(r(TestStatus.ready, ends: future), isNull);
+      expect(r(TestStatus.live, starts: future), startsWith('Test starts at'));
+      expect(r(TestStatus.scheduled, ends: past), contains('ended'));
     });
 
     test('categorize mirrors the four listing tabs', () {

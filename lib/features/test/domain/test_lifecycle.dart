@@ -4,6 +4,9 @@ import 'test_mode.dart';
 /// Where a test shows up in the listing.
 enum ListingCategory { upcoming, challengeWithFriends, previous, drafts, hidden }
 
+/// Position of "now" relative to a test's `starts_at` / `ends_at` window.
+enum SchedulePhase { notStarted, active, ended }
+
 /// Centralized, server-mirroring lifecycle rules for tests.
 ///
 /// These are UX gates only: every action is re-checked by the server
@@ -43,12 +46,32 @@ abstract final class TestLifecycle {
   }) =>
       isOwner && (status == TestStatus.completed || status == TestStatus.ended);
 
+  /// Effective schedule phase from the window alone (instants compared, so
+  /// the zone of [now] / [startsAt] / [endsAt] does not matter). Mirrors
+  /// `_fn_start_attempt_core`: blocked while `now() < starts_at`, ended once
+  /// `now() > ends_at` — exactly at either boundary the test is available.
+  static SchedulePhase phase({
+    required DateTime? startsAt,
+    required DateTime? endsAt,
+    required DateTime now,
+  }) {
+    if (startsAt != null && now.isBefore(startsAt)) return SchedulePhase.notStarted;
+    if (endsAt != null && now.isAfter(endsAt)) return SchedulePhase.ended;
+    return SchedulePhase.active;
+  }
+
   /// Null when the test can be started now; otherwise a user-facing reason.
+  ///
+  /// UX gate only, evaluated with the device clock; the server re-checks the
+  /// same rules with `now()` when the attempt is actually started. Every
+  /// startable status is subject to the window (the server does not special-
+  /// case `published` vs `scheduled` vs `live`).
   static String? startBlockReason({
     required TestStatus status,
     required DateTime? startsAt,
     required DateTime? endsAt,
     required DateTime now,
+    bool allowLateJoin = false,
     String Function(DateTime)? formatDateTime,
   }) {
     String fmt(DateTime d) => formatDateTime?.call(d) ?? d.toString();
@@ -57,21 +80,16 @@ abstract final class TestLifecycle {
         return 'This test is still a draft.';
       case TestStatus.scheduled:
       case TestStatus.published:
-        if (startsAt != null && startsAt.isAfter(now)) {
-          return 'Test has not started yet. Starts ${fmt(startsAt)}.';
-        }
-        if (status == TestStatus.published &&
-            endsAt != null &&
-            endsAt.isBefore(now)) {
-          return 'This test has ended.';
-        }
-        return null;
       case TestStatus.live:
       case TestStatus.ready:
-        if (endsAt != null && endsAt.isBefore(now)) {
-          return 'This test has ended.';
+        switch (phase(startsAt: startsAt, endsAt: endsAt, now: now)) {
+          case SchedulePhase.notStarted:
+            return 'Test starts at ${fmt(startsAt!)}.';
+          case SchedulePhase.ended:
+            return allowLateJoin ? null : 'Test ended.';
+          case SchedulePhase.active:
+            return null;
         }
-        return null;
       case TestStatus.completed:
       case TestStatus.ended:
       case TestStatus.evaluated:
@@ -102,8 +120,9 @@ abstract final class TestLifecycle {
     if (isTerminal(status)) return ListingCategory.previous;
 
     final mode = TestMode.fromDb(testMode);
-    final notYetStarted = startsAt != null && startsAt.isAfter(now);
-    final ended = endsAt != null && endsAt.isBefore(now);
+    final window = phase(startsAt: startsAt, endsAt: endsAt, now: now);
+    final notYetStarted = window == SchedulePhase.notStarted;
+    final ended = window == SchedulePhase.ended;
 
     switch (status) {
       case TestStatus.scheduled:

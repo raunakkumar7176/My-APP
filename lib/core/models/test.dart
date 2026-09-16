@@ -1,5 +1,16 @@
 enum TestStatus { draft, scheduled, live, ready, published, completed, ended, evaluated, cancelled, archived, expired, unknown }
 
+/// Parses a Supabase `timestamptz` value (ISO-8601 with offset, e.g.
+/// `2026-09-16T17:04:00+00:00`) into a **local** [DateTime].
+///
+/// `DateTime.parse` keeps offset-bearing strings in UTC; instant comparisons
+/// are correct either way, but display and pickers must use local time or
+/// the shown clock time is silently wrong for the user's zone.
+DateTime? parseTimestamp(Object? value) {
+  if (value is! String || value.isEmpty) return null;
+  return DateTime.parse(value).toLocal();
+}
+
 TestStatus _parseTestStatus(String? value) {
   switch (value) {
     case 'draft':
@@ -134,8 +145,8 @@ final class Test {
       durationSec: (json['duration_sec'] as num?)?.toInt(),
       marksPerQuestion: (json['marks_per_question'] as num?)?.toDouble(),
       negativeMarks: (json['negative_marks'] as num?)?.toDouble(),
-      startsAt: json['starts_at'] != null ? DateTime.parse(json['starts_at'] as String) : null,
-      endsAt: json['ends_at'] != null ? DateTime.parse(json['ends_at'] as String) : null,
+      startsAt: parseTimestamp(json['starts_at']),
+      endsAt: parseTimestamp(json['ends_at']),
       groupId: json['group_id'] as String?,
       accessCode: json['access_code'] as String?,
       joinCode: json['join_code'] as String?,
@@ -174,8 +185,8 @@ final class Test {
       'duration_sec': durationSec,
       'marks_per_question': marksPerQuestion,
       'negative_marks': negativeMarks,
-      'starts_at': startsAt?.toIso8601String(),
-      'ends_at': endsAt?.toIso8601String(),
+      'starts_at': startsAt?.toUtc().toIso8601String(),
+      'ends_at': endsAt?.toUtc().toIso8601String(),
       'group_id': groupId,
       'test_mode': testMode,
       'max_participants': maxParticipants,

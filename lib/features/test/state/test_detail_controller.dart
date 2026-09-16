@@ -1,4 +1,3 @@
-
 import '../../../core/errors/app_error.dart';
 import '../../../core/models/question.dart';
 import '../../../core/models/result_batch.dart';
@@ -11,6 +10,7 @@ import '../data/test_repository.dart';
 import '../domain/backend_mapping.dart';
 import '../domain/test_kind.dart';
 import '../domain/test_lifecycle.dart';
+import '../domain/test_mode.dart';
 import 'disposable_notifier.dart';
 
 /// Everything a started attempt needs to open the taking screen.
@@ -79,6 +79,14 @@ class TestDetailController extends DisposableNotifier {
       TestLifecycle.canGenerateResults(isOwner: isOwner, status: _test!.status) &&
       (_batch == null || _batch!.canTrigger);
 
+  /// Presentation-only window phase (device clock). The server decides for
+  /// real when `start()` is called.
+  SchedulePhase? get phase {
+    final t = _test;
+    if (t == null) return null;
+    return TestLifecycle.phase(startsAt: t.startsAt, endsAt: t.endsAt, now: _clock());
+  }
+
   /// Null when startable; else a user-facing reason.
   String? startBlockReason({String Function(DateTime)? formatDateTime}) {
     final t = _test;
@@ -88,9 +96,15 @@ class TestDetailController extends DisposableNotifier {
       startsAt: t.startsAt,
       endsAt: t.endsAt,
       now: _clock(),
+      allowLateJoin: t.allowLateJoin,
       formatDateTime: formatDateTime,
     );
   }
+
+  /// Join codes are a sharing feature (Challenge with Friends / group); a
+  /// Self test's stored code is not shown even if the row carries one.
+  bool get showsJoinCode =>
+      _test?.joinCode != null && TestMode.fromDb(_test?.testMode) != TestMode.self;
 
   Future<void> load() async {
     _loading = true;
