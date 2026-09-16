@@ -81,22 +81,22 @@ class _QuestionReviewScreenState extends State<QuestionReviewScreen> {
                 )
               : ListView.builder(
                   padding: const EdgeInsets.all(16),
-                  itemCount: _c.questions.length + (_c.answersUnreadable ? 1 : 0),
+                  itemCount: _c.questions.length + (_c.answersLoadFailed ? 1 : 0),
                   itemBuilder: (context, index) {
-                    if (_c.answersUnreadable && index == 0) {
+                    if (_c.answersLoadFailed && index == 0) {
                       return const Padding(
                         padding: EdgeInsets.only(bottom: 12),
                         child: MaterialBanner(
                           leading: Icon(Icons.info_outline, size: 20),
                           content: Text(
-                            'Your selections cannot be shown on this backend yet; '
+                            'Your selections could not be loaded; '
                             'scoring was done on the server.',
                           ),
                           actions: [SizedBox.shrink()],
                         ),
                       );
                     }
-                    final i = _c.answersUnreadable ? index - 1 : index;
+                    final i = _c.answersLoadFailed ? index - 1 : index;
                     final q = _c.questions[i];
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 12),

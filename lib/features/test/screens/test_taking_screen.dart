@@ -269,15 +269,17 @@ class _TestTakingScreenState extends State<TestTakingScreen> {
         ),
         body: Column(
           children: [
-            if (_c.answersUnreadable)
-              const MaterialBanner(
-                padding: EdgeInsets.fromLTRB(16, 8, 8, 8),
-                leading: Icon(Icons.info_outline, size: 20),
-                content: Text(
-                  'Previously saved answers cannot be shown on this backend. '
+            if (_c.answersLoadFailed)
+              MaterialBanner(
+                padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+                leading: const Icon(Icons.info_outline, size: 20),
+                content: const Text(
+                  'Your earlier answers could not be restored right now. '
                   'New answers are still saved and scored.',
                 ),
-                actions: [SizedBox.shrink()],
+                actions: [
+                  TextButton(onPressed: _c.reloadSavedAnswers, child: const Text('Retry')),
+                ],
               ),
             Expanded(
               child: PageView.builder(

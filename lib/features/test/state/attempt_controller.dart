@@ -61,7 +61,7 @@ class AttemptController extends ChangeNotifier {
   String? _error;
   int _currentIndex = 0;
   Timer? _autosaveTimer;
-  bool _answersUnreadable = false;
+  bool _answersLoadFailed = false;
 
   Attempt? get attempt => _attempt;
   Test? get test => _test;
@@ -72,10 +72,10 @@ class AttemptController extends ChangeNotifier {
   String? get error => _error;
   int get currentIndex => _currentIndex;
 
-  /// True when the backend forbids reading saved answers back (verified live:
-  /// no SELECT grant on `answers`). Answers are still saved server-side and
-  /// scored; they just cannot be shown again after leaving the screen.
-  bool get answersUnreadable => _answersUnreadable;
+  /// True when the saved-answers read failed on this load (network/RLS).
+  /// The attempt still works and new answers are still saved; the screen
+  /// tells the user that earlier selections could not be restored.
+  bool get answersLoadFailed => _answersLoadFailed;
 
   TestKind get kind => BackendMapping.fromBackend(_test?.testMode, _test?.settings);
 
@@ -151,17 +151,29 @@ class AttemptController extends ChangeNotifier {
     }
   }
 
+  /// Resume: restores saved `selected_option` (server array index) and
+  /// `marked_for_review` per question id. Questions without a row stay
+  /// unanswered. On failure nothing is fabricated; [answersLoadFailed] lets
+  /// the screen say so.
   Future<void> _loadExistingAnswers() async {
     try {
       for (final a in await _answers.forAttempt(_attempt!.id)) {
+        // Unsaved local edits made before a retry win over the server copy.
+        if (_dirty && _answersById.containsKey(a.questionId)) continue;
         _answersById[a.questionId] = a;
       }
-    } on AnswerReadUnavailable {
-      _answersUnreadable = true;
-      AppLogger.warning('answers SELECT forbidden for this role; resume shows no saved answers');
+      _answersLoadFailed = false;
     } catch (e) {
-      AppLogger.warning('Existing answers unavailable: $e');
+      _answersLoadFailed = true;
+      AppLogger.warning('Saved answers could not be loaded: $e');
     }
+  }
+
+  /// Retry restoring saved answers without restarting the attempt.
+  Future<void> reloadSavedAnswers() async {
+    if (_attempt == null) return;
+    await _loadExistingAnswers();
+    notifyListeners();
   }
 
   static Test _fallbackTest(String id, String? title) => Test(
