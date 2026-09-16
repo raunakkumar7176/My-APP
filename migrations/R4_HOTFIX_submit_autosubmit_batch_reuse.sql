@@ -117,42 +117,209 @@ REVOKE ALL ON FUNCTION public.fn_auto_submit(uuid) FROM authenticated;
 -- Why: result_batches has UNIQUE (test_id) — exactly one batch per test —
 -- but the live body only reuses pending/processing batches and otherwise
 -- INSERTs, so a test whose batch is completed/failed hits
--- result_batches_test_id_key (proven live, batch 8c282e91… status completed).
+-- result_batches_test_id_key (proven live: batch 8c282e91…, status completed).
 --
--- !! BLOCKED — the live body was supplied with its processing section
--- !! elided ("..."). It must be preserved verbatim, so this step is not
--- !! runnable until the full `pg_get_functiondef` text is pasted in.
--- !! The ONLY change to make is the block below, inserted immediately after
--- !! the GENERATE_RESULTS_FORBIDDEN authorization check and BEFORE the
--- !! existing "pending/processing" lookup + INSERT. Everything else,
--- !! including the processing loop and the final jsonb_build_object,
--- !! stays byte-for-byte. Do not modify the existing batch row.
---
---   -- Reuse: result_batches is UNIQUE (test_id), so at most one row can
---   -- exist. Any existing batch (pending, processing, completed, failed)
---   -- is returned as-is with reused = true; a second INSERT is impossible.
---   SELECT *
---     INTO v_batch
---     FROM public.result_batches
---    WHERE test_id = p_test_id
---    LIMIT 1;
---
---   IF v_batch.id IS NOT NULL THEN
---     RETURN jsonb_build_object(
---       'batch_id',      v_batch.id,
---       'test_id',       v_batch.test_id,
---       'status',        v_batch.status,
---       'reports_done',  v_batch.reports_done,
---       'reports_total', v_batch.reports_total,
---       'errors',        0,
---       'reused',        true
---     );
---   END IF;
---
--- NOTE for the paste: if the live final RETURN builds `errors` from
--- v_errors, keep that expression there; the reuse branch returns 0 because
--- no processing ran in this call. Match the key names exactly to the live
--- final RETURN so the client contract is unchanged.
+-- Baseline: verbatim live pg_get_functiondef (docs/live/rpc_generate_results.live.sql).
+-- ONLY change: the existing-batch lookup drops
+--     AND status IN ('pending'::public.batch_status, 'processing'::public.batch_status)
+-- so any row for test_id is returned unchanged via the existing reuse block
+-- (reused = true, errors = 0, no INSERT, no processing). When no row exists
+-- the processing logic runs exactly as before. Signature, return contract,
+-- authorization, loop, exception handling, final status and final RETURN
+-- are untouched.
+CREATE OR REPLACE FUNCTION public.rpc_generate_results(p_test_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_user uuid := auth.uid();
+  v_test public.tests;
+  v_batch public.result_batches;
+  v_attempt record;
+  v_total integer := 0;
+  v_done integer := 0;
+  v_errors integer := 0;
+  v_error_message text := null;
+BEGIN
+  -- Authentication
+  IF v_user IS NULL THEN
+    RAISE EXCEPTION 'AUTH_REQUIRED';
+  END IF;
+
+  -- Lock the test row so concurrent batch triggers cannot race
+  SELECT *
+  INTO v_test
+  FROM public.tests
+  WHERE id = p_test_id
+    AND is_soft_deleted = false
+  FOR UPDATE;
+
+  IF v_test.id IS NULL THEN
+    RAISE EXCEPTION 'TEST_NOT_FOUND';
+  END IF;
+
+  -- Authorization:
+  -- owner can always generate results
+  -- group members need GENERATE_RESULTS permission
+  IF v_test.created_by <> v_user THEN
+    IF v_test.group_id IS NULL
+       OR NOT public.fn_has_permission(
+            v_test.group_id,
+            v_user,
+            'GENERATE_RESULTS'::public.app_permission
+          )
+    THEN
+      RAISE EXCEPTION 'GENERATE_RESULTS_FORBIDDEN';
+    END IF;
+  END IF;
+
+  -- Reuse ANY existing batch for this test (result_batches is UNIQUE (test_id):
+  -- at most one row can exist, so a second INSERT is impossible). The row is
+  -- returned unchanged; nothing is reset or reprocessed.
+  SELECT *
+  INTO v_batch
+  FROM public.result_batches
+  WHERE test_id = p_test_id
+  ORDER BY created_at DESC
+  LIMIT 1
+  FOR UPDATE;
+
+  IF v_batch.id IS NOT NULL THEN
+    RETURN jsonb_build_object(
+      'batch_id', v_batch.id,
+      'test_id', v_batch.test_id,
+      'status', v_batch.status,
+      'reports_done', v_batch.reports_done,
+      'reports_total', v_batch.reports_total,
+      'errors', 0,
+      'reused', true
+    );
+  END IF;
+
+  -- Count attempts that are eligible for scoring.
+  SELECT count(*)
+  INTO v_total
+  FROM public.attempts a
+  WHERE a.test_id = p_test_id
+    AND a.status IN (
+      'submitted'::public.attempt_status,
+      'auto_submitted'::public.attempt_status,
+      'scored'::public.attempt_status
+    );
+
+  -- Create a new batch.
+  INSERT INTO public.result_batches (
+    test_id,
+    requested_by,
+    status,
+    reports_done,
+    reports_total,
+    totals
+  )
+  VALUES (
+    p_test_id,
+    v_user,
+    'pending'::public.batch_status,
+    0,
+    v_total,
+    '{}'::jsonb
+  )
+  RETURNING *
+  INTO v_batch;
+
+  -- Move batch into processing.
+  UPDATE public.result_batches
+  SET status = 'processing'::public.batch_status
+  WHERE id = v_batch.id;
+
+  -- Process every eligible attempt independently.
+  FOR v_attempt IN
+    SELECT a.id
+    FROM public.attempts a
+    WHERE a.test_id = p_test_id
+      AND a.status IN (
+        'submitted'::public.attempt_status,
+        'auto_submitted'::public.attempt_status,
+        'scored'::public.attempt_status
+      )
+    ORDER BY a.started_at, a.id
+  LOOP
+    BEGIN
+      PERFORM public.fn_score_attempt(v_attempt.id);
+      v_done := v_done + 1;
+
+      UPDATE public.result_batches
+      SET reports_done = v_done
+      WHERE id = v_batch.id;
+
+    EXCEPTION WHEN OTHERS THEN
+      v_errors := v_errors + 1;
+      v_error_message := SQLERRM;
+
+      UPDATE public.result_batches
+      SET reports_done = v_done
+      WHERE id = v_batch.id;
+    END;
+  END LOOP;
+
+  -- Final batch state.
+  IF v_errors = 0 THEN
+    UPDATE public.result_batches
+    SET
+      status = 'completed'::public.batch_status,
+      reports_done = v_done,
+      totals = jsonb_build_object(
+        'processed', v_done,
+        'errors', 0
+      ),
+      completed_at = now()
+    WHERE id = v_batch.id;
+
+  ELSIF v_done > 0 THEN
+    UPDATE public.result_batches
+    SET
+      status = 'partially_completed'::public.batch_status,
+      reports_done = v_done,
+      totals = jsonb_build_object(
+        'processed', v_done,
+        'errors', v_errors,
+        'last_error', v_error_message
+      ),
+      completed_at = now()
+    WHERE id = v_batch.id;
+
+  ELSE
+    UPDATE public.result_batches
+    SET
+      status = 'failed'::public.batch_status,
+      reports_done = 0,
+      totals = jsonb_build_object(
+        'processed', 0,
+        'errors', v_errors,
+        'last_error', v_error_message
+      ),
+      completed_at = now()
+    WHERE id = v_batch.id;
+  END IF;
+
+  SELECT *
+  INTO v_batch
+  FROM public.result_batches
+  WHERE id = v_batch.id;
+
+  RETURN jsonb_build_object(
+    'batch_id', v_batch.id,
+    'test_id', v_batch.test_id,
+    'status', v_batch.status,
+    'reports_done', v_batch.reports_done,
+    'reports_total', v_batch.reports_total,
+    'errors', v_errors,
+    'reused', false
+  );
+END;
+$function$;
 
 -- ------------------------------------------------------------
 -- POSTFLIGHT (read-only)
