@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 
 import '../../../core/errors/app_error.dart';
 import '../../../core/models/question.dart';
@@ -12,6 +11,7 @@ import '../data/test_repository.dart';
 import '../domain/backend_mapping.dart';
 import '../domain/test_kind.dart';
 import '../domain/test_lifecycle.dart';
+import 'disposable_notifier.dart';
 
 /// Everything a started attempt needs to open the taking screen.
 typedef LaunchedAttempt = ({StartedAttempt started, List<Question> questions, Test test});
@@ -19,7 +19,7 @@ typedef LaunchedAttempt = ({StartedAttempt started, List<Question> questions, Te
 /// Loads one test by id (never from a route object) and exposes the
 /// lifecycle-derived action flags. All actions go through repositories; the
 /// server re-validates each one.
-class TestDetailController extends ChangeNotifier {
+class TestDetailController extends DisposableNotifier {
   TestDetailController({
     required this.testId,
     TestRepository? tests,

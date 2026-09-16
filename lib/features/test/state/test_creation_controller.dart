@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 
 import '../../../core/errors/app_error.dart';
 import '../../../core/logging/app_logger.dart';
@@ -13,6 +12,7 @@ import '../domain/backend_mapping.dart';
 import '../domain/publish_readiness.dart';
 import '../domain/test_kind.dart';
 import '../models/question_draft.dart';
+import 'disposable_notifier.dart';
 
 /// Owns the whole create/edit/publish orchestration. Screens render its
 /// state and call its methods; every server rule is re-checked by the RPCs.
@@ -25,7 +25,7 @@ import '../models/question_draft.dart';
 ///  - each syllabus node is added/removed at most once;
 ///  - after a save the server question list is reloaded through the safe
 ///    RPC (never `public.questions`).
-class TestCreationController extends ChangeNotifier {
+class TestCreationController extends DisposableNotifier {
   TestCreationController({
     this.editingTestId,
     TestRepository? tests,

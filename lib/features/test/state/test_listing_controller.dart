@@ -1,15 +1,15 @@
-import 'package:flutter/foundation.dart';
 
 import '../../../core/errors/app_error.dart';
 import '../../../core/logging/app_logger.dart';
 import '../../../core/models/test.dart';
 import '../data/test_repository.dart';
 import '../domain/test_lifecycle.dart';
+import 'disposable_notifier.dart';
 
 /// Loads the tests visible to the user and buckets them with the shared
 /// lifecycle rules. Screens only read [testsFor] / [drafts] and call
 /// [load] / [refresh].
-class TestListingController extends ChangeNotifier {
+class TestListingController extends DisposableNotifier {
   TestListingController({
     TestRepository? repository,
     DateTime Function()? clock,

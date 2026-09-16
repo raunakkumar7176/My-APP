@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 
 import '../../../core/errors/app_error.dart';
 import '../../../core/logging/app_logger.dart';
@@ -18,12 +17,13 @@ import '../domain/backend_mapping.dart';
 import '../domain/deterministic_shuffle.dart';
 import '../domain/test_kind.dart';
 import 'attempt_launch_store.dart';
+import 'disposable_notifier.dart';
 
 /// Owns one attempt on the client: questions (safe RPC), answers, dirty
 /// tracking, autosave and submission. The server owns access, the deadline,
 /// answer validation and scoring; nothing here computes a score or a
 /// deadline.
-class AttemptController extends ChangeNotifier {
+class AttemptController extends DisposableNotifier {
   AttemptController({
     required this.attemptId,
     required this.testId,

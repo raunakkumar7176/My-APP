@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 
 import '../../../core/errors/app_error.dart';
 import '../../../core/logging/app_logger.dart';
@@ -17,13 +16,14 @@ import '../domain/backend_mapping.dart';
 import '../domain/result_analytics_mapper.dart';
 import '../domain/test_kind.dart';
 import 'attempt_launch_store.dart';
+import 'disposable_notifier.dart';
 
 /// Loads a submitted attempt's server result by attempt id, plus what the
 /// result and review screens display: the test, the user's history for
 /// that test, safe questions and the user's answers. Nothing is scored or
 /// graded on the client; per-question correctness is not available from
 /// the backend and is not fabricated.
-class ResultsController extends ChangeNotifier {
+class ResultsController extends DisposableNotifier {
   ResultsController({
     required this.attemptId,
     ResultRepository? results,
