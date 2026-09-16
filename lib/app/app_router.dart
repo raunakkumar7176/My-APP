@@ -5,8 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../core/services/auth_service.dart';
 import '../core/services/profile_service.dart';
-import '../features/auth/login_screen.dart';
-import '../features/auth/signup_screen.dart';
+import '../features/auth/auth_screen.dart';
 import '../features/auth/splash_screen.dart';
 import '../features/home/home_screen.dart';
 import '../features/profile/profile_screen.dart';
@@ -67,12 +66,12 @@ final class AppRouter {
       GoRoute(
         path: '/login',
         name: 'login',
-        builder: (context, state) => const LoginScreen(),
+        builder: (context, state) => const AuthScreen(),
       ),
       GoRoute(
         path: '/signup',
         name: 'signup',
-        builder: (context, state) => const SignUpScreen(),
+        builder: (context, state) => const AuthScreen(startWithSignup: true),
       ),
       GoRoute(
         path: '/home',
