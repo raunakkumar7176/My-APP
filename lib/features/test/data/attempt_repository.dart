@@ -55,7 +55,7 @@ class SupabaseAttemptRepository implements AttemptRepository {
       _guard(() async {
         final response = await _client.rpc('rpc_submit_attempt', params: {
           'p_attempt': attemptId,
-          'p_timed_out': timedOut,
+          'p_auto': timedOut, // live: rpc_submit_attempt(p_attempt uuid, p_auto boolean)
         });
         AppLogger.rpcShape('rpc_submit_attempt', response);
         return resultFromSubmitResponse(response, attemptId: attemptId);
