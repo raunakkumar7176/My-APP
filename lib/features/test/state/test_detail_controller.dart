@@ -1,7 +1,6 @@
 import 'package:flutter/foundation.dart';
 
 import '../../../core/errors/app_error.dart';
-import '../../../core/logging/app_logger.dart';
 import '../../../core/models/question.dart';
 import '../../../core/models/result_batch.dart';
 import '../../../core/models/test.dart';
@@ -72,10 +71,13 @@ class TestDetailController extends ChangeNotifier {
       _test != null &&
       TestLifecycle.canPublish(isOwner: isOwner, status: _test!.status);
 
+  /// Owner + test over + no batch known to be pending/processing. A batch
+  /// that completed, partially completed or failed may be re-requested; the
+  /// server answers idempotently (`reused`).
   bool get canGenerateResults =>
       _test != null &&
       TestLifecycle.canGenerateResults(isOwner: isOwner, status: _test!.status) &&
-      (_batch == null || _batch!.isTerminal);
+      (_batch == null || _batch!.canTrigger);
 
   /// Null when startable; else a user-facing reason.
   String? startBlockReason({String Function(DateTime)? formatDateTime}) {
@@ -97,13 +99,9 @@ class TestDetailController extends ChangeNotifier {
     try {
       _test = await _tests.getById(testId);
       if (_test == null) _error = 'Test not found.';
-      if (_test != null && isOwner) {
-        try {
-          _batch = await _results.latestBatch(testId);
-        } catch (e) {
-          AppLogger.warning('Batch status unavailable: $e');
-        }
-      }
+      // Batch state is known only from rpc_generate_results in this session
+      // (the result_batches SELECT policy is group-permission based, so a
+      // standalone owner cannot read the row); no table read here.
     } on AppError catch (e) {
       _error = e.message;
     } finally {
@@ -127,8 +125,12 @@ class TestDetailController extends ChangeNotifier {
         return (started: started, questions: qs, test: _test!);
       });
 
-  Future<void> generateResults() => _action(() async {
-        _batch = await _results.generateResults(testId);
+  /// Requests generation; the returned batch (from the RPC JSON) is the
+  /// authoritative state and is kept for display / button gating.
+  Future<ResultBatch> generateResults() => _action(() async {
+        final batch = await _results.generateResults(testId);
+        _batch = batch;
+        return batch;
       });
 
   Future<T> _action<T>(Future<T> Function() body) async {

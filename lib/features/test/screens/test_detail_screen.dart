@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/theme/app_colors.dart';
 import '../../../core/errors/app_error.dart';
+import '../../../core/models/result_batch.dart';
 import '../domain/test_lifecycle.dart';
 import '../state/attempt_launch_store.dart';
 import '../state/test_detail_controller.dart';
@@ -79,9 +80,32 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
       });
 
   Future<void> _generate() => _run(() async {
-        await _c.generateResults();
-        if (mounted) _snack('Result generation requested');
+        final batch = await _c.generateResults();
+        if (mounted) _snack(_batchMessage(batch), error: batch.isFailed);
       });
+
+  /// Communicates exactly what the RPC returned; `errors > 0` is a partial
+  /// outcome, not an RPC failure.
+  static String _batchMessage(ResultBatch b) {
+    final progress = '${b.reportsDone ?? 0} / ${b.reportsTotal ?? 0} reports';
+    final errors = b.hasErrors ? ', ${b.errors} error(s)' : '';
+    final prefix = b.reused ? 'Results already generated' : 'Results generated';
+    switch (b.status) {
+      case BatchStatus.completed:
+        return '$prefix: $progress$errors';
+      case BatchStatus.partiallyCompleted:
+        return '$prefix (partial): $progress$errors';
+      case BatchStatus.failed:
+        return 'Result generation failed: $progress$errors';
+      case BatchStatus.pending:
+      case BatchStatus.processing:
+        return b.reused
+            ? 'Result generation already in progress: $progress'
+            : 'Result generation started: $progress';
+      case BatchStatus.unknown:
+        return '$prefix: $progress$errors';
+    }
+  }
 
   Future<void> _edit() async {
     await context.push('/tests/${widget.testId}/edit');
@@ -163,6 +187,9 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
                 _row('Status', _c.latestBatch!.status.name),
                 _row('Reports',
                     '${_c.latestBatch!.reportsDone ?? 0} / ${_c.latestBatch!.reportsTotal ?? 0}'),
+                if (_c.latestBatch!.hasErrors)
+                  _row('Errors', '${_c.latestBatch!.errors}'),
+                if (_c.latestBatch!.reused) _row('Note', 'Existing batch reused'),
               ]),
             const SizedBox(height: 16),
             ..._actions(startReason),

@@ -16,10 +16,12 @@ abstract interface class ResultRepository {
   /// The current user's results for a test, newest first (attempt history).
   Future<List<Result>> mineForTest(String testId);
 
-  Future<ResultBatch?> latestBatch(String testId);
-
-  /// Owner-only on the server. Returns the batch when the RPC provides one.
-  Future<ResultBatch?> generateResults(String testId);
+  /// Requests batch result generation via `rpc_generate_results`. The server
+  /// authorizes (test owner, or group user with GENERATE_RESULTS) and returns
+  /// the batch state directly — that JSON is the authoritative result. The
+  /// client never reads `public.result_batches` for this (its SELECT policy
+  /// is group-permission based and would hide a standalone owner's batch).
+  Future<ResultBatch> generateResults(String testId);
 }
 
 class SupabaseResultRepository implements ResultRepository {
@@ -55,30 +57,26 @@ class SupabaseResultRepository implements ResultRepository {
       }, TestErrorContext.load);
 
   @override
-  Future<ResultBatch?> latestBatch(String testId) => _guard(() async {
-        final row = await _client
-            .from('result_batches')
-            .select()
-            .eq('test_id', testId)
-            .order('created_at', ascending: false)
-            .limit(1)
-            .maybeSingle();
-        return row == null ? null : ResultBatch.fromJson(row);
-      }, TestErrorContext.load);
-
-  @override
-  Future<ResultBatch?> generateResults(String testId) => _guard(() async {
+  Future<ResultBatch> generateResults(String testId) => _guard(() async {
         final response = await _client
             .rpc('rpc_generate_results', params: {'p_test_id': testId});
         AppLogger.rpcShape('rpc_generate_results', response);
-        final data =
-            response is List && response.isNotEmpty ? response.first : response;
-        if (data is Map<String, dynamic> && data['id'] != null) {
-          return ResultBatch.fromJson(data);
-        }
-        // RPC acknowledged without a row: read the latest batch once.
-        return latestBatch(testId);
+        return batchFromRpcResponse(response);
       }, TestErrorContext.generic);
+
+  /// Parses the RPC jsonb (`{batch_id, test_id, status, reports_done,
+  /// reports_total, errors, reused}`; a one-element list is tolerated).
+  /// Anything without `batch_id` is an unexpected response — reported, never
+  /// papered over with a table read.
+  static ResultBatch batchFromRpcResponse(dynamic response) {
+    final data =
+        response is List && response.isNotEmpty ? response.first : response;
+    if (data is Map && data['batch_id'] is String) {
+      return ResultBatch.fromRpcJson(Map<String, dynamic>.from(data));
+    }
+    throw const DataError(
+        message: 'Result generation returned an unexpected response.');
+  }
 
   static Future<T> _guard<T>(
       Future<T> Function() body, TestErrorContext context) async {

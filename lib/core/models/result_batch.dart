@@ -35,6 +35,8 @@ final class ResultBatch {
     this.totals,
     this.createdAt,
     this.completedAt,
+    this.errors,
+    this.reused = false,
   });
 
   final String id;
@@ -47,6 +49,14 @@ final class ResultBatch {
   final DateTime? createdAt;
   final DateTime? completedAt;
 
+  /// Number of per-user reports that failed inside the batch (from the RPC).
+  /// `errors > 0` does NOT mean the RPC call failed.
+  final int? errors;
+
+  /// True when `rpc_generate_results` returned an existing batch instead of
+  /// starting a new one (idempotent re-request).
+  final bool reused;
+
   bool get isPending => status == BatchStatus.pending;
   bool get isProcessing => status == BatchStatus.processing;
   bool get isPartiallyCompleted => status == BatchStatus.partiallyCompleted;
@@ -54,12 +64,30 @@ final class ResultBatch {
   bool get isFailed => status == BatchStatus.failed;
   bool get isTerminal => isCompleted || isFailed;
   bool get canTrigger => !isPending && !isProcessing;
+  bool get hasErrors => (errors ?? 0) > 0;
 
   double get progress {
     if (reportsTotal == null || reportsTotal == 0) return 0;
     return (reportsDone ?? 0) / reportsTotal!;
   }
 
+  /// Parses the LIVE `rpc_generate_results(p_test_id)` jsonb (verified
+  /// 2026-09-16): `{batch_id, test_id, status, reports_done, reports_total,
+  /// errors, reused}`. Row-only fields (`requested_by`, `totals`, timestamps)
+  /// are not returned by the RPC and stay null — never invented.
+  factory ResultBatch.fromRpcJson(Map<String, dynamic> json) {
+    return ResultBatch(
+      id: json['batch_id'] as String,
+      testId: json['test_id'] as String? ?? '',
+      status: _parseBatchStatus(json['status'] as String?),
+      reportsDone: (json['reports_done'] as num?)?.toInt(),
+      reportsTotal: (json['reports_total'] as num?)?.toInt(),
+      errors: (json['errors'] as num?)?.toInt(),
+      reused: json['reused'] == true,
+    );
+  }
+
+  /// Parses a `public.result_batches` row.
   factory ResultBatch.fromJson(Map<String, dynamic> json) {
     return ResultBatch(
       id: json['id'] as String,

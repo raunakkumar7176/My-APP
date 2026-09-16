@@ -250,12 +250,14 @@ class FakeResultRepository implements ResultRepository {
   @override
   Future<List<Result>> mineForTest(String testId) async => mine;
 
-  @override
-  Future<ResultBatch?> latestBatch(String testId) async => batch;
+  /// Raw jsonb the fake RPC returns (live shape). Parsed exactly like the
+  /// real repository so controller tests exercise the same mapping.
+  Map<String, dynamic>? rpcResponse;
 
   @override
-  Future<ResultBatch?> generateResults(String testId) async {
+  Future<ResultBatch> generateResults(String testId) async {
     calls.add('generate:$testId');
-    return batch;
+    if (batch != null) return batch!;
+    return SupabaseResultRepository.batchFromRpcResponse(rpcResponse);
   }
 }
