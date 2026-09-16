@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(flutter test *)",
+      "Bash(flutter analyze *)",
+      "Bash(flutter build *)",
+      "PowerShell($adb = \"$env:LOCALAPPDATA\\\\Android\\\\Sdk\\\\platform-tools\\\\adb.exe\"; $out = \"$env:TEMP\\\\claude_logcat_dump.txt\"; & $adb logcat -d -v time > $out; Write-Output \"lines: $\\(\\(Get-Content $out | Measure-Object -Line\\).Lines\\)\"; Select-String -Path $out -Pattern 'getMyDrafts|getAccessibleTests|_loadDrafts|_loadTests|PostgrestException|infinite recursion|does not exist' | ForEach-Object { $_.Line } | Select-Object -Last 60)",
+      "Bash(grep -n \"test\\('\\\\|status: TestStatus\\\\.\\\\|\\),$\\\\|true\\\\|false\")",
+      "Bash(grep -v \"^\\\\S*:\\\\s*//\")",
+      "Bash(grep -n 'AppLogger.*code\\\\b\\\\|AppLogger.*$code\\\\|AppLogger.*trimmed' lib/core/services/attempt_service.dart lib/features/test/widgets/join_with_code_sheet.dart)"
+    ]
+  }
+}

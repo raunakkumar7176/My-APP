@@ -1,0 +1,82 @@
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  exclude:
+    - build/**
+    - android/**
+    - ios/**
+    - web/**
+    - windows/**
+    - macos/**
+    - linux/**
+    - '**.g.dart'
+    - '**.freezed.dart'
+  errors:
+    missing_return: error
+    dead_code: warning
+    unused_import: warning
+    unused_local_variable: warning
+
+linter:
+  rules:
+    # Error prevention
+    - avoid_print
+    - avoid_relative_lib_imports
+    - avoid_slow_async_io
+    - cancel_subscriptions
+    - close_sinks
+    - empty_catches
+    - noop_primitive_operations
+    - use_key_in_widget_constructors
+    - sized_box_for_whitespace
+    - prefer_is_empty
+    - prefer_is_not_empty
+
+    # Style
+    - always_declare_return_types
+    - annotate_overrides
+    - avoid_empty_else
+    - avoid_function_literals_in_foreach_calls
+    - avoid_init_to_null
+    - avoid_renaming_method_parameters
+    - avoid_single_cascade_in_expression_statements
+    - avoid_unnecessary_containers
+    - await_only_futures
+    - camel_case_types
+    - constant_identifier_names
+    - no_leading_underscores_for_local_identifiers
+    - file_names
+    - non_constant_identifier_names
+    - overridden_fields
+    - prefer_const_constructors
+    - prefer_const_constructors_in_immutables
+    - prefer_const_declarations
+    - prefer_const_literals_to_create_immutables
+    - prefer_final_fields
+    - prefer_final_locals
+    - prefer_for_elements_to_map_fromIterable
+    - prefer_if_null_operators
+    - prefer_inlined_adds
+    - prefer_interpolation_to_compose_strings
+    - prefer_is_not_operator
+    - prefer_iterable_whereType
+    - prefer_null_aware_operators
+    - prefer_single_quotes
+    - prefer_typing_uninitialized_variables
+    - provide_deprecation_message
+    - recursive_getters
+    - sort_child_properties_last
+    - tighten_type_of_initializing_formals
+    - unnecessary_brace_in_string_interps
+    - unnecessary_const
+    - unnecessary_new
+    - unnecessary_null_aware_assignments
+    - unnecessary_null_in_if_null_operators
+    - unnecessary_nullable_for_final_variable_declarations
+    - unnecessary_overrides
+    - unnecessary_string_escapes
+    - unnecessary_string_interpolations
+    - unnecessary_this
+    - use_function_type_syntax_for_parameters
+    - use_super_parameters
+    - void_checks
