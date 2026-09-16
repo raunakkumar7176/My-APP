@@ -4,20 +4,31 @@ import 'package:go_router/go_router.dart';
 import '../../../core/errors/app_error.dart';
 import '../../../core/logging/app_logger.dart';
 import '../../../core/models/test.dart';
-import '../../../core/services/attempt_service.dart';
-import '../../../core/services/question_service.dart';
-import '../../../core/services/test_service.dart';
+import '../data/attempt_repository.dart';
+import '../data/question_repository.dart';
+import '../data/test_repository.dart';
+import '../domain/test_kind.dart';
+import '../state/attempt_launch_store.dart';
 
 /// "Challenge with Friends" entry by access/join code.
 ///
 /// Flow (all server-authoritative):
 ///   rpc_start_attempt_by_code(code)  → attempt (+ optional test_title)
-///   tests row via getTestById        → may be unreadable for a non-member;
+///   tests row via TestRepository     → may be unreadable for a non-member;
 ///                                      falls back to a minimal Test
 ///   get_test_questions_safe(test, code) → questions (never the answer key)
-///   → /test-taking
+///   → /attempts/:id/take?test=…&code=…  (ids only; launch handed over in memory)
 class JoinWithCodeSheet extends StatefulWidget {
-  const JoinWithCodeSheet({super.key});
+  const JoinWithCodeSheet({
+    this.attempts = const SupabaseAttemptRepository(),
+    this.questions = const SupabaseQuestionRepository(),
+    this.tests = const SupabaseTestRepository(),
+    super.key,
+  });
+
+  final AttemptRepository attempts;
+  final QuestionRepository questions;
+  final TestRepository tests;
 
   static Future<void> show(BuildContext context) {
     return showModalBottomSheet<void>(
@@ -28,8 +39,8 @@ class JoinWithCodeSheet extends StatefulWidget {
     );
   }
 
-  /// Builds the `Test` handed to the taking/result screens when the coded
-  /// test's row cannot be read by this user. Only `id`, `title` and
+  /// The `Test` handed to the taking/result screens when the coded test's
+  /// row cannot be read by this user. Only `id`, `title` and
   /// `shuffleQuestions` are consumed downstream.
   @visibleForTesting
   static Test fallbackTest({required String testId, String? title}) {
@@ -37,7 +48,7 @@ class JoinWithCodeSheet extends StatefulWidget {
       id: testId,
       createdBy: '',
       title: (title == null || title.trim().isEmpty)
-          ? 'Challenge with Friends'
+          ? TestKind.challengeWithFriends.label
           : title.trim(),
       status: TestStatus.live,
       testMode: 'live',
@@ -72,34 +83,31 @@ class _JoinWithCodeSheetState extends State<JoinWithCodeSheet> {
     });
 
     try {
-      final joined = await AttemptService.joinByCode(code);
-      final attempt = joined.attempt;
+      final started = await widget.attempts.startByCode(code);
+      final attempt = started.attempt;
 
       Test? test;
       try {
-        test = await TestService.getTestById(attempt.testId);
+        test = await widget.tests.getById(attempt.testId);
       } catch (e) {
         AppLogger.warning('Coded test row not readable, using fallback: $e');
       }
       test ??= JoinWithCodeSheet.fallbackTest(
         testId: attempt.testId,
-        title: joined.testTitle,
+        title: started.testTitle,
       );
 
-      final questions = await QuestionService.getQuestionsSafe(
-        testId: attempt.testId,
-        accessCode: code,
-      );
+      final questions = await widget.questions
+          .safeQuestions(attempt.testId, accessCode: code);
 
       if (!mounted) return;
-      // Grab the router before the sheet's context is popped.
+      AttemptLaunchStore.putLaunch(
+          started: started, questions: questions, test: test);
       final router = GoRouter.of(context);
       Navigator.of(context).pop();
-      router.go('/test-taking', extra: {
-        'attempt': attempt,
-        'questions': questions,
-        'test': test,
-      });
+      router.go(
+        '/attempts/${attempt.id}/take?test=${attempt.testId}&code=${Uri.encodeQueryComponent(code)}',
+      );
     } on AppError catch (e) {
       if (mounted) setState(() => _error = e.message);
     } catch (e) {
@@ -125,15 +133,10 @@ class _JoinWithCodeSheetState extends State<JoinWithCodeSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Join with code',
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
+          Text('Join with code', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 8),
-          Text(
-            'Enter the code shared by the test creator.',
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
+          Text('Enter the code shared by the test creator.',
+              style: Theme.of(context).textTheme.bodyMedium),
           const SizedBox(height: 16),
           TextField(
             controller: _controller,

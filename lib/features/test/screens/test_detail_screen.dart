@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/constants/theme/app_colors.dart';
 import '../../../core/errors/app_error.dart';
 import '../domain/test_lifecycle.dart';
+import '../state/attempt_launch_store.dart';
 import '../state/test_detail_controller.dart';
 import '../widgets/test_formatters.dart';
 
@@ -66,7 +67,15 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
   Future<void> _start() => _run(() async {
         final launched = await _c.start();
         if (!mounted) return;
-        context.go('/attempts/${launched.started.attempt.id}/take', extra: launched);
+        // Hand the server response to the taking screen in memory; the route
+        // itself carries ids only (a cold start falls back to server resume).
+        AttemptLaunchStore.putLaunch(
+          started: launched.started,
+          questions: launched.questions,
+          test: launched.test,
+        );
+        final a = launched.started.attempt;
+        context.go('/attempts/${a.id}/take?test=${a.testId}');
       });
 
   Future<void> _generate() => _run(() async {
