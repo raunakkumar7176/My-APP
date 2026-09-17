@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/constants/theme/app_colors.dart';
 import '../../../core/errors/app_error.dart';
 import '../../../core/models/result_batch.dart';
+import '../domain/attempt_policy.dart';
 import '../domain/test_lifecycle.dart';
 import '../state/attempt_launch_store.dart';
 import '../state/test_detail_controller.dart';
@@ -67,8 +68,12 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
         if (mounted) _snack('Test published successfully');
       });
 
-  Future<void> _start() => _run(() async {
-        final launched = await _c.start();
+  Future<void> _start() => _launch(_c.start);
+
+  Future<void> _reattempt() => _launch(_c.reattempt);
+
+  Future<void> _launch(Future<LaunchedAttempt> Function() action) => _run(() async {
+        final launched = await action();
         if (!mounted) return;
         // Hand the server response to the taking screen in memory; the route
         // itself carries ids only (a cold start falls back to server resume).
@@ -275,6 +280,63 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
     );
   }
 
+  /// State machine for the student CTA (mirrors [AttemptPolicyState.cta]):
+  /// Start Test → Continue Test → View Result [+ Re-attempt | limit reached].
+  /// "Back to Tests" is navigation only; only Re-attempt asks for attempt N+1.
+  List<Widget> _attemptActions(bool busy) {
+    final s = _c.attemptState;
+    final muted = Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: Theme.of(context).colorScheme.outline,
+        );
+    FilledButton primary(IconData icon, String label, VoidCallback onTap) =>
+        FilledButton.icon(
+          onPressed: busy ? null : onTap,
+          icon: busy ? _spinner() : Icon(icon),
+          label: Text(busy ? 'Starting…' : label),
+        );
+
+    // Attempts unreadable: offer a plain start; the server resumes or rejects.
+    if (s == null || _c.attemptsLoadFailed) {
+      return [primary(Icons.play_arrow, 'Start Test', _start)];
+    }
+
+    switch (s.cta) {
+      case AttemptCta.startTest:
+        return [primary(Icons.play_arrow, 'Start Test', _start)];
+      case AttemptCta.continueTest:
+        return [
+          Text('Attempt ${s.inProgress!.attemptNumber} · In progress',
+              textAlign: TextAlign.center, style: muted),
+          const SizedBox(height: 8),
+          primary(Icons.play_arrow, 'Continue Test', _start),
+        ];
+      case AttemptCta.reattempt:
+      case AttemptCta.limitReached:
+        final last = s.latestCompleted!;
+        return [
+          Text('Attempt ${last.attemptNumber} · Completed · ${s.usageLabel}',
+              textAlign: TextAlign.center, style: muted),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: busy ? null : () => context.push('/attempts/${last.id}/result'),
+            icon: const Icon(Icons.assessment_outlined),
+            label: const Text('View Result'),
+          ),
+          const SizedBox(height: 8),
+          if (s.cta == AttemptCta.reattempt)
+            primary(Icons.replay, 'Re-attempt', _reattempt)
+          else
+            Text(
+              s.settings.allowReattempt
+                  ? 'Re-attempt limit reached'
+                  : 'This test allows a single attempt',
+              textAlign: TextAlign.center,
+              style: muted,
+            ),
+        ];
+    }
+  }
+
   List<Widget> _actions(String? startReason) {
     final busy = _c.isBusy;
     final widgets = <Widget>[];
@@ -296,12 +358,18 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
     }
     if (!_c.canEdit) {
       if (startReason == null) {
-        widgets.add(FilledButton.icon(
-          onPressed: busy ? null : _start,
-          icon: busy ? _spinner() : const Icon(Icons.play_arrow),
-          label: Text(busy ? 'Starting…' : 'Start Test'),
-        ));
+        widgets.addAll(_attemptActions(busy));
       } else {
+        // Window closed / not open: a completed attempt's result stays reachable.
+        final last = _c.attemptState?.latestCompleted;
+        if (last != null) {
+          widgets.add(OutlinedButton.icon(
+            onPressed: () => context.push('/attempts/${last.id}/result'),
+            icon: const Icon(Icons.assessment_outlined),
+            label: Text('View Result (Attempt ${last.attemptNumber})'),
+          ));
+          widgets.add(const SizedBox(height: 8));
+        }
         widgets.add(Text(
           startReason,
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(

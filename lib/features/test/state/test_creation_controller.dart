@@ -8,6 +8,7 @@ import '../../../core/services/auth_service.dart';
 import '../data/group_repository.dart';
 import '../data/question_repository.dart';
 import '../data/test_repository.dart';
+import '../domain/attempt_policy.dart';
 import '../domain/backend_mapping.dart';
 import '../domain/publish_readiness.dart';
 import '../domain/test_kind.dart';
@@ -65,6 +66,9 @@ class TestCreationController extends DisposableNotifier {
   bool allowLateJoin = false;
   String? accessCode;
   String? joinCode;
+
+  /// Re-attempt policy (persisted in `tests.settings`; server-enforced).
+  AttemptSettings attemptSettings = AttemptSettings.defaults;
 
   final List<QuestionDraft> localQuestions = [];
   final List<Question> serverQuestions = [];
@@ -184,6 +188,7 @@ class TestCreationController extends DisposableNotifier {
     allowLateJoin = t.allowLateJoin;
     accessCode = t.accessCode;
     joinCode = t.joinCode;
+    attemptSettings = AttemptSettings.fromSettings(t.settings);
   }
 
   // ── form mutations ──
@@ -221,8 +226,10 @@ class TestCreationController extends DisposableNotifier {
     required bool allowLateJoin,
     required String? accessCode,
     required String? joinCode,
+    AttemptSettings? attemptSettings,
   }) =>
       _set(() {
+        if (attemptSettings != null) this.attemptSettings = attemptSettings;
         this.durationSec = durationSec;
         this.marksPerQuestion = marksPerQuestion;
         this.negativeMarks = negativeMarks;
@@ -350,6 +357,8 @@ class TestCreationController extends DisposableNotifier {
       settings = {...settings}
         ..putIfAbsent(targetQuestionCountKey, () => quickTargetQuestionCount);
     }
+    // Attempt policy keys live next to test_kind; every other key is kept.
+    settings = attemptSettings.applyTo(settings);
     String? clean(String? s) => (s == null || s.trim().isEmpty) ? null : s.trim();
     return TestWriteInput(
       title: title.trim(),

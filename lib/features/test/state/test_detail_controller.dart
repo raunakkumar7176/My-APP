@@ -1,4 +1,6 @@
 import '../../../core/errors/app_error.dart';
+import '../../../core/logging/app_logger.dart';
+import '../../../core/models/attempt.dart';
 import '../../../core/models/question.dart';
 import '../../../core/models/result_batch.dart';
 import '../../../core/models/test.dart';
@@ -7,6 +9,7 @@ import '../data/attempt_repository.dart';
 import '../data/question_repository.dart';
 import '../data/result_repository.dart';
 import '../data/test_repository.dart';
+import '../domain/attempt_policy.dart';
 import '../domain/backend_mapping.dart';
 import '../domain/test_kind.dart';
 import '../domain/test_lifecycle.dart';
@@ -120,6 +123,7 @@ class TestDetailController extends DisposableNotifier {
     try {
       _test = await _tests.getById(testId);
       if (_test == null) _error = 'Test not found.';
+      await _loadMyAttempts();
       // Batch state is known only from rpc_generate_results in this session
       // (the result_batches SELECT policy is group-permission based, so a
       // standalone owner cannot read the row); no table read here.
@@ -158,12 +162,53 @@ class TestDetailController extends DisposableNotifier {
   /// True once this test was deleted in this session.
   bool get isDeleted => _deleted;
 
-  /// Starts (or resumes) an attempt and loads the safe questions.
-  Future<LaunchedAttempt> start() => _action(() async {
-        final started = await _attempts.start(testId);
-        final qs = await _questions.safeQuestions(started.attempt.testId);
-        return (started: started, questions: qs, test: _test!);
+  // ── attempt policy (presentation; the server re-derives it) ──
+  List<Attempt> _myAttempts = const [];
+  bool _attemptsLoadFailed = false;
+
+  /// True when the own-attempts read failed; the CTA then falls back to a
+  /// plain start and the server's answer (resume / error) is authoritative.
+  bool get attemptsLoadFailed => _attemptsLoadFailed;
+
+  AttemptPolicyState? get attemptState => _test == null
+      ? null
+      : AttemptPolicyState(
+          settings: AttemptSettings.fromSettings(_test!.settings),
+          attempts: _myAttempts,
+        );
+
+  Future<void> _loadMyAttempts() async {
+    if (_test == null) return;
+    try {
+      _myAttempts = await _attempts.mine(testId);
+      _attemptsLoadFailed = false;
+    } catch (e) {
+      AppLogger.warning('Own attempts unavailable for $testId: $e');
+      _myAttempts = const [];
+      _attemptsLoadFailed = true;
+    }
+  }
+
+  /// Starts attempt 1 or resumes the in_progress attempt. Never allocates
+  /// attempt N+1: after a completed attempt the server answers
+  /// ATTEMPT_ALREADY_COMPLETED, and the UI does not offer this action then.
+  Future<LaunchedAttempt> start() => _action(() => _launch(reattempt: false));
+
+  /// Explicit re-attempt: the only path that requests attempt N+1. Gated
+  /// here for UX; enforced by the server (REATTEMPT_LIMIT_REACHED).
+  Future<LaunchedAttempt> reattempt() => _action(() async {
+        final s = attemptState;
+        if (s != null && !_attemptsLoadFailed && !s.canReattempt) {
+          throw const ValidationError(message: 'Re-attempt is not available for this test.');
+        }
+        return _launch(reattempt: true);
       });
+
+  Future<LaunchedAttempt> _launch({required bool reattempt}) async {
+    final started = await _attempts.start(testId, reattempt: reattempt);
+    final qs = await _questions.safeQuestions(started.attempt.testId);
+    return (started: started, questions: qs, test: _test!);
+  }
 
   /// Requests generation; the returned batch (from the RPC JSON) is the
   /// authoritative state and is kept for display / button gating.

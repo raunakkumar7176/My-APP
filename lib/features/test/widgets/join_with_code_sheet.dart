@@ -70,7 +70,29 @@ class _JoinWithCodeSheetState extends State<JoinWithCodeSheet> {
     super.dispose();
   }
 
-  Future<void> _join() async {
+  /// The server answers ATTEMPT_ALREADY_COMPLETED when this user already
+  /// finished the coded test; only after an explicit confirmation is the
+  /// call repeated with reattempt = true (the server still enforces the
+  /// limit and may answer REATTEMPT_LIMIT_REACHED).
+  static const alreadyCompletedMessage =
+      'You have already completed this test. Use Re-attempt to try again.';
+
+  Future<bool?> _confirmReattempt() => showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Re-attempt this test?'),
+          content: const Text(
+            'You have already completed this test. Start a new attempt? '
+            'Your previous results are kept.',
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Re-attempt')),
+          ],
+        ),
+      );
+
+  Future<void> _join({bool reattempt = false}) async {
     if (_isJoining) return;
     final code = _controller.text.trim();
     if (code.isEmpty) {
@@ -83,7 +105,7 @@ class _JoinWithCodeSheetState extends State<JoinWithCodeSheet> {
     });
 
     try {
-      final started = await widget.attempts.startByCode(code);
+      final started = await widget.attempts.startByCode(code, reattempt: reattempt);
       final attempt = started.attempt;
 
       Test? test;
@@ -109,7 +131,14 @@ class _JoinWithCodeSheetState extends State<JoinWithCodeSheet> {
         '/attempts/${attempt.id}/take?test=${attempt.testId}&code=${Uri.encodeQueryComponent(code)}',
       );
     } on AppError catch (e) {
-      if (mounted) setState(() => _error = e.message);
+      if (!mounted) return;
+      if (!reattempt && e.message == alreadyCompletedMessage) {
+        setState(() => _isJoining = false);
+        final again = await _confirmReattempt();
+        if (again == true && mounted) await _join(reattempt: true);
+        return;
+      }
+      setState(() => _error = e.message);
     } catch (e) {
       AppLogger.error('Join with code unexpected: $e');
       if (mounted) {

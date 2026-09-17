@@ -284,11 +284,14 @@ void main() {
       expect(missing.error, contains('not available'));
     });
 
-    test('repeat starts a new attempt and parks the launch', () async {
+    test('re-attempt (allowed) starts attempt 2 explicitly and parks the launch', () async {
       AttemptLaunchStore.putResult(r('r-1', 'a-1'));
-      final attempts = FakeAttemptRepository()..next = _attempt('a-2');
+      final attempts = FakeAttemptRepository()
+        ..rows.add(_attempt('a-1', status: AttemptStatus.scored))
+        ..testSettings['t-1'] = {'allow_reattempt': true, 'max_attempts': 2};
       final qs = FakeQuestionRepository()..byTest['t-1'] = const [_q1];
-      final tests = FakeTestRepository()..rows['t-1'] = _test();
+      final tests = FakeTestRepository()
+        ..rows['t-1'] = _test(settings: {'allow_reattempt': true, 'max_attempts': 2});
       final c = ResultsController(
         attemptId: 'a-1',
         results: FakeResultRepository(), tests: tests, questions: qs,
@@ -296,10 +299,11 @@ void main() {
         subjectNames: () async => {},
       );
       await c.load();
-      final launch = await c.repeat();
-      expect(launch.attemptId, 'a-2');
-      expect(attempts.calls, ['start:t-1']);
-      expect(AttemptLaunchStore.takeLaunch('a-2')?.questions.single.id, 'q-1');
+      expect(c.canReattempt, isTrue);
+      final launch = await c.reattempt();
+      expect(attempts.calls, contains('start:t-1:reattempt'));
+      expect(attempts.rows.last.attemptNumber, 2);
+      expect(AttemptLaunchStore.takeLaunch(launch.attemptId)?.questions.single.id, 'q-1');
     });
 
     test('analytics mapper never fabricates data', () {

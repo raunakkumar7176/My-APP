@@ -2,6 +2,7 @@
 import '../../../core/errors/app_error.dart';
 import '../../../core/logging/app_logger.dart';
 import '../../../core/models/answer.dart';
+import '../../../core/models/attempt.dart';
 import '../../../core/models/question.dart';
 import '../../../core/models/result.dart';
 import '../../../core/models/result_analytics.dart';
@@ -12,6 +13,8 @@ import '../data/attempt_repository.dart';
 import '../data/question_repository.dart';
 import '../data/result_repository.dart';
 import '../data/test_repository.dart';
+import '../domain/attempt_history.dart';
+import '../domain/attempt_policy.dart';
 import '../domain/backend_mapping.dart';
 import '../domain/result_analytics_mapper.dart';
 import '../domain/test_kind.dart';
@@ -50,6 +53,7 @@ class ResultsController extends DisposableNotifier {
   Result? _result;
   Test? _test;
   List<Result> _history = const [];
+  List<Attempt> _myAttempts = const [];
   List<SubjectBreakdownItem> _subjects = const [];
   List<TopicBreakdownItem> _topics = const [];
   List<Question> _questionsList = const [];
@@ -104,9 +108,14 @@ class ResultsController extends DisposableNotifier {
           return <Result>[];
         }),
         _subjectNames().catchError((Object e) => <String, String>{}),
+        _attempts.mine(r.testId).catchError((Object e) {
+          AppLogger.warning('Own attempts unavailable: ');
+          return <Attempt>[];
+        }),
       ]);
       _test = loads[0] as Test?;
       _history = loads[1] as List<Result>;
+      _myAttempts = loads[3] as List<Attempt>;
       final names = loads[2] as Map<String, String>;
       _subjects = ResultAnalyticsMapper.subjects(r.subjectBreakdown, subjectNames: names);
       _topics = ResultAnalyticsMapper.topics(r.topicBreakdown);
@@ -144,16 +153,55 @@ class ResultsController extends DisposableNotifier {
     }
   }
 
-  /// Starts another attempt of the same test (server decides whether repeats
-  /// are allowed) and parks the launch for the taking screen.
-  Future<({String attemptId, String testId})> repeat() async {
+  // ── attempt history / policy (stored rows only) ──
+
+  List<AttemptHistoryEntry> get attemptHistory =>
+      AttemptHistory.build(_history, _myAttempts);
+  AttemptHistoryEntry? get latestEntry => AttemptHistory.latest(attemptHistory);
+  AttemptHistoryEntry? get bestEntry => AttemptHistory.best(attemptHistory);
+  AttemptHistoryEntry? get currentEntry {
+    final id = _result?.attemptId;
+    if (id == null) return null;
+    for (final e in attemptHistory) {
+      if (e.result.attemptId == id) return e;
+    }
+    return null;
+  }
+
+  AttemptHistoryEntry? get previousEntry =>
+      _result == null ? null : AttemptHistory.previousOf(attemptHistory, _result!.attemptId);
+
+  /// Current vs immediately previous attempt; null without a previous one.
+  ResultDelta? get deltaFromPrevious {
+    final c = currentEntry;
+    final p = previousEntry;
+    return (c == null || p == null) ? null : ResultDelta.between(c, p);
+  }
+
+  AttemptPolicyState? get attemptState => _test == null
+      ? null
+      : AttemptPolicyState(
+          settings: AttemptSettings.fromSettings(_test!.settings),
+          attempts: _myAttempts,
+        );
+
+  /// Re-attempt is offered only when the policy allows it. When the own
+  /// attempts read failed the button is hidden rather than guessed.
+  bool get canReattempt => attemptState?.canReattempt ?? false;
+
+  /// Explicit re-attempt (the only client path that asks for attempt N+1;
+  /// the server enforces the limit) and parks the launch for taking.
+  Future<({String attemptId, String testId})> reattempt() async {
     final r = _result;
     if (r == null) throw const ValidationError(message: 'No result loaded.');
     if (_busy) throw const ValidationError(message: 'Please wait…');
+    if (!canReattempt) {
+      throw const ValidationError(message: 'Re-attempt is not available for this test.');
+    }
     _busy = true;
     notifyListeners();
     try {
-      final started = await _attempts.start(r.testId);
+      final started = await _attempts.start(r.testId, reattempt: true);
       final qs = await _questions.safeQuestions(r.testId);
       final test = _test ?? await _tests.getById(r.testId);
       if (test == null) {

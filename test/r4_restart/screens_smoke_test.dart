@@ -204,7 +204,9 @@ void main() {
     expect(find.text('80.0%'), findsWidgets); // percentage + accuracy
     expect(find.text('Passed'), findsOneWidget);
     expect(find.text('Review Answers'), findsOneWidget);
-    expect(find.text('Repeat Test'), findsOneWidget);
+    // No attempt rows in the fake → policy unknown → no Re-attempt offered.
+    expect(find.text('Repeat Test'), findsNothing);
+    expect(find.text('Re-attempt'), findsNothing);
     await tester.pumpWidget(const SizedBox());
     rc.dispose();
 

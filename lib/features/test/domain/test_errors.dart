@@ -58,6 +58,15 @@ abstract final class TestErrors {
     if (lower.contains('test_full')) {
       return 'This test has reached its maximum number of participants.';
     }
+    if (lower.contains('reattempt_limit_reached')) {
+      return 'You have used all attempts allowed for this test.';
+    }
+    if (lower.contains('attempt_already_completed')) {
+      return 'You have already completed this test. Use Re-attempt to try again.';
+    }
+    if (lower.contains('attempt_allocation_conflict')) {
+      return 'Could not start the attempt right now. Please try again.';
+    }
     if (lower.contains('late_join_not_allowed')) {
       return 'This challenge has already started and does not allow late joining.';
     }

@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/theme/app_colors.dart';
 import '../../../core/errors/app_error.dart';
+import '../domain/attempt_policy.dart';
 import '../state/test_creation_controller.dart';
 import '../widgets/basic_details_step.dart';
 import '../widgets/configuration_step.dart';
@@ -236,6 +237,7 @@ class _TestCreationScreenState extends State<TestCreationScreen> {
           allowLateJoin: _c.allowLateJoin,
           accessCode: _c.accessCode,
           joinCode: _c.joinCode,
+          attemptSettings: _c.attemptSettings,
           groups: _c.groups,
           onChanged: (v) => _c.setConfiguration(
             durationSec: v['durationSec'] as int?,
@@ -248,6 +250,7 @@ class _TestCreationScreenState extends State<TestCreationScreen> {
             allowLateJoin: v['allowLateJoin'] as bool? ?? false,
             accessCode: v['accessCode'] as String?,
             joinCode: v['joinCode'] as String?,
+            attemptSettings: v['attemptSettings'] as AttemptSettings?,
           ),
         );
       case 2:

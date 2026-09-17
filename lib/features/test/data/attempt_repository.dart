@@ -11,13 +11,19 @@ import '../domain/test_errors.dart';
 /// the code-entry RPC may include (R4_3 shape). Null when absent.
 typedef StartedAttempt = ({Attempt attempt, String? testTitle});
 
-/// Attempts are created, saved and submitted ONLY through the secure RPCs.
-/// The client never reads or writes `public.attempts` directly; the server
-/// owns access checks, the deadline, attempt numbering and scoring.
+/// Attempts are created, saved and submitted ONLY through the secure RPCs;
+/// the server owns access checks, the deadline, attempt numbering, the
+/// re-attempt policy and scoring. The only direct read is the user's OWN
+/// attempts ([mine]) under the verified "own attempts" SELECT policy.
 abstract interface class AttemptRepository {
-  Future<StartedAttempt> start(String testId);
+  /// Starts attempt 1, resumes an in_progress attempt, or — only with
+  /// [reattempt] — allocates attempt N+1 within the test's limit.
+  Future<StartedAttempt> start(String testId, {bool reattempt = false});
 
-  Future<StartedAttempt> startByCode(String code);
+  Future<StartedAttempt> startByCode(String code, {bool reattempt = false});
+
+  /// The current user's attempts on [testId], ascending attempt_number.
+  Future<List<Attempt>> mine(String testId);
 
   /// Submits and scores on the server. Returns the `results` row when the
   /// RPC includes one in its response; null otherwise (the result screen
@@ -31,24 +37,52 @@ class SupabaseAttemptRepository implements AttemptRepository {
   SupabaseClient get _client => SupabaseService.client;
 
   @override
-  Future<StartedAttempt> start(String testId) => _guard(() async {
-        final response =
-            await _client.rpc('rpc_start_attempt', params: {'p_test': testId});
+  Future<StartedAttempt> start(String testId, {bool reattempt = false}) =>
+      _guard(() async {
+        final response = await _client.rpc('rpc_start_attempt', params: {
+          'p_test': testId,
+          // Live: rpc_start_attempt(p_test uuid, p_reattempt boolean DEFAULT false).
+          if (reattempt) 'p_reattempt': true,
+        });
         AppLogger.rpcShape('rpc_start_attempt', response);
         return parseStarted(response);
       }, TestErrorContext.start);
 
   @override
-  Future<StartedAttempt> startByCode(String code) => _guard(() async {
+  Future<StartedAttempt> startByCode(String code, {bool reattempt = false}) =>
+      _guard(() async {
         final trimmed = code.trim();
         if (trimmed.isEmpty) {
           throw const ValidationError(message: 'Enter a test code.');
         }
-        final response = await _client
-            .rpc('rpc_start_attempt_by_code', params: {'p_code': trimmed});
+        final response = await _client.rpc('rpc_start_attempt_by_code', params: {
+          'p_code': trimmed,
+          if (reattempt) 'p_reattempt': true,
+        });
         AppLogger.rpcShape('rpc_start_attempt_by_code', response);
         return parseStarted(response);
       }, TestErrorContext.start);
+
+  /// Explicit live columns; never `select *`.
+  static const attemptColumns =
+      'id, test_id, user_id, status, started_at, deadline_at, submitted_at, attempt_number';
+
+  @override
+  Future<List<Attempt>> mine(String testId) => _guard(() async {
+        final uid = _client.auth.currentUser?.id;
+        if (uid == null) {
+          throw const AuthError(message: 'You must be logged in.');
+        }
+        final rows = await _client
+            .from('attempts')
+            .select(attemptColumns)
+            .eq('test_id', testId)
+            .eq('user_id', uid)
+            .order('attempt_number', ascending: true);
+        return [
+          for (final r in rows as List) Attempt.fromJson(r as Map<String, dynamic>),
+        ];
+      }, TestErrorContext.load);
 
   @override
   Future<Result?> submit(String attemptId, {required bool timedOut}) =>

@@ -93,7 +93,7 @@ void main() {
       expect(c.kind, TestKind.self);
 
       final launched = await c.start();
-      expect(attempts.calls, ['start:t-1']);
+      expect(attempts.calls, contains('start:t-1'));
       expect(launched.questions.single.id, 'q-1');
       expect(launched.started.attempt.testId, 't-1');
     });
@@ -252,7 +252,8 @@ void main() {
       c.setLocalQuestions([_draft('q1')]);
       final id = await c.saveDraft();
       expect(tests.rows[id]!.testMode, 'self');
-      expect(tests.rows[id]!.settings, {'test_kind': 'practice'});
+      expect(tests.rows[id]!.settings,
+          {'test_kind': 'practice', 'allow_reattempt': false, 'max_attempts': 1});
 
       final c2 = TestCreationController(
         tests: tests,
@@ -265,7 +266,8 @@ void main() {
         ..setLocalQuestions([_draft('x')]);
       final id2 = await c2.saveDraft();
       expect(tests.rows[id2]!.testMode, 'live');
-      expect(tests.rows[id2]!.settings, isNull);
+      // Challenge carries no test_kind, only the attempt policy (same rule for every kind).
+      expect(tests.rows[id2]!.settings, {'allow_reattempt': false, 'max_attempts': 1});
     });
 
     test('Quick persists target_question_count without clobbering settings',
@@ -274,7 +276,7 @@ void main() {
       c.setLocalQuestions([_draft('q1')]);
       final id = await c.saveDraft();
       expect(tests.rows[id]!.settings,
-          {'test_kind': 'quick', 'target_question_count': 10});
+          {'test_kind': 'quick', 'target_question_count': 10, 'allow_reattempt': false, 'max_attempts': 1});
       expect(c.questionsGuidance, contains('5–10'));
     });
 

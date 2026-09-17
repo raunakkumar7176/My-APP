@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/models/group.dart';
+import '../domain/attempt_policy.dart';
 
 /// Configuration step (R4 restart): identical to the legacy StepConfiguration
 /// except that groups are injected by the creation controller instead of
@@ -19,6 +20,7 @@ class ConfigurationStep extends StatefulWidget {
     required this.accessCode,
     required this.joinCode,
     required this.onChanged,
+    this.attemptSettings = AttemptSettings.defaults,
     this.groups = const [],
     this.groupsLoading = false,
     super.key,
@@ -35,6 +37,7 @@ class ConfigurationStep extends StatefulWidget {
   final bool allowLateJoin;
   final String? accessCode;
   final String? joinCode;
+  final AttemptSettings attemptSettings;
   final ValueChanged<Map<String, dynamic>> onChanged;
 
   /// Groups the user belongs to (loaded by the controller).
@@ -53,6 +56,7 @@ class _ConfigurationStepState extends State<ConfigurationStep> {
   late final TextEditingController _accessCodeController;
   late final TextEditingController _joinCodeController;
   late bool _allowLateJoin;
+  late AttemptSettings _attempts;
   DateTime? _startsAt;
   DateTime? _endsAt;
 
@@ -78,6 +82,7 @@ class _ConfigurationStepState extends State<ConfigurationStep> {
     );
     _joinCodeController = TextEditingController(text: widget.joinCode ?? '');
     _allowLateJoin = widget.allowLateJoin;
+    _attempts = widget.attemptSettings;
     _startsAt = widget.startsAt;
     _endsAt = widget.endsAt;
 
@@ -115,6 +120,7 @@ class _ConfigurationStepState extends State<ConfigurationStep> {
       'endsAt': _endsAt,
       'maxParticipants': int.tryParse(_maxParticipantsController.text),
       'allowLateJoin': _allowLateJoin,
+      'attemptSettings': _attempts,
       'accessCode': _accessCodeController.text.isNotEmpty
           ? _accessCodeController.text
           : null,
@@ -291,6 +297,42 @@ class _ConfigurationStepState extends State<ConfigurationStep> {
               _update();
             },
             contentPadding: EdgeInsets.zero,
+          ),
+          const SizedBox(height: 24),
+          Text('Attempt Settings', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 4),
+          Text(
+            'Students can take this test once unless re-attempts are allowed. '
+            'The limit is enforced by the server.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          SwitchListTile(
+            key: const Key('allow_reattempt'),
+            title: const Text('Allow Re-attempt'),
+            value: _attempts.allowReattempt,
+            onChanged: (value) {
+              setState(() => _attempts = _attempts.copyWith(allowReattempt: value));
+              _update();
+            },
+            contentPadding: EdgeInsets.zero,
+          ),
+          DropdownButtonFormField<int>(
+            key: const Key('max_attempts'),
+            initialValue: AttemptSettings.allowedMaxValues.contains(_attempts.maxAttempts)
+                ? _attempts.maxAttempts
+                : 1,
+            decoration: const InputDecoration(labelText: 'Maximum Attempts'),
+            items: [
+              for (final n in AttemptSettings.allowedMaxValues)
+                DropdownMenuItem(value: n, child: Text('$n')),
+            ],
+            onChanged: _attempts.allowReattempt
+                ? (v) {
+                    if (v == null) return;
+                    setState(() => _attempts = _attempts.copyWith(maxAttempts: v));
+                    _update();
+                  }
+                : null,
           ),
         ],
       ),

@@ -219,29 +219,96 @@ class FakeGroupRepository implements GroupRepository {
   Future<List<Group>> myGroups() async => groups;
 }
 
+/// Mirrors the live start path (`_fn_start_attempt_core` + the re-attempt
+/// policy): resume in_progress first; otherwise count this user's attempts
+/// on the test, read `settings.allow_reattempt` / `max_attempts` from
+/// [tests], raise REATTEMPT_LIMIT_REACHED / ATTEMPT_ALREADY_COMPLETED, and
+/// allocate MAX(attempt_number)+1. [next] / [failStartWith] keep the old
+/// canned behaviour for tests that do not care about the policy.
 class FakeAttemptRepository implements AttemptRepository {
   final List<String> calls = [];
   Attempt? next;
   Result? submitResult;
   Object? failStartWith;
 
+  /// Server-side state: every attempt row, all users.
+  final List<Attempt> rows = [];
+
+  /// Test settings the "server" reads (test id → settings jsonb).
+  final Map<String, Map<String, dynamic>?> testSettings = {};
+  String currentUser = 'u-1';
+  int _seq = 100;
+
   @override
-  Future<StartedAttempt> start(String testId) async {
-    calls.add('start:$testId');
+  Future<StartedAttempt> start(String testId, {bool reattempt = false}) async {
+    calls.add('start:$testId${reattempt ? ':reattempt' : ''}');
     if (failStartWith != null) throw failStartWith!;
-    return (attempt: next ?? _attempt('a-1', testId), testTitle: null);
+    if (next != null && rows.isEmpty) return (attempt: next!, testTitle: null);
+    return (attempt: _serverStart(testId, reattempt: reattempt), testTitle: null);
   }
 
   @override
-  Future<StartedAttempt> startByCode(String code) async {
-    calls.add('code:$code');
+  Future<StartedAttempt> startByCode(String code, {bool reattempt = false}) async {
+    calls.add('code:$code${reattempt ? ':reattempt' : ''}');
     if (failStartWith != null) throw failStartWith!;
-    return (attempt: next ?? _attempt('a-2', 't-coded'), testTitle: 'Coded');
+    if (next != null && rows.isEmpty) return (attempt: next!, testTitle: 'Coded');
+    return (attempt: _serverStart('t-coded', reattempt: reattempt), testTitle: 'Coded');
+  }
+
+  @override
+  Future<List<Attempt>> mine(String testId) async {
+    calls.add('mine:$testId');
+    return [
+      for (final a in rows)
+        if (a.testId == testId && a.userId == currentUser) a,
+    ]..sort((x, y) => x.attemptNumber.compareTo(y.attemptNumber));
+  }
+
+  Attempt _serverStart(String testId, {required bool reattempt}) {
+    final own = [for (final a in rows) if (a.testId == testId && a.userId == currentUser) a];
+    for (final a in own) {
+      if (a.status == AttemptStatus.inProgress) return a; // resume
+    }
+    final settings = testSettings[testId];
+    final allow = settings?['allow_reattempt'] == true;
+    final max = allow ? ((settings?['max_attempts'] as int?) ?? 1).clamp(1, 1 << 30) : 1;
+    if (own.length >= max) {
+      throw const DataError(message: 'You have used all attempts allowed for this test.');
+    }
+    if (own.isNotEmpty && !reattempt) {
+      throw const DataError(
+          message: 'You have already completed this test. Use Re-attempt to try again.');
+    }
+    final number = own.fold<int>(0, (m, a) => a.attemptNumber > m ? a.attemptNumber : m) + 1;
+    final a = Attempt(
+      id: 'a-${_seq++}',
+      testId: testId,
+      userId: currentUser,
+      status: AttemptStatus.inProgress,
+      startedAt: DateTime(2026, 9, 16, 10, number),
+      deadlineAt: DateTime(2026, 9, 16, 11, number),
+      attemptNumber: number,
+    );
+    rows.add(a);
+    return a;
+  }
+
+  /// Simulates the server closing an attempt (submit → scored).
+  void complete(String attemptId, {AttemptStatus status = AttemptStatus.scored}) {
+    final i = rows.indexWhere((a) => a.id == attemptId);
+    if (i == -1) return;
+    final a = rows[i];
+    rows[i] = Attempt(
+      id: a.id, testId: a.testId, userId: a.userId, status: status,
+      startedAt: a.startedAt, deadlineAt: a.deadlineAt, attemptNumber: a.attemptNumber,
+      submittedAt: a.startedAt.add(const Duration(minutes: 20)),
+    );
   }
 
   @override
   Future<Result> submit(String attemptId, {required bool timedOut}) async {
     calls.add('submit:$attemptId:$timedOut');
+    complete(attemptId, status: timedOut ? AttemptStatus.autoSubmitted : AttemptStatus.scored);
     return submitResult ??
         Result(
           id: 'r-1',
@@ -252,15 +319,6 @@ class FakeAttemptRepository implements AttemptRepository {
           maxScore: 5,
         );
   }
-
-  static Attempt _attempt(String id, String testId) => Attempt(
-        id: id,
-        testId: testId,
-        userId: 'u-1',
-        status: AttemptStatus.inProgress,
-        startedAt: DateTime(2026, 9, 16),
-        deadlineAt: DateTime(2026, 9, 16, 1),
-      );
 }
 
 class FakeResultRepository implements ResultRepository {

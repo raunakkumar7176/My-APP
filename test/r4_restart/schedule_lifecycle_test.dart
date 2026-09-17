@@ -233,7 +233,7 @@ void main() {
       );
       await c.load();
       final launched = await c.start();
-      expect(attempts.calls, ['start:t-1']);
+      expect(attempts.calls, contains('start:t-1'));
       expect(launched.started.attempt.id, 'a-old');
       expect(launched.started.attempt.status, AttemptStatus.inProgress);
     });
