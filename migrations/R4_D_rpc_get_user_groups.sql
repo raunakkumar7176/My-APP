@@ -10,7 +10,7 @@
 -- Not exposed: invite_code, description, privacy. No created_by / updated_at (do not exist).
 -- One row per group: the LEFT JOIN is on the caller's own membership row only
 -- (unique by PK), member_count is an independent scalar subquery.
--- Plain single-level $$ body. No DO block, no dynamic SQL. Idempotent.
+-- Plain single-level dollar-quoted body. No DO block, no dynamic SQL. Idempotent.
 -- No table / enum / RLS / helper-function change.
 
 CREATE OR REPLACE FUNCTION public.rpc_get_user_groups()
