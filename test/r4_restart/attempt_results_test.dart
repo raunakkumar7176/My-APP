@@ -98,7 +98,7 @@ void main() {
     });
 
     test('cold start: server resume + safe questions + existing answers', () async {
-      final attempts = FakeAttemptRepository()..next = _attempt('a-1');
+      final attempts = FakeAttemptRepository()..rows.add(_attempt('a-1')); // in_progress exists
       final qs = FakeQuestionRepository()..byTest['t-1'] = const [_q1, _q2];
       final tests = FakeTestRepository()..rows['t-1'] = _test();
       final answers = FakeAnswerRepository()
@@ -112,7 +112,7 @@ void main() {
       );
       await c.load();
 
-      expect(attempts.calls, ['start:t-1']);
+      expect(attempts.calls, ['mine:t-1', 'start:t-1']); // guard read, then resume
       expect(qs.calls, ['safe:t-1']);
       expect(c.answerFor('q-1')?.selectedOption, 1);
       expect(c.answeredCount, 1);

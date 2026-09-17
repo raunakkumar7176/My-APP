@@ -63,7 +63,8 @@ Attempt _attempt() => Attempt(
 AttemptController _controller(AnswerRepository answers, {required List<Question> qs, bool shuffle = false}) {
   return AttemptController(
     attemptId: 'a-1', testId: 't-1',
-    attempts: FakeAttemptRepository()..next = _attempt(),
+    // Cold-start guard reads own attempts: the in_progress row must exist.
+    attempts: FakeAttemptRepository()..rows.add(_attempt()),
     questions: FakeQuestionRepository()..byTest['t-1'] = qs,
     answers: answers,
     tests: FakeTestRepository()..rows['t-1'] = _test(shuffle: shuffle),

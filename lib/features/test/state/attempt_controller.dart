@@ -97,6 +97,31 @@ class AttemptController extends DisposableNotifier {
 
   // ── loading ──
 
+  /// Reads the user's own attempts for this test (RLS). If the requested
+  /// attempt is known and not in_progress, or no in_progress attempt exists
+  /// at all, throw before any start RPC. When the read itself fails the
+  /// server stays the authority (it refuses to allocate after a terminal
+  /// attempt anyway).
+  Future<void> _guardColdStart() async {
+    List<Attempt> mine;
+    try {
+      mine = await _attempts.mine(testId);
+    } catch (e) {
+      AppLogger.warning('Own attempts unavailable on cold start: $e');
+      return;
+    }
+    final requested = mine.where((a) => a.id == attemptId).firstOrNull;
+    final hasInProgress = mine.any((a) => a.status == AttemptStatus.inProgress);
+    if (requested != null && requested.status != AttemptStatus.inProgress) {
+      throw const ValidationError(
+          message: 'This attempt has already been submitted. Open its result instead.');
+    }
+    if (requested == null && !hasInProgress) {
+      throw const ValidationError(
+          message: 'No attempt is in progress for this test. Start it from the test page.');
+    }
+  }
+
   Future<void> load() async {
     _loading = true;
     _error = null;
@@ -108,7 +133,13 @@ class AttemptController extends DisposableNotifier {
         _test = handoff.test;
         _applyQuestions(handoff.questions);
       } else {
-        // Cold start / deep link: the server resumes the in-progress attempt.
+        // Cold start / deep link: only an existing in_progress attempt may be
+        // resumed here. Opening a taking URL must never allocate an attempt
+        // (RULE 1/2): if the requested attempt is already terminal, stop with
+        // a clear message instead of calling the start RPC.
+        await _guardColdStart();
+        // The server resumes the in-progress attempt (never creates one when
+        // a terminal attempt exists — ATTEMPT_ALREADY_COMPLETED otherwise).
         final started = accessCode != null
             ? await _attempts.startByCode(accessCode!)
             : await _attempts.start(testId);
