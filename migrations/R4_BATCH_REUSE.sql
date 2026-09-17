@@ -7,8 +7,8 @@
 --
 -- Baseline: the VERBATIM live body (docs/live/rpc_generate_results.live.sql,
 -- pg_get_functiondef captured 2026-09-17). Changes, and nothing else:
---   1. SET search_path TO ''  — hardening; every object in the body is
---      already schema-qualified (public.*, auth.uid()), so this is safe.
+--   1. search_path stays 'public' (live value): validating the body under ''
+--      raised 42P01 in the SQL Editor; every object is public.-qualified anyway.
 --   2. Existing-batch lookup drops the pending/processing filter and locks
 --      the single row for the test.
 --   3. Behaviour per existing status:
@@ -65,7 +65,7 @@ CREATE OR REPLACE FUNCTION public.rpc_generate_results(p_test_id uuid)
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
- SET search_path TO ''
+ SET search_path TO 'public'
 AS $function$
 DECLARE
   v_user uuid := auth.uid();
@@ -280,7 +280,7 @@ SELECT p.oid::regprocedure AS signature, pg_get_function_result(p.oid) AS return
        p.prosecdef AS security_definer, p.proconfig
 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
 WHERE n.nspname = 'public' AND p.proname = 'rpc_generate_results';
--- expect exactly one row: rpc_generate_results(uuid) | jsonb | t | {search_path=}
+-- expect exactly one row: rpc_generate_results(uuid) | jsonb | t | {search_path=public}
 
 -- E/F/G: authorization intact; reuse instead of duplicate insert; failed reset in place
 SELECT
