@@ -102,13 +102,27 @@ class TestDetailController extends DisposableNotifier {
   String? startBlockReason({String Function(DateTime)? formatDateTime}) {
     final t = _test;
     if (t == null) return 'Loading…';
-    return TestLifecycle.startBlockReason(
+    final lifecycle = TestLifecycle.startBlockReason(
       status: t.status,
       startsAt: t.startsAt,
       endsAt: t.endsAt,
       now: _clock(),
       formatDateTime: formatDateTime,
     );
+    if (lifecycle != null) return lifecycle;
+    // Mirrors the server's late-join rule for Challenge with Friends
+    // (test_mode = live): new attempts are refused after starts_at unless
+    // allow_late_join; an in_progress attempt can always be resumed.
+    // Only shown when the own-attempts read succeeded (else the server decides).
+    if (!_attemptsLoadFailed &&
+        TestMode.fromDb(t.testMode) == TestMode.live &&
+        !t.allowLateJoin &&
+        t.startsAt != null &&
+        _clock().isAfter(t.startsAt!) &&
+        attemptState?.inProgress == null) {
+      return 'This challenge has already started and does not allow late joining.';
+    }
+    return null;
   }
 
   /// Join codes are a sharing feature (Challenge with Friends / group); a
