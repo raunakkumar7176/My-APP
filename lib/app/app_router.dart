@@ -16,6 +16,7 @@ import '../features/study/syllabus_detail_screen.dart';
 import '../features/study/syllabus_screen.dart';
 import '../features/test/screens/question_review_screen.dart';
 import '../features/test/screens/test_creation_screen.dart';
+import '../features/test/widgets/question_source_step.dart';
 import '../features/test/screens/test_detail_screen.dart';
 import '../features/test/screens/test_listing_screen.dart';
 import '../features/test/screens/test_result_screen.dart';
@@ -155,7 +156,15 @@ final class AppRouter {
           GoRoute(
             path: 'create',
             name: 'test-create',
-            builder: (context, state) => const TestCreationScreen(),
+            builder: (context, state) {
+              final s = state.uri.queryParameters['source'];
+              return TestCreationScreen(
+                initialSource: QuestionSource.values.cast<QuestionSource?>().firstWhere(
+                  (v) => v?.name == s,
+                  orElse: () => null,
+                ),
+              );
+            },
           ),
           GoRoute(
             path: ':testId',

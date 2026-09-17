@@ -5,6 +5,7 @@ import '../../../core/constants/theme/app_colors.dart';
 import '../../../core/errors/app_error.dart';
 import '../../../core/models/result_batch.dart';
 import '../domain/attempt_policy.dart';
+import '../domain/test_kind.dart';
 import '../domain/test_lifecycle.dart';
 import '../state/attempt_launch_store.dart';
 import '../state/test_detail_controller.dart';
@@ -245,10 +246,21 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
               Text(test.description!),
             ],
             const SizedBox(height: 16),
-            _section(context, 'Configuration', [
+            // ── Pre-test information: every value comes from the stored row
+            //    (nothing fabricated; absent data shows as "--"). ──
+            _section(context, 'About this test', [
+              _row('Test type', _c.kind.label),
+              _row('What it is', _c.kind.purpose),
+              _row('Questions', _c.questionCountLabel),
               _row('Duration', TestFormatters.duration(test.durationSec)),
               _row('Marks per question', test.marksPerQuestion?.toString() ?? '--'),
               _row('Negative marks', test.negativeMarks?.toString() ?? 'None'),
+              _row('Attempts', _c.attemptPolicyLabel),
+              if (_c.kind.supportsLateJoin) _row('Late joining', _c.lateJoinLabel),
+              if (_c.scopeLabel != null) _row('Syllabus scope', _c.scopeLabel!),
+              if (test.groupId != null) _row('Group', _c.groupLabel),
+              if (test.instructions != null && test.instructions!.isNotEmpty)
+                _row('Instructions', test.instructions!),
             ]),
             if (test.startsAt != null || test.endsAt != null)
               _section(context, 'Schedule', [
@@ -256,7 +268,6 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
                 _row('Ends', TestFormatters.dateTime(test.endsAt)),
                 if (test.maxParticipants != null)
                   _row('Max participants', '${test.maxParticipants}'),
-                _row('Late join', test.allowLateJoin ? 'Allowed' : 'Not allowed'),
               ]),
             if (_c.isOwner && (test.accessCode != null || _c.showsJoinCode))
               _section(context, 'Access', [
@@ -433,14 +444,18 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(label, style: Theme.of(context).textTheme.bodyMedium),
-          Text(value,
-              style: Theme.of(context)
-                  .textTheme
-                  .bodyMedium
-                  ?.copyWith(fontWeight: FontWeight.w500)),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Text(value,
+                textAlign: TextAlign.end,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodyMedium
+                    ?.copyWith(fontWeight: FontWeight.w500)),
+          ),
         ],
       ),
     );

@@ -67,6 +67,9 @@ abstract final class TestErrors {
     if (lower.contains('attempt_allocation_conflict')) {
       return 'Could not start the attempt right now. Please try again.';
     }
+    if (lower.contains('late_join_window_closed')) {
+      return 'The late-join window for this test has closed.';
+    }
     if (lower.contains('late_join_not_allowed')) {
       return 'This challenge has already started and does not allow late joining.';
     }

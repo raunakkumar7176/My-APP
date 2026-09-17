@@ -258,7 +258,7 @@ void main() {
       final id = await c.saveDraft();
       expect(tests.rows[id]!.testMode, 'self');
       expect(tests.rows[id]!.settings,
-          {'test_kind': 'practice', 'allow_reattempt': false, 'max_attempts': 1});
+          {'test_kind': 'practice', 'allow_reattempt': true, 'max_attempts': 3}); // Practice default
 
       final c2 = TestCreationController(
         tests: tests,
@@ -272,7 +272,8 @@ void main() {
       final id2 = await c2.saveDraft();
       expect(tests.rows[id2]!.testMode, 'live');
       // Challenge carries no test_kind, only the attempt policy (same rule for every kind).
-      expect(tests.rows[id2]!.settings, {'allow_reattempt': false, 'max_attempts': 1});
+      expect(tests.rows[id2]!.settings,
+          {'allow_reattempt': false, 'max_attempts': 1, 'late_join_minutes': 10});
     });
 
     test('Quick persists target_question_count without clobbering settings',

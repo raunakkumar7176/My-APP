@@ -86,7 +86,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Continue Editing'), findsOneWidget);
     expect(find.text('Publish'), findsOneWidget);
-    expect(find.text('Practice Test'), findsOneWidget);
+    expect(find.text('Practice Test'), findsWidgets); // badge + pre-test row
     await tester.pumpWidget(const SizedBox());
     draft.dispose();
 
@@ -131,6 +131,12 @@ void main() {
       accessCode: null, joinCode: null,
     );
     await tester.tap(find.widgetWithText(FilledButton, 'Next'));
+    await tester.pumpAndSettle(); // syllabus step (R3 services fail silently in tests)
+    await tester.tap(find.widgetWithText(FilledButton, 'Next'));
+    await tester.pumpAndSettle();
+    expect(find.text('Question Source'), findsOneWidget); // source step (Manual)
+    expect(find.text('Not configured'), findsNWidgets(3)); // Document / AI / Books
+    await tester.tap(find.widgetWithText(FilledButton, 'Next'));
     await tester.pumpAndSettle();
     expect(find.text('Add Question'), findsOneWidget); // questions step
 
@@ -147,8 +153,6 @@ void main() {
       ),
     ]);
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(FilledButton, 'Next'));
-    await tester.pumpAndSettle(); // syllabus step (R3 services fail silently in tests)
     await tester.tap(find.widgetWithText(FilledButton, 'Next'));
     await tester.pumpAndSettle();
     expect(find.text('Review Test'), findsOneWidget);
@@ -176,7 +180,7 @@ void main() {
     await tester.pump();
 
     expect(find.text('What is 2 + 2?'), findsOneWidget);
-    expect(find.text('Practice Test'), findsOneWidget);
+    expect(find.text('Practice Test'), findsWidgets); // badge + pre-test row
     expect(find.text('Untimed'), findsNothing, reason: 'server gave a deadline');
     expect(find.text('1 / 1'), findsOneWidget);
 

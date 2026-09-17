@@ -1,4 +1,3 @@
-
 import '../../../core/errors/app_error.dart';
 import '../../../core/logging/app_logger.dart';
 import '../../../core/models/group.dart';
@@ -10,6 +9,7 @@ import '../data/question_repository.dart';
 import '../data/test_repository.dart';
 import '../domain/attempt_policy.dart';
 import '../domain/backend_mapping.dart';
+import '../domain/creation_settings.dart';
 import '../domain/publish_readiness.dart';
 import '../domain/test_kind.dart';
 import '../models/question_draft.dart';
@@ -33,10 +33,10 @@ class TestCreationController extends DisposableNotifier {
     QuestionRepository? questions,
     GroupRepository? groups,
     String? Function()? currentUserId,
-  })  : _tests = tests ?? const SupabaseTestRepository(),
-        _questions = questions ?? const SupabaseQuestionRepository(),
-        _groups = groups ?? const SupabaseGroupRepository(),
-        _currentUserId = currentUserId ?? (() => AuthService.currentUser?.id);
+  }) : _tests = tests ?? const SupabaseTestRepository(),
+       _questions = questions ?? const SupabaseQuestionRepository(),
+       _groups = groups ?? const SupabaseGroupRepository(),
+       _currentUserId = currentUserId ?? (() => AuthService.currentUser?.id);
 
   /// Set when opened via /tests/:id/edit.
   final String? editingTestId;
@@ -70,6 +70,31 @@ class TestCreationController extends DisposableNotifier {
   /// Re-attempt policy (persisted in `tests.settings`; server-enforced).
   AttemptSettings attemptSettings = AttemptSettings.defaults;
 
+  /// Late-join window (scheduled kinds); `allowLateJoin` is the column flag.
+  LateJoinSettings lateJoin = LateJoinSettings.defaults;
+
+  /// Mixed-difficulty distribution target (`settings.question_config`).
+  QuestionConfig questionConfig = QuestionConfig.none;
+
+  /// Derived, never typed: `starts_at + duration_sec` (null without a start).
+  DateTime? get calculatedEndsAt =>
+      ScheduleMath.endFor(startsAt: startsAt, durationSec: durationSec);
+
+  /// Actual difficulty counts of every question (server + local drafts).
+  Map<String, int> get actualDifficultyCounts {
+    final counts = {'easy': 0, 'medium': 0, 'hard': 0};
+    for (final q in serverQuestions) {
+      counts.update(q.difficulty.name, (v) => v + 1, ifAbsent: () => 1);
+    }
+    for (final d in localQuestions) {
+      counts.update(d.difficulty.name, (v) => v + 1, ifAbsent: () => 1);
+    }
+    return counts;
+  }
+
+  DistributionCheck? get distributionCheck =>
+      questionConfig.isSet ? questionConfig.check(actualDifficultyCounts) : null;
+
   final List<QuestionDraft> localQuestions = [];
   final List<Question> serverQuestions = [];
   final List<String> syllabusNodeIds = [];
@@ -87,7 +112,8 @@ class TestCreationController extends DisposableNotifier {
   bool get isLoading => _loading;
   bool get isBusy => _busy;
   String? get loadError => _loadError;
-  List<String> get serverSyllabusNodeIds => List.unmodifiable(_serverSyllabusNodeIds);
+  List<String> get serverSyllabusNodeIds =>
+      List.unmodifiable(_serverSyllabusNodeIds);
 
   String? get questionsGuidance {
     switch (kind) {
@@ -105,25 +131,39 @@ class TestCreationController extends DisposableNotifier {
   // ── readiness (single implementation, shared with the review step) ──
 
   PublishReadinessInput get readinessInput => PublishReadinessInput(
-        title: title,
-        kind: kind,
-        groupId: groupId,
-        durationSec: durationSec,
-        marksPerQuestion: marksPerQuestion,
-        startsAt: startsAt,
-        endsAt: endsAt,
-        serverQuestionStatuses: [for (final q in serverQuestions) q.status],
-    serverQuestionOptionCounts: [for (final q in serverQuestions) q.options?.length ?? 0],
-        localDraftValidity: [for (final d in localQuestions) d.isValid],
-      );
+    title: title,
+    kind: kind,
+    groupId: groupId,
+    durationSec: durationSec,
+    marksPerQuestion: marksPerQuestion,
+    startsAt: startsAt,
+    endsAt: calculatedEndsAt ?? endsAt,
+    serverQuestionStatuses: [for (final q in serverQuestions) q.status],
+    serverQuestionOptionCounts: [
+      for (final q in serverQuestions) q.options?.length ?? 0,
+    ],
+    localDraftValidity: [for (final d in localQuestions) d.isValid],
+    syllabusNodeCount: syllabusNodeIds.length,
+    questionConfig: questionConfig,
+    actualDifficultyCounts: actualDifficultyCounts,
+    attemptSettings: attemptSettings,
+    lateJoin: lateJoin,
+    allowLateJoin: allowLateJoin,
+    // Empty string (not null) so readiness evaluates the join-code rule.
+    joinCode: joinCode ?? '',
+  );
 
-  List<ReadinessItem> get readiness => PublishReadiness.evaluate(readinessInput);
+  List<ReadinessItem> get readiness =>
+      PublishReadiness.evaluate(readinessInput);
   bool get isReadyToPublish => PublishReadiness.isReady(readinessInput);
 
   bool get canProceedFromBasics => title.trim().isNotEmpty;
   bool get canProceedFromConfiguration =>
-      !kind.requiresGroup || (groupId != null && groupId!.isNotEmpty);
-  bool get hasAnyQuestion => localQuestions.isNotEmpty || serverQuestions.isNotEmpty;
+      (!kind.requiresGroup || (groupId != null && groupId!.isNotEmpty)) &&
+      questionConfig.isValid &&
+      (kind.maxQuestionTarget == null || questionConfig.total <= kind.maxQuestionTarget!);
+  bool get hasAnyQuestion =>
+      localQuestions.isNotEmpty || serverQuestions.isNotEmpty;
 
   // ── loading ──
 
@@ -190,6 +230,8 @@ class TestCreationController extends DisposableNotifier {
     accessCode = t.accessCode;
     joinCode = t.joinCode;
     attemptSettings = AttemptSettings.fromSettings(t.settings);
+    lateJoin = LateJoinSettings.fromTest(allowLateJoin: t.allowLateJoin, settings: t.settings);
+    questionConfig = QuestionConfig.fromSettings(t.settings);
   }
 
   // ── form mutations ──
@@ -198,23 +240,46 @@ class TestCreationController extends DisposableNotifier {
   void setDescription(String v) => _set(() => description = v);
 
   void setKind(TestKind newKind) => _set(() {
-        final changed = newKind != kind;
-        kind = newKind;
-        if (!newKind.requiresGroup) groupId = null;
-        if (!changed) return;
-        switch (newKind) {
-          case TestKind.practice:
-            startsAt = null;
-            endsAt = null;
-            durationSec = practiceDefaultDurationSec;
-            break;
-          case TestKind.quick:
-            durationSec = quickDefaultDurationSec;
-            break;
-          default:
-            break;
-        }
-      });
+    final changed = newKind != kind;
+    kind = newKind;
+    if (!newKind.requiresGroup) groupId = null;
+    if (!changed) return;
+    switch (newKind) {
+      case TestKind.practice:
+        startsAt = null;
+        endsAt = null;
+        durationSec = practiceDefaultDurationSec;
+        break;
+      case TestKind.quick:
+        durationSec = quickDefaultDurationSec;
+        break;
+      default:
+        break;
+    }
+    // Kind defaults for a NEW test only; an edited row keeps its values.
+    if (_persisted == null) {
+      final p = newKind.defaultAttemptPolicy;
+      attemptSettings = AttemptSettings(
+        allowReattempt: p.allowReattempt,
+        maxAttempts: p.maxAttempts,
+      );
+      allowLateJoin = newKind.supportsLateJoin;
+      lateJoin = LateJoinSettings.defaults;
+      if (!newKind.isScheduled) {
+        startsAt = null;
+        endsAt = null;
+        maxParticipants = null;
+      }
+    }
+  });
+
+  void setLateJoin(LateJoinSettings v) => _set(() {
+    lateJoin = v;
+    allowLateJoin = v.enabled;
+  });
+
+  void setQuestionConfig(QuestionConfig v) => _set(() => questionConfig = v);
+
 
   void setConfiguration({
     required int? durationSec,
@@ -228,60 +293,66 @@ class TestCreationController extends DisposableNotifier {
     required String? accessCode,
     required String? joinCode,
     AttemptSettings? attemptSettings,
-  }) =>
-      _set(() {
-        if (attemptSettings != null) this.attemptSettings = attemptSettings;
-        this.durationSec = durationSec;
-        this.marksPerQuestion = marksPerQuestion;
-        this.negativeMarks = negativeMarks;
-        this.groupId = groupId;
-        this.startsAt = startsAt;
-        this.endsAt = endsAt;
-        this.maxParticipants = maxParticipants;
-        this.allowLateJoin = allowLateJoin;
-        this.accessCode = accessCode;
-        this.joinCode = joinCode;
-      });
+    LateJoinSettings? lateJoin,
+    QuestionConfig? questionConfig,
+  }) => _set(() {
+    if (attemptSettings != null) this.attemptSettings = attemptSettings;
+    if (lateJoin != null) {
+      this.lateJoin = lateJoin;
+      this.allowLateJoin = lateJoin.enabled;
+    }
+    if (questionConfig != null) this.questionConfig = questionConfig;
+    this.durationSec = durationSec;
+    this.marksPerQuestion = marksPerQuestion;
+    this.negativeMarks = negativeMarks;
+    this.groupId = groupId;
+    this.startsAt = startsAt;
+    this.endsAt = endsAt;
+    this.maxParticipants = maxParticipants;
+    this.allowLateJoin = allowLateJoin;
+    this.accessCode = accessCode;
+    this.joinCode = joinCode;
+  });
 
   void setLocalQuestions(List<QuestionDraft> drafts) => _set(() {
-        localQuestions
-          ..clear()
-          ..addAll(drafts);
-      });
+    localQuestions
+      ..clear()
+      ..addAll(drafts);
+  });
 
   void setSyllabusNodeIds(List<String> ids) => _set(() {
-        syllabusNodeIds
-          ..clear()
-          ..addAll(ids);
-      });
+    syllabusNodeIds
+      ..clear()
+      ..addAll(ids);
+  });
 
   // ── server question operations ──
 
   Future<void> approveQuestion(String questionId) => _action(() async {
-        await _questions.approve(questionId);
-        _replaceServerQuestion(questionId, (q) => q.copyWith(status: 'approved'));
-      });
+    await _questions.approve(questionId);
+    _replaceServerQuestion(questionId, (q) => q.copyWith(status: 'approved'));
+  });
 
   /// Approves every pending question; returns the number that failed.
   Future<int> approveAllPending() => _action(() async {
-        var failed = 0;
-        for (final q in List<Question>.from(serverQuestions)) {
-          if (q.status == PublishReadiness.approvedStatus) continue;
-          try {
-            await _questions.approve(q.id);
-            _replaceServerQuestion(q.id, (x) => x.copyWith(status: 'approved'));
-          } on AppError catch (e) {
-            AppLogger.error('Approve ${q.id} failed: ${e.message}');
-            failed++;
-          }
-        }
-        return failed;
-      });
+    var failed = 0;
+    for (final q in List<Question>.from(serverQuestions)) {
+      if (q.status == PublishReadiness.approvedStatus) continue;
+      try {
+        await _questions.approve(q.id);
+        _replaceServerQuestion(q.id, (x) => x.copyWith(status: 'approved'));
+      } on AppError catch (e) {
+        AppLogger.error('Approve ${q.id} failed: ${e.message}');
+        failed++;
+      }
+    }
+    return failed;
+  });
 
   Future<void> deleteServerQuestion(String questionId) => _action(() async {
-        await _questions.delete(questionId);
-        serverQuestions.removeWhere((q) => q.id == questionId);
-      });
+    await _questions.delete(questionId);
+    serverQuestions.removeWhere((q) => q.id == questionId);
+  });
 
   Future<void> updateServerQuestion(Question original, QuestionDraft draft) =>
       _action(() async {
@@ -294,7 +365,8 @@ class TestCreationController extends DisposableNotifier {
             ordinal: q.ordinal,
             question: draft.questionText,
             options: [
-              for (final o in draft.options) QuestionOption(id: o.id ?? '', text: o.text),
+              for (final o in draft.options)
+                QuestionOption(id: o.id ?? '', text: o.text),
             ],
             explanation: draft.explanation,
             subjectId: draft.subjectId,
@@ -318,28 +390,28 @@ class TestCreationController extends DisposableNotifier {
 
   /// Saves everything as a draft. Returns the test id.
   Future<String> saveDraft() => _action(() async {
-        _validateBasics();
-        final id = await _persistTestRow();
-        await _persistQuestions(id, approve: false);
-        await _persistSyllabus(id);
-        await _reloadServerQuestions(id);
-        return id;
-      });
+    _validateBasics();
+    final id = await _persistTestRow();
+    await _persistQuestions(id, approve: false);
+    await _persistSyllabus(id);
+    await _reloadServerQuestions(id);
+    return id;
+  });
 
   /// Saves, approves new questions, and publishes. Throws with the first
   /// blocking readiness reason before touching the server.
   Future<String> publish() => _action(() async {
-        final reasons = PublishReadiness.blockingReasons(readinessInput);
-        if (reasons.isNotEmpty) {
-          throw ValidationError(message: reasons.join('\n'));
-        }
-        final id = await _persistTestRow();
-        await _persistQuestions(id, approve: true);
-        await _persistSyllabus(id);
-        await _reloadServerQuestions(id);
-        await _tests.publish(id);
-        return id;
-      });
+    final reasons = PublishReadiness.blockingReasons(readinessInput);
+    if (reasons.isNotEmpty) {
+      throw ValidationError(message: reasons.join('\n'));
+    }
+    final id = await _persistTestRow();
+    await _persistQuestions(id, approve: true);
+    await _persistSyllabus(id);
+    await _reloadServerQuestions(id);
+    await _tests.publish(id);
+    return id;
+  });
 
   void _validateBasics() {
     if (title.trim().isEmpty) {
@@ -347,7 +419,8 @@ class TestCreationController extends DisposableNotifier {
     }
     if (kind.requiresGroup && (groupId == null || groupId!.isEmpty)) {
       throw const ValidationError(
-          message: 'Group selection is required for Group Test');
+        message: 'Group selection is required for Group Test',
+      );
     }
   }
 
@@ -360,7 +433,10 @@ class TestCreationController extends DisposableNotifier {
     }
     // Attempt policy keys live next to test_kind; every other key is kept.
     settings = attemptSettings.applyTo(settings);
-    String? clean(String? s) => (s == null || s.trim().isEmpty) ? null : s.trim();
+    if (kind.supportsLateJoin) settings = lateJoin.applyTo(settings);
+    settings = questionConfig.applyTo(settings);
+    String? clean(String? s) =>
+        (s == null || s.trim().isEmpty) ? null : s.trim();
     return TestWriteInput(
       title: title.trim(),
       description: clean(description),
@@ -370,7 +446,9 @@ class TestCreationController extends DisposableNotifier {
       testMode: backend.mode.dbValue,
       groupId: kind.requiresGroup ? groupId : null,
       startsAt: startsAt,
-      endsAt: endsAt,
+      // Derived on every save: ends_at = starts_at + duration_sec (UTC by the
+      // repository). No user-typed end time exists in V1.
+      endsAt: calculatedEndsAt,
       maxParticipants: maxParticipants,
       allowLateJoin: allowLateJoin,
       settings: settings,
@@ -411,7 +489,8 @@ class TestCreationController extends DisposableNotifier {
         } on AppError catch (e) {
           AppLogger.error('Approve new question failed: ${e.message}');
           throw DataError(
-            message: 'A question was saved but could not be approved. '
+            message:
+                'A question was saved but could not be approved. '
                 'Approve it from the Review step, then publish.',
           );
         }

@@ -64,6 +64,10 @@ class FakeTestRepository implements TestRepository {
       testMode: input.testMode,
       groupId: input.groupId,
       durationSec: input.durationSec,
+      startsAt: input.startsAt,
+      endsAt: input.endsAt,
+      allowLateJoin: input.allowLateJoin ?? false,
+      joinCode: input.joinCode,
       settings: input.settings,
       config: input.config,
     );
@@ -84,6 +88,10 @@ class FakeTestRepository implements TestRepository {
       testMode: t.testMode,
       groupId: t.groupId,
       durationSec: input.durationSec,
+      startsAt: input.startsAt,
+      endsAt: input.endsAt,
+      allowLateJoin: input.allowLateJoin ?? t.allowLateJoin,
+      joinCode: input.joinCode ?? t.joinCode,
       settings: input.settings ?? t.settings,
       config: input.config ?? t.config,
     );

@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../../../core/models/group.dart';
 import '../domain/attempt_policy.dart';
+import '../domain/creation_settings.dart';
+import '../domain/test_kind.dart';
+import 'test_formatters.dart';
 
 /// Configuration step (R4 restart): identical to the legacy StepConfiguration
 /// except that groups are injected by the creation controller instead of
@@ -21,6 +24,9 @@ class ConfigurationStep extends StatefulWidget {
     required this.joinCode,
     required this.onChanged,
     this.attemptSettings = AttemptSettings.defaults,
+    this.kind = TestKind.self,
+    this.lateJoin = LateJoinSettings.defaults,
+    this.questionConfig = QuestionConfig.none,
     this.groups = const [],
     this.groupsLoading = false,
     super.key,
@@ -38,6 +44,9 @@ class ConfigurationStep extends StatefulWidget {
   final String? accessCode;
   final String? joinCode;
   final AttemptSettings attemptSettings;
+  final TestKind kind;
+  final LateJoinSettings lateJoin;
+  final QuestionConfig questionConfig;
   final ValueChanged<Map<String, dynamic>> onChanged;
 
   /// Groups the user belongs to (loaded by the controller).
@@ -55,10 +64,17 @@ class _ConfigurationStepState extends State<ConfigurationStep> {
   late final TextEditingController _maxParticipantsController;
   late final TextEditingController _accessCodeController;
   late final TextEditingController _joinCodeController;
-  late bool _allowLateJoin;
   late AttemptSettings _attempts;
+  late LateJoinSettings _lateJoin;
+  late QuestionConfig _questionConfig;
   DateTime? _startsAt;
-  DateTime? _endsAt;
+  /// Derived from start + duration; kept only for the calculated display.
+  DateTime? get _calculatedEnd => ScheduleMath.endFor(
+        startsAt: _startsAt,
+        durationSec: int.tryParse(_durationController.text) == null
+            ? null
+            : int.parse(_durationController.text) * 60,
+      );
 
   @override
   void initState() {
@@ -81,10 +97,10 @@ class _ConfigurationStepState extends State<ConfigurationStep> {
       text: widget.accessCode ?? '',
     );
     _joinCodeController = TextEditingController(text: widget.joinCode ?? '');
-    _allowLateJoin = widget.allowLateJoin;
     _attempts = widget.attemptSettings;
+    _lateJoin = widget.lateJoin;
+    _questionConfig = widget.questionConfig;
     _startsAt = widget.startsAt;
-    _endsAt = widget.endsAt;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -117,10 +133,13 @@ class _ConfigurationStepState extends State<ConfigurationStep> {
       'testMode': widget.testMode,
       'groupId': isGroupMode ? widget.groupId : null,
       'startsAt': _startsAt,
-      'endsAt': _endsAt,
+      // Derived: starts_at + duration (never typed by the creator).
+      'endsAt': _calculatedEnd,
       'maxParticipants': int.tryParse(_maxParticipantsController.text),
-      'allowLateJoin': _allowLateJoin,
+      'allowLateJoin': _lateJoin.enabled,
       'attemptSettings': _attempts,
+      'lateJoin': _lateJoin,
+      'questionConfig': _questionConfig,
       'accessCode': _accessCodeController.text.isNotEmpty
           ? _accessCodeController.text
           : null,
@@ -130,42 +149,26 @@ class _ConfigurationStepState extends State<ConfigurationStep> {
     });
   }
 
+  /// Start time only (local picker → local DateTime; the repository writes
+  /// UTC). The end is derived from the duration, so no end picker exists.
   Future<void> _pickDateTime({required bool isStart}) async {
     final now = DateTime.now();
     final date = await showDatePicker(
       context: context,
-      initialDate: isStart
-          ? (_startsAt ?? now)
-          : (_endsAt ?? now.add(const Duration(hours: 1))),
+      initialDate: _startsAt ?? now,
       firstDate: now,
       lastDate: now.add(const Duration(days: 365)),
     );
-    if (date == null || !context.mounted) return;
+    if (date == null || !mounted) return;
 
     final time = await showTimePicker(
       context: context,
-      initialTime: TimeOfDay.fromDateTime(
-        isStart
-            ? (_startsAt ?? now)
-            : (_endsAt ?? now.add(const Duration(hours: 1))),
-      ),
+      initialTime: TimeOfDay.fromDateTime(_startsAt ?? now),
     );
-    if (time == null) return;
-
-    final dateTime = DateTime(
-      date.year,
-      date.month,
-      date.day,
-      time.hour,
-      time.minute,
-    );
+    if (time == null || !mounted) return;
 
     setState(() {
-      if (isStart) {
-        _startsAt = dateTime;
-      } else {
-        _endsAt = dateTime;
-      }
+      _startsAt = DateTime(date.year, date.month, date.day, time.hour, time.minute);
     });
     _update();
   }
@@ -226,78 +229,122 @@ class _ConfigurationStepState extends State<ConfigurationStep> {
             const SizedBox(height: 16),
             _buildGroupSelection(),
           ],
+          // ── Question configuration (target; review compares with actual) ──
           const SizedBox(height: 24),
+          Text('Question Configuration',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 4),
           Text(
-            'Schedule',
-            style: Theme.of(context).textTheme.titleMedium
-                ?.copyWith(fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 12),
-          _buildDateTimeRow(
-            context,
-            label: 'Start Time',
-            dateTime: _startsAt,
-            onPick: () => _pickDateTime(isStart: true),
-            onClear: () {
-              setState(() => _startsAt = null);
-              _update();
-            },
+            'MCQ only in V1 (4 options each). Set a total and how many Easy / '
+            'Medium / Hard questions the test should contain; the Review step '
+            'checks the questions you add against this target.',
+            style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: 8),
-          _buildDateTimeRow(
-            context,
-            label: 'End Time',
-            dateTime: _endsAt,
-            onPick: () => _pickDateTime(isStart: false),
-            onClear: () {
-              setState(() => _endsAt = null);
+          _QuestionConfigFields(
+            value: _questionConfig,
+            maxTotal: widget.kind.maxQuestionTarget,
+            onChanged: (v) {
+              setState(() => _questionConfig = v);
               _update();
             },
           ),
-          const SizedBox(height: 24),
-          Text(
-            'Access Control',
-            style: Theme.of(context).textTheme.titleMedium
-                ?.copyWith(fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 12),
-          TextFormField(
-            controller: _maxParticipantsController,
-            decoration: const InputDecoration(
-              labelText: 'Max Participants',
-              hintText: 'Leave empty for unlimited',
+          // ── Schedule ──
+          if (widget.kind.isScheduled) ...[
+            const SizedBox(height: 24),
+            Text('Schedule',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 12),
+            _buildDateTimeRow(
+              context,
+              label: 'Start Time',
+              dateTime: _startsAt,
+              onPick: () => _pickDateTime(isStart: true),
+              onClear: () {
+                setState(() => _startsAt = null);
+                _update();
+              },
             ),
-            keyboardType: TextInputType.number,
-            onChanged: (_) => _update(),
-          ),
-          const SizedBox(height: 16),
-          TextFormField(
-            controller: _accessCodeController,
-            decoration: const InputDecoration(
-              labelText: 'Access Code',
-              hintText: 'Optional access code',
+            const SizedBox(height: 8),
+            // End time is derived, never typed: starts_at + duration.
+            ListTile(
+              key: const Key('calculated_end_time'),
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.schedule_outlined),
+              title: const Text('Calculated End Time'),
+              subtitle: Text(
+                _calculatedEnd == null
+                    ? 'Set a start time and duration'
+                    : TestFormatters.dateTime(_calculatedEnd),
+              ),
             ),
-            onChanged: (_) => _update(),
-          ),
-          const SizedBox(height: 16),
-          TextFormField(
-            controller: _joinCodeController,
-            decoration: const InputDecoration(
-              labelText: 'Join Code',
-              hintText: 'Optional join code',
+            // ── Late joining ──
+            const SizedBox(height: 16),
+            SwitchListTile(
+              key: const Key('allow_late_join'),
+              title: const Text('Allow Late Joining'),
+              subtitle: const Text('New participants may still join for a while after the start'),
+              value: _lateJoin.enabled,
+              onChanged: (value) {
+                setState(() => _lateJoin = _lateJoin.copyWith(enabled: value));
+                _update();
+              },
+              contentPadding: EdgeInsets.zero,
             ),
-            onChanged: (_) => _update(),
-          ),
-          const SizedBox(height: 16),
-          SwitchListTile(
-            title: const Text('Allow Late Join'),
-            value: _allowLateJoin,
-            onChanged: (value) {
-              setState(() => _allowLateJoin = value);
-              _update();
-            },
-            contentPadding: EdgeInsets.zero,
-          ),
+            DropdownButtonFormField<int>(
+              key: const Key('late_join_minutes'),
+              initialValue: LateJoinSettings.allowedMinutes.contains(_lateJoin.minutes)
+                  ? _lateJoin.minutes
+                  : LateJoinSettings.defaultMinutes,
+              decoration: const InputDecoration(labelText: 'Late Join Window (minutes after start)'),
+              items: [
+                for (final m in LateJoinSettings.allowedMinutes)
+                  DropdownMenuItem(value: m, child: Text('$m minutes')),
+              ],
+              onChanged: _lateJoin.enabled
+                  ? (v) {
+                      if (v == null) return;
+                      setState(() => _lateJoin = _lateJoin.copyWith(minutes: v));
+                      _update();
+                    }
+                  : null,
+            ),
+            // ── Participants / access ──
+            const SizedBox(height: 24),
+            Text('Participants',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _maxParticipantsController,
+              decoration: const InputDecoration(
+                labelText: 'Max Participants',
+                hintText: 'Leave empty for unlimited',
+              ),
+              keyboardType: TextInputType.number,
+              onChanged: (_) => _update(),
+            ),
+          ],
+          if (widget.kind.requiresJoinCode) ...[
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _joinCodeController,
+              decoration: const InputDecoration(
+                labelText: 'Join Code *',
+                hintText: 'Friends enter this code to join',
+              ),
+              onChanged: (_) => _update(),
+            ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _accessCodeController,
+              decoration: const InputDecoration(
+                labelText: 'Access Code',
+                hintText: 'Optional extra access code',
+              ),
+              onChanged: (_) => _update(),
+            ),
+          ],
+          // ── Attempt settings (every kind) ──
           const SizedBox(height: 24),
           Text('Attempt Settings', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 4),
@@ -488,6 +535,106 @@ class _ConfigurationStepState extends State<ConfigurationStep> {
             tooltip: 'Clear',
           ),
         ],
+      ],
+    );
+  }
+}
+
+/// Total + Easy/Medium/Hard target; validates E+M+H = Total inline.
+class _QuestionConfigFields extends StatefulWidget {
+  const _QuestionConfigFields({required this.value, required this.onChanged, this.maxTotal});
+
+  final QuestionConfig value;
+  final int? maxTotal;
+  final ValueChanged<QuestionConfig> onChanged;
+
+  @override
+  State<_QuestionConfigFields> createState() => _QuestionConfigFieldsState();
+}
+
+class _QuestionConfigFieldsState extends State<_QuestionConfigFields> {
+  late final TextEditingController _total;
+  late final TextEditingController _easy;
+  late final TextEditingController _medium;
+  late final TextEditingController _hard;
+
+  @override
+  void initState() {
+    super.initState();
+    String s(int v) => v == 0 ? '' : '$v';
+    _total = TextEditingController(text: s(widget.value.total));
+    _easy = TextEditingController(text: s(widget.value.easy));
+    _medium = TextEditingController(text: s(widget.value.medium));
+    _hard = TextEditingController(text: s(widget.value.hard));
+  }
+
+  @override
+  void dispose() {
+    _total.dispose();
+    _easy.dispose();
+    _medium.dispose();
+    _hard.dispose();
+    super.dispose();
+  }
+
+  QuestionConfig get _current => QuestionConfig(
+        total: int.tryParse(_total.text) ?? 0,
+        easy: int.tryParse(_easy.text) ?? 0,
+        medium: int.tryParse(_medium.text) ?? 0,
+        hard: int.tryParse(_hard.text) ?? 0,
+      );
+
+  void _emit() => widget.onChanged(_current);
+
+  Widget _field(String label, TextEditingController c, {Key? key}) => Expanded(
+        child: TextFormField(
+          key: key,
+          controller: c,
+          decoration: InputDecoration(labelText: label, isDense: true),
+          keyboardType: TextInputType.number,
+          onChanged: (_) {
+            setState(() {});
+            _emit();
+          },
+        ),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final v = _current;
+    final overMax = widget.maxTotal != null && v.total > widget.maxTotal!;
+    final status = !v.isSet
+        ? 'No target set (optional)'
+        : overMax
+            ? 'Total cannot exceed ${widget.maxTotal} for this test type'
+            : v.isValid
+                ? 'Total ${v.sum} / ${v.total} ✓'
+                : 'Total ${v.sum} / ${v.total} — Easy + Medium + Hard must equal Total';
+    final ok = !v.isSet || (v.isValid && !overMax);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(children: [
+          _field('Total Questions', _total, key: const Key('qc_total')),
+          const SizedBox(width: 12),
+          const Expanded(child: Text('Question Type: MCQ')),
+        ]),
+        const SizedBox(height: 8),
+        Row(children: [
+          _field('Easy', _easy, key: const Key('qc_easy')),
+          const SizedBox(width: 8),
+          _field('Medium', _medium, key: const Key('qc_medium')),
+          const SizedBox(width: 8),
+          _field('Hard', _hard, key: const Key('qc_hard')),
+        ]),
+        const SizedBox(height: 4),
+        Text(
+          status,
+          key: const Key('qc_status'),
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: ok ? null : Theme.of(context).colorScheme.error,
+              ),
+        ),
       ],
     );
   }

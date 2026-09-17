@@ -7,6 +7,8 @@
 --   tests.settings.allow_reattempt  boolean, default false
 --   tests.settings.max_attempts     integer, default 1  (V1 UI: 1/2/3/5/10)
 --   allow_reattempt = false  =>  effective max = 1
+-- v2 (2026-09-17): also adds the late-join WINDOW rule (settings.late_join_minutes,
+-- default 10) after the existing boolean late-join check — see the block in core.
 -- No schema change (settings jsonb already round-trips through
 -- rpc_create_test / rpc_update_test). No RLS change. No new constraint
 -- (UNIQUE(test_id,user_id,attempt_number) stays the final guard).
@@ -219,6 +221,23 @@ BEGIN
      AND now() > v_test.starts_at
   THEN
     RAISE EXCEPTION 'LATE_JOIN_NOT_ALLOWED';
+  END IF;
+
+  -- ── Late-join WINDOW (R4 creation completion) ────────────
+  -- When late joining is allowed, a NEW attempt for a scheduled test
+  -- (Challenge with Friends = live, Group Test = group) is accepted only
+  -- until starts_at + settings.late_join_minutes (default 10). Exactly at
+  -- the boundary is allowed; after it LATE_JOIN_WINDOW_CLOSED. Runs after
+  -- resume (in_progress users continue) and never relaxes the ends_at
+  -- hard block above. Self-family tests have no starts_at → unaffected.
+  IF v_test.allow_late_join = true
+     AND v_test.test_mode IN ('live', 'group')
+     AND v_test.starts_at IS NOT NULL
+     AND now() > v_test.starts_at
+                 + (GREATEST(0, COALESCE((v_test.settings->>'late_join_minutes')::integer, 10))
+                    * interval '1 minute')
+  THEN
+    RAISE EXCEPTION 'LATE_JOIN_WINDOW_CLOSED';
   END IF;
 
   -- ── Max participants (DISTINCT users) ───────────────────

@@ -28,7 +28,7 @@ void main() {
 
     test('creatable kinds exclude adaptive', () {
       expect(TestKind.creatable, isNot(contains(TestKind.adaptive)));
-      expect(TestKind.creatable.length, 6);
+      expect(TestKind.creatable.length, 5);
     });
   });
 
@@ -218,12 +218,18 @@ void main() {
       expect(reasons, ['2 question(s) need approval before publishing']);
     });
 
-    test('group required only for Group Test', () {
-      expect(PublishReadiness.isReady(input(kind: TestKind.group)), isFalse);
-      expect(PublishReadiness.isReady(input(kind: TestKind.group, groupId: 'g')),
+    test('group required only for Group Test; scheduled kinds need a start time', () {
+      final start = DateTime(2026, 10, 1, 10);
+      expect(PublishReadiness.isReady(input(kind: TestKind.group, starts: start)), isFalse);
+      expect(
+          PublishReadiness.isReady(input(kind: TestKind.group, groupId: 'g', starts: start)),
           isTrue);
-      expect(PublishReadiness.isReady(input(kind: TestKind.challengeWithFriends)),
+      // Scheduled kinds are not ready without a start time (V1 rule).
+      expect(PublishReadiness.isReady(input(kind: TestKind.group, groupId: 'g')), isFalse);
+      expect(
+          PublishReadiness.isReady(input(kind: TestKind.challengeWithFriends, starts: start)),
           isTrue);
+      expect(PublishReadiness.isReady(input(kind: TestKind.self)), isTrue);
     });
 
     test('no questions, invalid local drafts, bad schedule all block', () {

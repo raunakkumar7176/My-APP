@@ -4,9 +4,12 @@ import 'package:go_router/go_router.dart';
 import '../../../core/constants/theme/app_colors.dart';
 import '../../../core/errors/app_error.dart';
 import '../domain/attempt_policy.dart';
+import '../domain/creation_settings.dart';
+import '../domain/test_kind.dart';
 import '../state/test_creation_controller.dart';
 import '../widgets/basic_details_step.dart';
 import '../widgets/configuration_step.dart';
+import '../widgets/question_source_step.dart';
 import '../widgets/questions_step.dart';
 import '../widgets/review_step.dart';
 import '../widgets/step_syllabus.dart';
@@ -14,13 +17,26 @@ import '../widgets/step_syllabus.dart';
 /// Five-step wizard over [TestCreationController]. The screen holds only
 /// the current step index; all data and persistence live in the controller.
 class TestCreationScreen extends StatefulWidget {
-  const TestCreationScreen({this.testId, this.controller, super.key});
+  const TestCreationScreen({this.testId, this.controller, this.initialSource, super.key});
+
+  /// Pre-selected question source (Home tiles); unavailable sources open the
+  /// wizard on the truthful "Not configured" step.
+  final QuestionSource? initialSource;
 
   /// Present when editing an existing draft (/tests/:id/edit).
   final String? testId;
   final TestCreationController? controller;
 
-  static const stepTitles = ['Basic Details', 'Configuration', 'Questions', 'Syllabus', 'Review'];
+  // Syllabus (scope) comes before Source/Questions so a difficulty target
+  // is always defined within the selected concept.
+  static const stepTitles = [
+    'Basic Details',
+    'Configuration',
+    'Syllabus',
+    'Question Source',
+    'Questions',
+    'Review',
+  ];
 
   @override
   State<TestCreationScreen> createState() => _TestCreationScreenState();
@@ -29,7 +45,10 @@ class TestCreationScreen extends StatefulWidget {
 class _TestCreationScreenState extends State<TestCreationScreen> {
   late final TestCreationController _c;
   late final bool _owns;
-  int _step = 0;
+  // A Home tile for an unavailable source lands directly on the source step.
+  late int _step =
+      (widget.initialSource != null && !widget.initialSource!.isAvailable) ? 3 : 0;
+  late QuestionSource _source = widget.initialSource ?? QuestionSource.manual;
 
   @override
   void initState() {
@@ -59,6 +78,10 @@ class _TestCreationScreenState extends State<TestCreationScreen> {
       case 1:
         return _c.canProceedFromConfiguration;
       case 2:
+        return !_c.kind.requiresScope || _c.syllabusNodeIds.isNotEmpty;
+      case 3:
+        return _source.isAvailable;
+      case 4:
         return _c.hasAnyQuestion;
       default:
         return true;
@@ -238,6 +261,9 @@ class _TestCreationScreenState extends State<TestCreationScreen> {
           accessCode: _c.accessCode,
           joinCode: _c.joinCode,
           attemptSettings: _c.attemptSettings,
+          kind: _c.kind,
+          lateJoin: _c.lateJoin,
+          questionConfig: _c.questionConfig,
           groups: _c.groups,
           onChanged: (v) => _c.setConfiguration(
             durationSec: v['durationSec'] as int?,
@@ -251,9 +277,22 @@ class _TestCreationScreenState extends State<TestCreationScreen> {
             accessCode: v['accessCode'] as String?,
             joinCode: v['joinCode'] as String?,
             attemptSettings: v['attemptSettings'] as AttemptSettings?,
+            lateJoin: v['lateJoin'] as LateJoinSettings?,
+            questionConfig: v['questionConfig'] as QuestionConfig?,
           ),
         );
       case 2:
+        return StepSyllabus(
+          selectedNodeIds: _c.syllabusNodeIds,
+          serverSelectedNodeIds: _c.serverSyllabusNodeIds,
+          onChanged: _c.setSyllabusNodeIds,
+        );
+      case 3:
+        return QuestionSourceStep(
+          selected: _source,
+          onChanged: (s) => setState(() => _source = s),
+        );
+      case 4:
         return QuestionsStep(
           localQuestions: _c.localQuestions,
           serverQuestions: _c.serverQuestions,
@@ -263,12 +302,6 @@ class _TestCreationScreenState extends State<TestCreationScreen> {
           guidance: _c.questionsGuidance,
           busy: _c.isBusy,
         );
-      case 3:
-        return StepSyllabus(
-          selectedNodeIds: _c.syllabusNodeIds,
-          serverSelectedNodeIds: _c.serverSyllabusNodeIds,
-          onChanged: _c.setSyllabusNodeIds,
-        );
       default:
         return ReviewStep(
           title: _c.title,
@@ -277,8 +310,20 @@ class _TestCreationScreenState extends State<TestCreationScreen> {
           marksPerQuestion: _c.marksPerQuestion,
           negativeMarks: _c.negativeMarks,
           startsAt: _c.startsAt,
-          endsAt: _c.endsAt,
+          endsAt: _c.calculatedEndsAt,
           readiness: _c.readiness,
+          extraRows: [
+            if (_c.questionConfig.isSet)
+              ('Difficulty target', _c.distributionCheck?.summary ?? ''),
+            ('Attempts', _c.attemptSettings.allowReattempt
+                ? 'Re-attempt allowed, max ${_c.attemptSettings.effectiveMax}'
+                : 'Single attempt'),
+            if (_c.kind.supportsLateJoin)
+              ('Late joining', _c.lateJoin.enabled
+                  ? 'Allowed for ${_c.lateJoin.minutes} min after start'
+                  : 'Not allowed'),
+            ('Question source', _source.label),
+          ],
           serverQuestions: _c.serverQuestions,
           localQuestions: _c.localQuestions,
           syllabusCount: _c.syllabusNodeIds.length,

@@ -6,11 +6,13 @@ import '../../../core/models/result_batch.dart';
 import '../../../core/models/test.dart';
 import '../../../core/services/auth_service.dart';
 import '../data/attempt_repository.dart';
+import '../data/group_repository.dart';
 import '../data/question_repository.dart';
 import '../data/result_repository.dart';
 import '../data/test_repository.dart';
 import '../domain/attempt_policy.dart';
 import '../domain/backend_mapping.dart';
+import '../domain/creation_settings.dart';
 import '../domain/test_kind.dart';
 import '../domain/test_lifecycle.dart';
 import '../domain/test_mode.dart';
@@ -29,12 +31,14 @@ class TestDetailController extends DisposableNotifier {
     QuestionRepository? questions,
     AttemptRepository? attempts,
     ResultRepository? results,
+    GroupRepository? groups,
     String? Function()? currentUserId,
     DateTime Function()? clock,
   })  : _tests = tests ?? const SupabaseTestRepository(),
         _questions = questions ?? const SupabaseQuestionRepository(),
         _attempts = attempts ?? const SupabaseAttemptRepository(),
         _results = results ?? const SupabaseResultRepository(),
+        _groups = groups ?? const SupabaseGroupRepository(),
         _currentUserId = currentUserId ?? (() => AuthService.currentUser?.id),
         _clock = clock ?? DateTime.now;
 
@@ -43,6 +47,7 @@ class TestDetailController extends DisposableNotifier {
   final QuestionRepository _questions;
   final AttemptRepository _attempts;
   final ResultRepository _results;
+  final GroupRepository _groups;
   final String? Function() _currentUserId;
   final DateTime Function() _clock;
 
@@ -122,6 +127,19 @@ class TestDetailController extends DisposableNotifier {
         attemptState?.inProgress == null) {
       return 'This challenge has already started and does not allow late joining.';
     }
+    // Late-join WINDOW (core v2): with late join allowed, new participants
+    // may join until starts_at + settings.late_join_minutes (inclusive).
+    final mode = TestMode.fromDb(t.testMode);
+    if (!_attemptsLoadFailed &&
+        (mode == TestMode.live || mode == TestMode.group) &&
+        t.allowLateJoin &&
+        t.startsAt != null &&
+        attemptState?.inProgress == null) {
+      final lj = LateJoinSettings.fromTest(allowLateJoin: true, settings: t.settings);
+      if (!lj.joinOpenAt(startsAt: t.startsAt, now: _clock())) {
+        return 'The late-join window (${lj.minutes} min after start) has closed.';
+      }
+    }
     return null;
   }
 
@@ -138,6 +156,7 @@ class TestDetailController extends DisposableNotifier {
       _test = await _tests.getById(testId);
       if (_test == null) _error = 'Test not found.';
       await _loadMyAttempts();
+      await _loadPreTestInfo();
       // Batch state is known only from rpc_generate_results in this session
       // (the result_batches SELECT policy is group-permission based, so a
       // standalone owner cannot read the row); no table read here.
@@ -190,6 +209,60 @@ class TestDetailController extends DisposableNotifier {
           settings: AttemptSettings.fromSettings(_test!.settings),
           attempts: _myAttempts,
         );
+
+  // ── pre-test information (stored rows only; "--" when unreadable) ──
+  int? _questionCount;
+  int? _scopeNodeCount;
+  String? _groupName;
+
+  String get questionCountLabel => _questionCount == null ? '--' : '$_questionCount';
+
+  String get attemptPolicyLabel {
+    final s = AttemptSettings.fromSettings(_test?.settings);
+    return s.allowReattempt ? 'Up to ${s.effectiveMax} attempts' : 'Single attempt';
+  }
+
+  String get lateJoinLabel {
+    final t = _test;
+    if (t == null) return '--';
+    final lj = LateJoinSettings.fromTest(allowLateJoin: t.allowLateJoin, settings: t.settings);
+    return lj.enabled ? 'Allowed for ${lj.minutes} min after start' : 'Not allowed';
+  }
+
+  /// Number of syllabus topics attached; null when none / unreadable.
+  String? get scopeLabel =>
+      (_scopeNodeCount == null || _scopeNodeCount == 0) ? null : '$_scopeNodeCount topic(s)';
+
+  String get groupLabel => _groupName ?? 'Assigned group';
+
+  Future<void> _loadPreTestInfo() async {
+    final t = _test;
+    if (t == null) return;
+    // Question count via the safe RPC (never public.questions; the server
+    // applies access rules and may refuse before the test opens).
+    try {
+      _questionCount = (await _questions.safeQuestions(t.id)).length;
+    } catch (e) {
+      AppLogger.warning('Question count unavailable for ${t.id}: $e');
+      _questionCount = null;
+    }
+    try {
+      _scopeNodeCount = (await _tests.syllabusFor(t.id)).length;
+    } catch (e) {
+      AppLogger.warning('Scope unavailable for ${t.id}: $e');
+      _scopeNodeCount = null;
+    }
+    if (t.groupId != null) {
+      try {
+        final mine = await _groups.myGroups();
+        for (final g in mine) {
+          if (g.id == t.groupId) _groupName = g.name;
+        }
+      } catch (e) {
+        AppLogger.warning('Group name unavailable: $e');
+      }
+    }
+  }
 
   Future<void> _loadMyAttempts() async {
     if (_test == null) return;

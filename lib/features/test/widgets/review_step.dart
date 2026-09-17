@@ -26,8 +26,12 @@ class ReviewStep extends StatelessWidget {
     required this.onApprove,
     required this.onApproveAll,
     this.busy = false,
+    this.extraRows = const [],
     super.key,
   });
+
+  /// Additional summary rows (label, value) from the creation controller.
+  final List<(String, String)> extraRows;
 
   final String title;
   final TestKind kind;
@@ -72,9 +76,10 @@ class ReviewStep extends StatelessWidget {
             _row(context, 'Marks per question', marksPerQuestion?.toString() ?? '--'),
             _row(context, 'Negative marks', negativeMarks?.toString() ?? 'None'),
             if (startsAt != null) _row(context, 'Starts', TestFormatters.dateTime(startsAt)),
-            if (endsAt != null) _row(context, 'Ends', TestFormatters.dateTime(endsAt)),
+            if (endsAt != null) _row(context, 'Ends (calculated)', TestFormatters.dateTime(endsAt)),
             _row(context, 'Questions', '${serverQuestions.length + localQuestions.length}'),
             _row(context, 'Syllabus nodes', '$syllabusCount'),
+            for (final (label, value) in extraRows) _row(context, label, value),
           ]),
           _card(context, 'Publish readiness ($ready / ${readiness.length})', [
             for (final item in readiness)

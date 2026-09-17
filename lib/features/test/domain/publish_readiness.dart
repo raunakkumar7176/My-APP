@@ -1,3 +1,5 @@
+import 'attempt_policy.dart';
+import 'creation_settings.dart';
 import 'test_kind.dart';
 
 /// One readiness item shown in the Review step and enforced client-side
@@ -30,7 +32,23 @@ class PublishReadinessInput {
     required this.serverQuestionStatuses,
     required this.localDraftValidity,
     this.serverQuestionOptionCounts = const [],
+    this.syllabusNodeCount,
+    this.questionConfig,
+    this.actualDifficultyCounts,
+    this.attemptSettings,
+    this.lateJoin,
+    this.allowLateJoin,
+    this.joinCode,
   });
+
+  // ── creation-completion inputs (all optional; absent = not evaluated) ──
+  final int? syllabusNodeCount;
+  final QuestionConfig? questionConfig;
+  final Map<String, int>? actualDifficultyCounts;
+  final AttemptSettings? attemptSettings;
+  final LateJoinSettings? lateJoin;
+  final bool? allowLateJoin;
+  final String? joinCode;
 
   /// V1 rule mirrored from rpc_create_question / rpc_update_question.
   static const minOptions = 4;
@@ -138,6 +156,69 @@ abstract final class PublishReadiness {
       isValid: scheduleOk,
       reason: scheduleOk ? null : 'End time must be after start time',
     ));
+
+    if (i.kind.requiresStartTime) {
+      final ok = i.startsAt != null;
+      items.add(ReadinessItem(
+        label: 'Start time set',
+        isValid: ok,
+        reason: ok ? null : '${i.kind.label} needs a start time',
+      ));
+    }
+
+    if (i.kind.requiresScope && i.syllabusNodeCount != null) {
+      final ok = i.syllabusNodeCount! > 0;
+      items.add(ReadinessItem(
+        label: 'Syllabus scope selected',
+        isValid: ok,
+        reason: ok ? null : 'Select at least one syllabus topic for ${i.kind.label}',
+      ));
+    }
+
+    final qc = i.questionConfig;
+    if (qc != null && qc.isSet) {
+      items.add(ReadinessItem(
+        label: 'Difficulty distribution valid',
+        isValid: qc.isValid,
+        reason: qc.isValid ? null : 'Easy + Medium + Hard must equal ${qc.total}',
+      ));
+      if (qc.isValid && i.actualDifficultyCounts != null) {
+        final check = qc.check(i.actualDifficultyCounts!);
+        items.add(ReadinessItem(
+          label: 'Questions match the difficulty target',
+          isValid: check.satisfied,
+          reason: check.satisfied ? null : 'Target not met: ${check.summary}',
+        ));
+      }
+    }
+
+    final a = i.attemptSettings;
+    if (a != null) {
+      final ok = !a.allowReattempt || AttemptSettings.allowedMaxValues.contains(a.maxAttempts);
+      items.add(ReadinessItem(
+        label: 'Attempt settings valid',
+        isValid: ok,
+        reason: ok ? null : 'Maximum attempts must be one of ${AttemptSettings.allowedMaxValues}',
+      ));
+    }
+
+    if (i.kind.supportsLateJoin && i.lateJoin != null && i.allowLateJoin == true) {
+      final ok = i.lateJoin!.minutes >= 0;
+      items.add(ReadinessItem(
+        label: 'Late-join window valid',
+        isValid: ok,
+        reason: ok ? null : 'Late-join window cannot be negative',
+      ));
+    }
+
+    if (i.kind.requiresJoinCode && i.joinCode != null) {
+      final ok = i.joinCode!.trim().isNotEmpty;
+      items.add(ReadinessItem(
+        label: 'Join code set',
+        isValid: ok,
+        reason: ok ? null : 'Challenge with Friends needs a join code',
+      ));
+    }
 
     return items;
   }
