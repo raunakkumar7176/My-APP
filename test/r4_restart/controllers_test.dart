@@ -15,7 +15,12 @@ import 'fakes.dart';
 
 QuestionDraft _draft(String text) => QuestionDraft(
       questionText: text,
-      options: const [QuestionOptionDraft(text: 'A'), QuestionOptionDraft(text: 'B')],
+      options: const [
+        QuestionOptionDraft(text: 'A'),
+        QuestionOptionDraft(text: 'B'),
+        QuestionOptionDraft(text: 'C'),
+        QuestionOptionDraft(text: 'D'),
+      ],
       correctOptionIndex: 0,
     );
 

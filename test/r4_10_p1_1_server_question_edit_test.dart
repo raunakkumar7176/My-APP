@@ -15,6 +15,8 @@ QuestionDraft _serverDraft() => const QuestionDraft(
       options: [
         QuestionOptionDraft(id: 'o1', text: 'Paris'),
         QuestionOptionDraft(id: 'o2', text: 'Rome'),
+        QuestionOptionDraft(id: 'o3', text: 'Berlin'),
+        QuestionOptionDraft(id: 'o4', text: 'Madrid'),
       ],
       correctOptionIndex: null, // never exposed by get_test_questions_safe
       subjectId: 'subj-1',
@@ -44,7 +46,7 @@ void main() {
       expect(saved!.subjectId, 'subj-1');
       expect(saved!.topicNodeId, 'node-1');
       expect(saved!.language, 'en');
-      expect(saved!.options.map((o) => o.id), ['o1', 'o2']);
+      expect(saved!.options.map((o) => o.id), ['o1', 'o2', 'o3', 'o4']);
     });
 
     testWidgets('a newly picked correct option is kept in the saved draft',
@@ -77,6 +79,8 @@ void main() {
               options: [
                 QuestionOptionDraft(text: 'A'),
                 QuestionOptionDraft(text: 'B'),
+                QuestionOptionDraft(text: 'C'),
+                QuestionOptionDraft(text: 'D'),
               ],
             ),
             onSave: (d) => saved = d,

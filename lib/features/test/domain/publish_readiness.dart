@@ -29,7 +29,14 @@ class PublishReadinessInput {
     required this.endsAt,
     required this.serverQuestionStatuses,
     required this.localDraftValidity,
+    this.serverQuestionOptionCounts = const [],
   });
+
+  /// V1 rule mirrored from rpc_create_question / rpc_update_question.
+  static const minOptions = 4;
+
+  /// Option count of every server question (legacy rows may carry < 4).
+  final List<int> serverQuestionOptionCounts;
 
   final String title;
   final TestKind kind;
@@ -98,6 +105,19 @@ abstract final class PublishReadiness {
         reason: pending == 0
             ? null
             : '$pending question(s) need approval before publishing',
+      ));
+    }
+
+    if (i.serverQuestionOptionCounts.isNotEmpty) {
+      final short = i.serverQuestionOptionCounts
+          .where((n) => n < PublishReadinessInput.minOptions)
+          .length;
+      items.add(ReadinessItem(
+        label: 'Every question has ${PublishReadinessInput.minOptions} options',
+        isValid: short == 0,
+        reason: short == 0
+            ? null
+            : '$short question(s) have fewer than ${PublishReadinessInput.minOptions} options',
       ));
     }
 

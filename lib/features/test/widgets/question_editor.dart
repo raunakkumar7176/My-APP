@@ -42,12 +42,11 @@ class _QuestionEditorState extends State<QuestionEditor> {
     );
     _questionType = initial?.questionType ?? QuestionType.mcqSingle;
     _difficulty = initial?.difficulty ?? DifficultyLevel.medium;
-    _options =
-        initial?.options.toList() ??
-        [
-          const QuestionOptionDraft(text: ''),
-          const QuestionOptionDraft(text: ''),
-        ];
+    _options = initial?.options.toList() ?? const [];
+    // V1: every question needs >= 4 options; pad the editor to the minimum.
+    while (_options.length < QuestionDraft.minOptions) {
+      _options = [..._options, const QuestionOptionDraft(text: '')];
+    }
     _correctOptionIndex = initial?.correctOptionIndex;
   }
 
@@ -70,7 +69,7 @@ class _QuestionEditorState extends State<QuestionEditor> {
     final marks = int.tryParse(_marksController.text);
     if (marks == null || marks <= 0) return false;
     if (_isMcqType) {
-      if (_options.length < 2) return false;
+      if (_options.length < QuestionDraft.minOptions) return false;
       if (_options.any((o) => o.text.trim().isEmpty)) return false;
       if (_correctOptionIndex == null) return _isServerQuestion;
       if (_correctOptionIndex! < 0 || _correctOptionIndex! >= _options.length) {
@@ -117,7 +116,7 @@ class _QuestionEditorState extends State<QuestionEditor> {
   }
 
   void _removeOption(int index) {
-    if (_options.length <= 2) return;
+    if (_options.length <= QuestionDraft.minOptions) return;
     setState(() {
       _options = List.from(_options)..removeAt(index);
       if (_correctOptionIndex == index) {
@@ -197,6 +196,9 @@ class _QuestionEditorState extends State<QuestionEditor> {
     return DropdownButtonFormField<QuestionType>(
       initialValue: _questionType,
       decoration: const InputDecoration(labelText: 'Question Type *'),
+      // V1: only MCQ (single) can be stored, answered and scored by the live
+      // pipeline (index-based). The others are shown disabled as "Coming
+      // soon" — never selectable, never given invented options.
       items: const [
         DropdownMenuItem(
           value: QuestionType.mcqSingle,
@@ -204,30 +206,31 @@ class _QuestionEditorState extends State<QuestionEditor> {
         ),
         DropdownMenuItem(
           value: QuestionType.mcqMultiple,
-          child: Text('MCQ (Multiple Answers)'),
+          enabled: false,
+          child: Text('MCQ (Multiple Answers) — Coming soon'),
         ),
         DropdownMenuItem(
           value: QuestionType.trueFalse,
-          child: Text('True / False'),
+          enabled: false,
+          child: Text('True / False — Coming soon'),
         ),
-        DropdownMenuItem(value: QuestionType.integer, child: Text('Numeric')),
+        DropdownMenuItem(
+          value: QuestionType.integer,
+          enabled: false,
+          child: Text('Numeric — Coming soon'),
+        ),
         DropdownMenuItem(
           value: QuestionType.shortAnswer,
-          child: Text('Short Answer'),
+          enabled: false,
+          child: Text('Short Answer — Coming soon'),
         ),
       ],
       onChanged: (value) {
-        if (value == null) return;
+        if (value == null || !QuestionDraft.isSupportedType(value)) return;
         setState(() {
           _questionType = value;
-          if (_isMcqType && _options.length < 2) {
-            _options = [
-              const QuestionOptionDraft(text: ''),
-              const QuestionOptionDraft(text: ''),
-            ];
-          }
-          if (!_isMcqType) {
-            _correctOptionIndex = null;
+          while (_options.length < QuestionDraft.minOptions) {
+            _options = [..._options, const QuestionOptionDraft(text: '')];
           }
         });
       },
@@ -274,7 +277,7 @@ class _QuestionEditorState extends State<QuestionEditor> {
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Text(
-              'At least 2 options required with one correct answer',
+              'At least ${QuestionDraft.minOptions} options required, all filled in, with one correct answer',
               style: Theme.of(context).textTheme.bodySmall
                   ?.copyWith(color: Theme.of(context).colorScheme.error),
             ),
@@ -301,7 +304,7 @@ class _QuestionEditorState extends State<QuestionEditor> {
                     onChanged: (value) => _updateOption(index, value),
                   ),
                 ),
-                if (_options.length > 2)
+                if (_options.length > QuestionDraft.minOptions)
                   IconButton(
                     icon: const Icon(Icons.remove_circle_outline, size: 20),
                     onPressed: () => _removeOption(index),

@@ -29,27 +29,25 @@ final class QuestionDraft {
   final double? negativeMarks;
   final String? language;
 
-  bool get hasValidOptions {
-    if (questionType == QuestionType.mcqSingle ||
-        questionType == QuestionType.mcqMultiple) {
-      return options.length >= 2 &&
-          options.every((o) => o.text.trim().isNotEmpty);
-    }
-    return true;
-  }
+  /// V1 product rule, enforced by rpc_create_question / rpc_update_question
+  /// as well: at least this many non-empty options.
+  static const minOptions = 4;
 
-  bool get hasCorrectOption {
-    if (questionType == QuestionType.mcqSingle ||
-        questionType == QuestionType.mcqMultiple) {
-      return correctOptionIndex != null &&
-          correctOptionIndex! >= 0 &&
-          correctOptionIndex! < options.length;
-    }
-    return true;
-  }
+  /// The only type the live pipeline can store, answer and score (index
+  /// based); everything else is hidden as "Coming soon".
+  static bool isSupportedType(QuestionType t) => t == QuestionType.mcqSingle;
+
+  bool get hasValidOptions =>
+      options.length >= minOptions && options.every((o) => o.text.trim().isNotEmpty);
+
+  bool get hasCorrectOption =>
+      correctOptionIndex != null &&
+      correctOptionIndex! >= 0 &&
+      correctOptionIndex! < options.length;
 
   bool get isValid {
-    return questionText.trim().isNotEmpty &&
+    return isSupportedType(questionType) &&
+        questionText.trim().isNotEmpty &&
         marks > 0 &&
         hasValidOptions &&
         hasCorrectOption;

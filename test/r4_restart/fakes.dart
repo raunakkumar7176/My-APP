@@ -170,6 +170,15 @@ class FakeQuestionRepository implements QuestionRepository {
     if (failOnce.remove(draft.questionText)) {
       throw const DataError(message: 'create failed');
     }
+    // Mirrors rpc_create_question (R4_QUESTION_OPTION_GUARD): >= 4 options,
+    // correct_option within bounds.
+    if (draft.options.length < 4) {
+      throw const DataError(message: 'at least 4 options are required.');
+    }
+    final k = draft.correctOptionIndex;
+    if (k == null || k < 0 || k >= draft.options.length) {
+      throw const DataError(message: 'correct_option must be a valid option index.');
+    }
     final id = 'q-${nextId++}';
     (byTest[testId] ??= []).add(Question(
       id: id,
@@ -190,6 +199,25 @@ class FakeQuestionRepository implements QuestionRepository {
   @override
   Future<void> update(String questionId, QuestionDraft draft) async {
     calls.add('update:$questionId');
+    // Mirrors rpc_update_question: the FINAL option set (supplied, else
+    // stored) must have >= 4; correct_option checked against that set.
+    Question? existing;
+    for (final list in byTest.values) {
+      for (final q in list) {
+        if (q.id == questionId) existing = q;
+      }
+    }
+    if (existing == null) throw const DataError(message: 'Question not found.');
+    final finalOptions = draft.options.isNotEmpty
+        ? draft.options.map((o) => o.text).toList()
+        : (existing.options ?? const []).map((o) => o.text).toList();
+    if (finalOptions.length < 4) {
+      throw const DataError(message: 'at least 4 options are required.');
+    }
+    final k = draft.correctOptionIndex;
+    if (k != null && (k < 0 || k >= finalOptions.length)) {
+      throw const DataError(message: 'correct_option must be a valid option index.');
+    }
   }
 
   @override

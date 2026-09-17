@@ -137,7 +137,12 @@ void main() {
     c.setLocalQuestions([
       const QuestionDraft(
         questionText: 'Q1',
-        options: [QuestionOptionDraft(text: 'A'), QuestionOptionDraft(text: 'B')],
+        options: [
+          QuestionOptionDraft(text: 'A'),
+          QuestionOptionDraft(text: 'B'),
+          QuestionOptionDraft(text: 'C'),
+          QuestionOptionDraft(text: 'D'),
+        ],
         correctOptionIndex: 0,
       ),
     ]);

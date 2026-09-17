@@ -12,6 +12,7 @@ void main() {
           QuestionOptionDraft(text: '3'),
           QuestionOptionDraft(text: '4'),
           QuestionOptionDraft(text: '5'),
+          QuestionOptionDraft(text: '6'),
         ],
         correctOptionIndex: 1,
         marks: 1,
@@ -47,7 +48,7 @@ void main() {
       expect(draft.isValid, false);
     });
 
-    test('isValid returns false for MCQ with less than 2 options', () {
+    test('isValid returns false for MCQ with fewer than 4 options', () {
       final draft = QuestionDraft(
         questionText: 'Question',
         questionType: QuestionType.mcqSingle,
@@ -102,31 +103,33 @@ void main() {
       expect(draft.isValid, false);
     });
 
-    test('isValid returns true for True/False without options', () {
+    // V1 (R4_QUESTION_OPTION_GUARD): only MCQ single is supported; TF / short /
+    // numeric are Coming soon and never valid drafts (no invented options).
+    test('isValid returns false for True/False (Coming soon)', () {
       final draft = QuestionDraft(
         questionText: 'The sky is blue',
         questionType: QuestionType.trueFalse,
         marks: 1,
       );
-      expect(draft.isValid, true);
+      expect(draft.isValid, false);
     });
 
-    test('isValid returns true for Short Answer', () {
+    test('isValid returns false for Short Answer (Coming soon)', () {
       final draft = QuestionDraft(
         questionText: 'Explain photosynthesis',
         questionType: QuestionType.shortAnswer,
         marks: 5,
       );
-      expect(draft.isValid, true);
+      expect(draft.isValid, false);
     });
 
-    test('isValid returns true for Numeric/Integer answer', () {
+    test('isValid returns false for Numeric/Integer (Coming soon)', () {
       final draft = QuestionDraft(
         questionText: 'Calculate 15 * 3',
         questionType: QuestionType.integer,
         marks: 2,
       );
-      expect(draft.isValid, true);
+      expect(draft.isValid, false);
     });
   });
 

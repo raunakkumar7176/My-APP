@@ -113,6 +113,7 @@ class TestCreationController extends DisposableNotifier {
         startsAt: startsAt,
         endsAt: endsAt,
         serverQuestionStatuses: [for (final q in serverQuestions) q.status],
+    serverQuestionOptionCounts: [for (final q in serverQuestions) q.options?.length ?? 0],
         localDraftValidity: [for (final d in localQuestions) d.isValid],
       );
 
