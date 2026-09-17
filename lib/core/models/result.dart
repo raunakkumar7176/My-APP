@@ -49,7 +49,9 @@ final class Result {
 
   factory Result.fromJson(Map<String, dynamic> json) {
     return Result(
-      id: json['id'] as String,
+      // Live `results` has no `id` column (primary key is attempt_id, see
+      // fn_score_attempt's ON CONFLICT (attempt_id)); identity = attempt_id.
+      id: (json['id'] as String?) ?? json['attempt_id'] as String,
       attemptId: json['attempt_id'] as String,
       testId: json['test_id'] as String,
       userId: json['user_id'] as String,

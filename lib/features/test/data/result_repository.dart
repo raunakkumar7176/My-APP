@@ -36,6 +36,18 @@ class SupabaseResultRepository implements ResultRepository {
             .select()
             .eq('attempt_id', attemptId)
             .maybeSingle();
+        // Live `results` columns are not yet frozen; log the key set (no
+        // answer keys are ever in this row) so a parse failure is diagnosable.
+        if (row != null) {
+          AppLogger.rpcShape('results.select', row);
+          final missing = [
+            for (final k in const ['attempt_id', 'test_id', 'user_id'])
+              if (row[k] == null) k,
+          ];
+          if (missing.isNotEmpty) {
+            AppLogger.warning('results row null required columns: $missing');
+          }
+        }
         return row == null ? null : Result.fromJson(row);
       }, TestErrorContext.load);
 
