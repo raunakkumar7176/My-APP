@@ -150,6 +150,7 @@ class _Face extends StatelessWidget {
       decoration: BoxDecoration(
         color: Neu.base,
         borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: Neu.outline, width: 1.2),
         boxShadow: Neu.card,
       ),
       child: Padding(

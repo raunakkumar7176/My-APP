@@ -16,6 +16,12 @@ abstract final class Neu {
   static const Color shadowDark = Color(0x739BAAC3); // rgba(155,170,195,.45)
   static const Color shadowLight = Color(0xF2FFFFFF);
 
+  /// Soft outline so cards, fields and buttons read as distinct surfaces
+  /// instead of dissolving into the background on bright screens.
+  static const Color outline = Color(0xFFD3DBE6);
+  static const Color outlineStrong = Color(0xFFBFC9D6);
+  static const Color fieldFill = Color(0xFFE6EBF2);
+
   static const List<BoxShadow> raised = [
     BoxShadow(color: shadowDark, offset: Offset(7, 7), blurRadius: 14),
     BoxShadow(color: shadowLight, offset: Offset(-7, -7), blurRadius: 14),
@@ -73,11 +79,11 @@ class NeuField extends StatelessWidget {
         hintText: hint,
         hintStyle: const TextStyle(color: Neu.hint, fontSize: 14),
         filled: true,
-        fillColor: Neu.base,
+        fillColor: Neu.fieldFill,
         contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
         suffixIcon: suffix,
-        enabledBorder: _border(Colors.transparent),
-        focusedBorder: _border(Neu.accent.withValues(alpha: 0.35)),
+        enabledBorder: _border(Neu.outlineStrong),
+        focusedBorder: _border(Neu.accent.withValues(alpha: 0.6)),
         errorBorder: _border(const Color(0xFFE05A5A)),
         focusedErrorBorder: _border(const Color(0xFFE05A5A)),
         errorStyle: const TextStyle(fontSize: 11),
@@ -87,7 +93,7 @@ class NeuField extends StatelessWidget {
 
   static OutlineInputBorder _border(Color color) => OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide(color: color, width: 2),
+        borderSide: BorderSide(color: color, width: 1.4),
       );
 }
 
@@ -125,6 +131,7 @@ class _NeuButtonState extends State<NeuButton> {
         decoration: BoxDecoration(
           color: Neu.base,
           borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: _down ? Neu.outlineStrong : Neu.outline, width: 1.2),
           boxShadow: _down ? const [] : Neu.raised,
         ),
         alignment: Alignment.center,
@@ -175,7 +182,11 @@ class NeuCircleButton extends StatelessWidget {
       ),
     );
     return DecoratedBox(
-      decoration: const BoxDecoration(shape: BoxShape.circle, boxShadow: Neu.raisedSmall),
+      decoration: const BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.fromBorderSide(BorderSide(color: Neu.outline, width: 1.2)),
+        boxShadow: Neu.raisedSmall,
+      ),
       child: tooltip == null ? button : Tooltip(message: tooltip!, child: button),
     );
   }
