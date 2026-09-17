@@ -67,7 +67,7 @@ void main() {
     expect(find.text('Practice Test'), findsWidgets);
     expect(find.text('Live Test'), findsNothing);
 
-    await tester.tap(find.text('Challenge with Friends').first);
+    await tester.tap(find.widgetWithText(Tab, 'Challenge with Friends'));
     await tester.pumpAndSettle();
     expect(find.text('Join with code'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
