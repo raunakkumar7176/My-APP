@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import '../../../core/errors/app_error.dart';
 import '../../../core/logging/app_logger.dart';
 import '../../../core/models/attempt.dart';
@@ -16,6 +18,7 @@ import '../domain/creation_settings.dart';
 import '../domain/test_kind.dart';
 import '../domain/test_lifecycle.dart';
 import '../domain/test_mode.dart';
+import '../domain/test_pdf.dart';
 import 'disposable_notifier.dart';
 
 /// Everything a started attempt needs to open the taking screen.
@@ -296,6 +299,24 @@ class TestDetailController extends DisposableNotifier {
     final qs = await _questions.safeQuestions(started.attempt.testId);
     return (started: started, questions: qs, test: _test!);
   }
+
+  /// Question paper for the creator: questions via the safe RPC only
+  /// (server-authorized, no `correct_option`). Throws [AppError] on
+  /// permission/network failure and a [DataError] when there are no questions.
+  Future<Uint8List> buildQuestionPaperPdf() => _action(() async {
+        final t = _test;
+        if (t == null) throw const DataError(message: 'Test not loaded.');
+        final qs = await _questions.safeQuestions(t.id);
+        if (qs.isEmpty) {
+          throw const DataError(message: 'This test has no questions to print yet.');
+        }
+        try {
+          return await TestPdf.questionPaper(test: t, kind: kind, questions: qs);
+        } catch (e, st) {
+          AppLogger.error('Question paper PDF failed: $e', stackTrace: st);
+          throw const DataError(message: 'Could not generate the question paper.');
+        }
+      });
 
   /// Requests generation; the returned batch (from the RPC JSON) is the
   /// authoritative state and is kept for display / button gating.

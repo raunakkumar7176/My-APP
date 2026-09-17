@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:printing/printing.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/theme/app_colors.dart';
@@ -24,7 +25,7 @@ class TestDetailScreen extends StatefulWidget {
   State<TestDetailScreen> createState() => _TestDetailScreenState();
 }
 
-enum _MoreAction { delete }
+enum _MoreAction { delete, questionPaper }
 
 class _TestDetailScreenState extends State<TestDetailScreen> {
   late final TestDetailController _c;
@@ -129,6 +130,18 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
     if (!await _acknowledgeInstructions(reattempt: true)) return;
     await _launch(_c.reattempt);
   }
+
+  /// Builds the student question paper from `get_test_questions_safe` (the
+  /// server applies access rules; the response never carries the key) and
+  /// hands it to the platform share/save sheet.
+  Future<void> _downloadQuestionPaper() => _run(() async {
+        final bytes = await _c.buildQuestionPaperPdf();
+        if (!mounted) return;
+        await Printing.sharePdf(
+          bytes: bytes,
+          filename: '${_c.test?.title ?? 'test'} - question paper.pdf',
+        );
+      });
 
   Future<void> _copyJoinCode(String code) async {
     await Clipboard.setData(ClipboardData(text: code));
@@ -291,22 +304,39 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
         actions: [
           // Draft-only secondary action, tucked into "More" (never a
           // prominent destructive button on every detail screen).
-          if (_c.canDelete)
+          if (_c.canDelete || _c.isOwner)
             PopupMenuButton<_MoreAction>(
               tooltip: 'More',
               enabled: !_c.isBusy,
               onSelected: (a) {
-                if (a == _MoreAction.delete) _confirmDelete();
+                switch (a) {
+                  case _MoreAction.delete:
+                    _confirmDelete();
+                  case _MoreAction.questionPaper:
+                    _downloadQuestionPaper();
+                }
               },
-              itemBuilder: (_) => const [
-                PopupMenuItem(
-                  value: _MoreAction.delete,
-                  child: ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: Icon(Icons.delete_outline),
-                    title: Text('Delete Test'),
+              itemBuilder: (_) => [
+                // Creator-only: the paper is built from the safe question
+                // path (no answer key) and shared via the platform sheet.
+                if (_c.isOwner)
+                  const PopupMenuItem(
+                    value: _MoreAction.questionPaper,
+                    child: ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(Icons.picture_as_pdf_outlined),
+                      title: Text('Download question paper'),
+                    ),
                   ),
-                ),
+                if (_c.canDelete)
+                  const PopupMenuItem(
+                    value: _MoreAction.delete,
+                    child: ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(Icons.delete_outline),
+                      title: Text('Delete Test'),
+                    ),
+                  ),
               ],
             ),
         ],

@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 
 import '../../../core/errors/app_error.dart';
 import '../../../core/logging/app_logger.dart';
@@ -18,6 +19,7 @@ import '../domain/attempt_policy.dart';
 import '../domain/backend_mapping.dart';
 import '../domain/result_analytics_mapper.dart';
 import '../domain/test_kind.dart';
+import '../domain/test_pdf.dart';
 import 'attempt_launch_store.dart';
 import 'disposable_notifier.dart';
 
@@ -188,6 +190,47 @@ class ResultsController extends DisposableNotifier {
   /// Re-attempt is offered only when the policy allows it. When the own
   /// attempts read failed the button is hidden rather than guessed.
   bool get canReattempt => attemptState?.canReattempt ?? false;
+
+  /// Result report from the stored rows already loaded on this screen.
+  /// [studentName] is taken from the profile/email by the caller.
+  Future<Uint8List> buildResultPdf({required String studentName}) async {
+    final r = _result;
+    if (r == null) throw const ValidationError(message: 'No result loaded.');
+    try {
+      return await TestPdf.resultReport(
+        studentName: studentName,
+        test: _test,
+        kind: kind,
+        result: r,
+        attemptNumber: currentEntry?.attemptNumber,
+        submittedAt: currentEntry?.completedAt ?? r.computedAt,
+        subjects: _subjects,
+        topics: _topics,
+        deltaFromPrevious: deltaFromPrevious,
+        previousAttemptNumber: previousEntry?.attemptNumber,
+        history: attemptHistory,
+      );
+    } catch (e, st) {
+      AppLogger.error('Result PDF failed: $e', stackTrace: st);
+      throw const DataError(message: 'Could not generate the result PDF.');
+    }
+  }
+
+  /// Question paper for the student after submission: the review already
+  /// loaded the safe questions (no answer key); nothing new is fetched.
+  Future<Uint8List> buildQuestionPaperPdf() async {
+    final t = _test;
+    if (t == null) throw const DataError(message: 'Test not loaded.');
+    if (_questionsList.isEmpty) {
+      throw const DataError(message: 'Questions are not loaded yet.');
+    }
+    try {
+      return await TestPdf.questionPaper(test: t, kind: kind, questions: _questionsList);
+    } catch (e, st) {
+      AppLogger.error('Question paper PDF failed: $e', stackTrace: st);
+      throw const DataError(message: 'Could not generate the question paper.');
+    }
+  }
 
   /// Explicit re-attempt (the only client path that asks for attempt N+1;
   /// the server enforces the limit) and parks the launch for taking.

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:printing/printing.dart';
 
 import '../../../core/constants/theme/app_colors.dart';
+import '../../../core/errors/app_error.dart';
 import '../state/results_controller.dart';
 import '../widgets/question_review_card.dart';
 
@@ -48,6 +50,21 @@ class _QuestionReviewScreenState extends State<QuestionReviewScreen> {
     super.dispose();
   }
 
+  Future<void> _downloadQuestionPaper() async {
+    try {
+      final bytes = await _c.buildQuestionPaperPdf();
+      if (!mounted) return;
+      await Printing.sharePdf(
+        bytes: bytes,
+        filename: '${_c.test?.title ?? 'test'} - question paper.pdf',
+      );
+    } on AppError catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message), backgroundColor: AppColors.error));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final loading = _c.isLoading || (_c.isBusy && !_c.reviewLoaded);
@@ -60,6 +77,16 @@ class _QuestionReviewScreenState extends State<QuestionReviewScreen> {
               ? context.pop()
               : context.go('/attempts/${widget.attemptId}/result'),
         ),
+        actions: [
+          // Question paper for the student, from the already-loaded safe
+          // questions (post-submission; never contains the answer key).
+          if (_c.reviewLoaded && _c.questions.isNotEmpty)
+            IconButton(
+              tooltip: 'Download question paper',
+              icon: const Icon(Icons.picture_as_pdf_outlined),
+              onPressed: _downloadQuestionPaper,
+            ),
+        ],
       ),
       body: loading
           ? const Center(child: CircularProgressIndicator())

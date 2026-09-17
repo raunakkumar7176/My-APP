@@ -230,9 +230,16 @@ void main() {
       expect(find.text('Delete Test?'), findsOneWidget);
     }
 
-    testWidgets('More menu only for a draft owned by the user', (tester) async {
+    testWidgets('Delete Test entry only for a draft; owner of a published test sees no delete',
+        (tester) async {
       final (_, _, c, _) = await pump(tester, row: _t(status: TestStatus.published));
-      expect(find.byTooltip('More'), findsNothing);
+      // Owner still gets the More menu (question paper), but no Delete Test.
+      await tester.tap(find.byTooltip('More'));
+      await tester.pumpAndSettle();
+      expect(find.text('Delete Test'), findsNothing);
+      expect(find.text('Download question paper'), findsOneWidget);
+      await tester.tapAt(const Offset(5, 5)); // dismiss menu
+      await tester.pumpAndSettle();
       await tester.pumpWidget(const SizedBox());
       c.dispose();
     });

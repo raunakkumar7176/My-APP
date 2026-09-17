@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:printing/printing.dart';
 
 import '../../../core/constants/theme/app_colors.dart';
 import '../../../core/errors/app_error.dart';
 import '../../../core/models/result.dart';
+import '../../../core/services/auth_service.dart';
+import '../../../core/services/profile_service.dart';
 import '../domain/attempt_history.dart';
 import '../state/results_controller.dart';
 import '../widgets/subject_analysis_card.dart';
@@ -44,6 +47,34 @@ class _TestResultScreenState extends State<TestResultScreen> {
     _c.removeListener(_onChanged);
     if (_owns) _c.dispose();
     super.dispose();
+  }
+
+  bool _pdfBusy = false;
+
+  /// Student name for the report: profile full name, else the account email.
+  static String _studentName() {
+    final profile = ProfileService.currentProfile?.fullName.trim();
+    if (profile != null && profile.isNotEmpty) return profile;
+    return AuthService.currentUser?.email ?? 'Student';
+  }
+
+  Future<void> _downloadResultPdf() async {
+    if (_pdfBusy) return;
+    setState(() => _pdfBusy = true);
+    try {
+      final bytes = await _c.buildResultPdf(studentName: _studentName());
+      if (!mounted) return;
+      await Printing.sharePdf(
+        bytes: bytes,
+        filename: '${_c.test?.title ?? 'test'} - result.pdf',
+      );
+    } on AppError catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message), backgroundColor: AppColors.error));
+    } finally {
+      if (mounted) setState(() => _pdfBusy = false);
+    }
   }
 
   Future<void> _reattempt() async {
@@ -193,6 +224,15 @@ class _TestResultScreenState extends State<TestResultScreen> {
             onPressed: () => context.push('/attempts/${widget.attemptId}/review'),
             icon: const Icon(Icons.fact_check_outlined),
             label: const Text('Review Answers'),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            key: const Key('download_result_pdf'),
+            onPressed: _pdfBusy ? null : _downloadResultPdf,
+            icon: _pdfBusy
+                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.picture_as_pdf_outlined),
+            label: Text(_pdfBusy ? 'Preparing PDF…' : 'Download Result PDF'),
           ),
           const SizedBox(height: 8),
           // Only an explicit re-attempt may request attempt N+1 (server-enforced).
