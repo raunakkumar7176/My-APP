@@ -165,8 +165,8 @@ void main() {
       final groups = FakeGroupRepository()
         ..groups = [
           Group(
-            id: 'g-1', name: 'Batch A', createdBy: 'leader', createdAt: DateTime(2026),
-            updatedAt: DateTime(2026), memberCount: 3, userRole: 'member',
+            id: 'g-1', name: 'Batch A', ownerId: 'owner-1', createdAt: DateTime(2026),
+            memberCount: 3, userRole: 'member',
           ),
         ];
       final c = _controller(tests: tests, groups: groups)

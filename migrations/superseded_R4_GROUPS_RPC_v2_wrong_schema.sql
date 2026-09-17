@@ -1,3 +1,5 @@
+-- SUPERSEDED (assumed groups.created_by / updated_at, which do not exist live). Use R4_D_rpc_get_user_groups.sql.
+
 -- ============================================================
 -- R4 MIGRATION D (v2) — rpc_get_user_groups(): the authenticated user's groups
 -- ============================================================
