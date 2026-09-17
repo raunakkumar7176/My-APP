@@ -105,7 +105,7 @@ abstract interface class TestRepository {
   /// Draft-only soft delete via `rpc_delete_test` (creator, status = draft,
   /// not already deleted — all enforced by the server). Nothing is
   /// physically removed.
-  Future<void> deleteDraft(String testId);
+  Future<void> deleteDraft(String testId, {String? reason});
 
   Future<List<TestSyllabus>> syllabusFor(String testId);
 
@@ -186,9 +186,13 @@ class SupabaseTestRepository implements TestRepository {
       }, TestErrorContext.publish);
 
   @override
-  Future<void> deleteDraft(String testId) => _guard(() async {
+  Future<void> deleteDraft(String testId, {String? reason}) => _guard(() async {
         final response =
-            await _client.rpc('rpc_delete_test', params: {'p_test_id': testId});
+            await _client.rpc('rpc_delete_test', params: {
+          'p_test_id': testId,
+          // Live: rpc_delete_test(p_test_id uuid, p_reason text DEFAULT NULL).
+          if (reason != null && reason.trim().isNotEmpty) 'p_reason': reason.trim(),
+        });
         AppLogger.rpcShape('rpc_delete_test', response);
         if (!deletedFromResponse(response)) {
           throw const DataError(message: 'The server did not confirm the deletion.');

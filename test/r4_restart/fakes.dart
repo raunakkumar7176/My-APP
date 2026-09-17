@@ -101,9 +101,11 @@ class FakeTestRepository implements TestRepository {
   /// the server error codes the mapper knows. [failDeleteWith] simulates a
   /// backend/network rejection.
   Object? failDeleteWith;
+  String? lastDeleteReason;
 
   @override
-  Future<void> deleteDraft(String testId) async {
+  Future<void> deleteDraft(String testId, {String? reason}) async {
+    lastDeleteReason = reason;
     calls.add('delete:$testId');
     if (failDeleteWith != null) throw failDeleteWith!;
     final t = rows[testId];

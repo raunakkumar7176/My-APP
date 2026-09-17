@@ -181,11 +181,11 @@ class TestDetailController extends DisposableNotifier {
   /// local test is cleared so nothing on this screen can act on it again.
   /// Throws [AppError] with a user-facing message; the test stays loaded on
   /// failure so the screen keeps showing it.
-  Future<void> deleteDraft() => _action(() async {
+  Future<void> deleteDraft({String? reason}) => _action(() async {
         if (!canDelete) {
           throw const ValidationError(message: 'Only your draft tests can be deleted.');
         }
-        await _tests.deleteDraft(testId);
+        await _tests.deleteDraft(testId, reason: reason);
         _test = null;
         _deleted = true;
       });

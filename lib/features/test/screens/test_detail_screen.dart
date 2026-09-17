@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/theme/app_colors.dart';
@@ -69,9 +70,70 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
         if (mounted) _snack('Test published successfully');
       });
 
-  Future<void> _start() => _launch(_c.start);
+  /// Instructions / disclaimer gate: shown before a NEW attempt (Start Test
+  /// and Re-attempt). Resuming an in_progress attempt skips it — the timer
+  /// is already running. Every value comes from the stored row.
+  Future<bool> _acknowledgeInstructions({required bool reattempt}) async {
+    final t = _c.test;
+    if (t == null) return false;
+    final lines = <String>[
+      '${_c.kind.label} · ${_c.questionCountLabel} question(s) · ${TestFormatters.duration(t.durationSec)}',
+      'The timer starts as soon as you begin and keeps running if you leave the test.',
+      if (t.endsAt != null)
+        'Your answers are submitted automatically at the deadline or at ${TestFormatters.dateTime(t.endsAt)}, whichever is first.'
+      else
+        'Your answers are submitted automatically when the time is up.',
+      'Answers are saved as you go; you can mark questions for review.',
+      'Attempts: ${_c.attemptPolicyLabel}.',
+      if (t.negativeMarks != null && t.negativeMarks! > 0)
+        'Negative marking: ${t.negativeMarks} per wrong answer.',
+      if (t.instructions != null && t.instructions!.trim().isNotEmpty) t.instructions!.trim(),
+    ];
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(reattempt ? 'Re-attempt this test?' : 'Before you start'),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final l in lines)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text('• $l'),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(reattempt ? 'Start Re-attempt' : 'Start Test'),
+          ),
+        ],
+      ),
+    );
+    return ok == true && mounted;
+  }
 
-  Future<void> _reattempt() => _launch(_c.reattempt);
+  Future<void> _start() async {
+    // Resume needs no gate; only a brand-new attempt does.
+    final resuming = _c.attemptState?.inProgress != null && !_c.attemptsLoadFailed;
+    if (!resuming && !await _acknowledgeInstructions(reattempt: false)) return;
+    await _launch(_c.start);
+  }
+
+  Future<void> _reattempt() async {
+    if (!await _acknowledgeInstructions(reattempt: true)) return;
+    await _launch(_c.reattempt);
+  }
+
+  Future<void> _copyJoinCode(String code) async {
+    await Clipboard.setData(ClipboardData(text: code));
+    if (mounted) _snack('Join code copied');
+  }
 
   Future<void> _launch(Future<LaunchedAttempt> Function() action) => _run(() async {
         final launched = await action();
@@ -122,13 +184,30 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
 
   /// Explicit confirmation; a single tap never deletes.
   Future<void> _confirmDelete() async {
+    final reason = TextEditingController();
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Delete Test?'),
-        content: const Text(
-          'This draft test will be removed from your test list. '
-          'This cannot be undone from the app.',
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'This draft test will be removed from your test list. '
+              'This cannot be undone from the app.',
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              key: const Key('delete_reason'),
+              controller: reason,
+              maxLength: 140,
+              decoration: const InputDecoration(
+                labelText: 'Reason (optional)',
+                isDense: true,
+              ),
+            ),
+          ],
         ),
         actions: [
           TextButton(
@@ -143,12 +222,15 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
         ],
       ),
     );
+    final text = reason.text.trim();
+    // The dialog route is still animating out; dispose once it is gone.
+    WidgetsBinding.instance.addPostFrameCallback((_) => reason.dispose());
     if (confirmed != true || !mounted) return;
-    await _delete();
+    await _delete(reason: text.isEmpty ? null : text);
   }
 
-  Future<void> _delete() => _run(() async {
-        await _c.deleteDraft();
+  Future<void> _delete({String? reason}) => _run(() async {
+        await _c.deleteDraft(reason: reason);
         if (!mounted) return;
         // Feedback on the root messenger so it survives leaving this route.
         ScaffoldMessenger.of(context)
@@ -272,7 +354,26 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
             if (_c.isOwner && (test.accessCode != null || _c.showsJoinCode))
               _section(context, 'Access', [
                 if (test.accessCode != null) _row('Access code', 'Set'),
-                if (_c.showsJoinCode) _row('Join code', test.joinCode!),
+                if (_c.showsJoinCode)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
+                      children: [
+                        Text('Join code', style: Theme.of(context).textTheme.bodyMedium),
+                        const Spacer(),
+                        SelectableText(test.joinCode!,
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodyMedium
+                                ?.copyWith(fontWeight: FontWeight.w600)),
+                        IconButton(
+                          tooltip: 'Copy join code',
+                          icon: const Icon(Icons.copy, size: 18),
+                          onPressed: () => _copyJoinCode(test.joinCode!),
+                        ),
+                      ],
+                    ),
+                  ),
               ]),
             if (_c.isOwner && _c.latestBatch != null)
               _section(context, 'Batch results', [
