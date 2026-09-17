@@ -170,7 +170,8 @@ final class Question {
       marks: (json['marks'] as num?)?.toInt() ?? 1,
       negativeMarks: (json['negative_marks'] as num?)?.toDouble(),
       status: (json['status'] as String?) ?? 'active',
-      sourceBatch: json['source_batch'] as String?,
+      // Live column is an integer; keep the model's string identity.
+      sourceBatch: json['source_batch']?.toString(),
       bankId: json['bank_id'] as String?,
       language: json['language'] as String?,
       questionType: _parseQuestionType(json['question_type'] as String?),

@@ -15,13 +15,16 @@ final class TestSyllabus {
 
   factory TestSyllabus.fromJson(Map<String, dynamic> json) {
     return TestSyllabus(
-      id: json['id'] as String,
+      // Live test_syllabus has no `id` column (key = test_id + syllabus_node_id).
+      id: (json['id'] as String?) ?? '${json['test_id']}:${json['syllabus_node_id']}',
       testId: json['test_id'] as String,
       syllabusNodeId: json['syllabus_node_id'] as String,
       materialIds: (json['material_ids'] as List<dynamic>?)
-          ?.map((e) => e as String)
+          ?.map((e) => e.toString())
           .toList(),
-      createdAt: DateTime.parse(json['created_at'] as String),
+      createdAt: json['created_at'] is String
+          ? DateTime.parse(json['created_at'] as String)
+          : DateTime.fromMillisecondsSinceEpoch(0),
     );
   }
 
