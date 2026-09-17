@@ -69,8 +69,8 @@ CREATE OR REPLACE FUNCTION public.rpc_generate_results(p_test_id uuid)
 AS $function$
 DECLARE
   v_user uuid := auth.uid();
-  v_test public.tests;
-  v_batch public.result_batches;
+  v_test tests%ROWTYPE;
+  v_batch result_batches%ROWTYPE;
   v_attempt record;
   v_total integer := 0;
   v_done integer := 0;
