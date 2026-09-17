@@ -121,6 +121,16 @@ BEGIN
   IF p_options IS NULL OR jsonb_typeof(p_options) <> 'array' OR jsonb_array_length(p_options) < 4 THEN
     RAISE EXCEPTION 'VALIDATION_ERROR: at least 4 options are required';
   END IF;
+  -- Every option must carry text: {"id","text"} objects (client shape) or
+  -- bare strings. Blank options would be unanswerable choices.
+  IF EXISTS (
+    SELECT 1 FROM jsonb_array_elements(p_options) AS o
+    WHERE btrim(COALESCE(
+      CASE WHEN jsonb_typeof(o) = 'object' THEN o->>'text'
+           WHEN jsonb_typeof(o) = 'string' THEN o #>> '{}' END, '')) = ''
+  ) THEN
+    RAISE EXCEPTION 'VALIDATION_ERROR: every option needs text';
+  END IF;
 
   -- Validate correct_option
   IF p_correct_option < 0 OR p_correct_option >= jsonb_array_length(p_options) THEN
@@ -294,6 +304,16 @@ BEGIN
      OR jsonb_array_length(v_final_options) < 4 THEN
     RAISE EXCEPTION 'VALIDATION_ERROR: at least 4 options are required';
   END IF;
+  -- Every option must carry text: {"id","text"} objects (client shape) or
+  -- bare strings. Blank options would be unanswerable choices.
+  IF EXISTS (
+    SELECT 1 FROM jsonb_array_elements(v_final_options) AS o
+    WHERE btrim(COALESCE(
+      CASE WHEN jsonb_typeof(o) = 'object' THEN o->>'text'
+           WHEN jsonb_typeof(o) = 'string' THEN o #>> '{}' END, '')) = ''
+  ) THEN
+    RAISE EXCEPTION 'VALIDATION_ERROR: every option needs text';
+  END IF;
 
   -- Validate correct_option against the final option set
   IF p_correct_option IS NOT NULL THEN
@@ -367,6 +387,7 @@ ORDER BY p.proname;
 
 SELECT p.proname,
        pg_get_functiondef(p.oid) LIKE '%at least 4 options are required%'            AS has_4_option_guard,
+       pg_get_functiondef(p.oid) LIKE '%every option needs text%'                   AS has_non_empty_guard,
        pg_get_functiondef(p.oid) LIKE '%correct_option must be a valid option index%' AS has_correct_option_check,
        pg_get_functiondef(p.oid) LIKE '%at least 2 options are required%'            AS old_guard_gone_should_be_f,
        pg_get_functiondef(p.oid) LIKE '%Cannot change correct_option on published%'  AS has_published_rule,
