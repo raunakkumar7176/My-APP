@@ -40,6 +40,56 @@ class GroupHubController extends DisposableNotifier {
 
   Group? get group => _group;
   List<GroupMember> get members => _members;
+
+  // ── members hub: local search + role filter over the permitted roster ──
+  String _memberQuery = '';
+  GroupRole? _roleFilter;
+
+  String get memberQuery => _memberQuery;
+  GroupRole? get roleFilter => _roleFilter;
+  bool get hasMemberFilter =>
+      _memberQuery.trim().isNotEmpty || _roleFilter != null;
+
+  void setMemberQuery(String value) {
+    if (value == _memberQuery) return;
+    _memberQuery = value;
+    notifyListeners();
+  }
+
+  /// null = all roles.
+  void setRoleFilter(GroupRole? role) {
+    if (role == _roleFilter) return;
+    _roleFilter = role;
+    notifyListeners();
+  }
+
+  void clearMemberFilters() {
+    if (!hasMemberFilter) return;
+    _memberQuery = '';
+    _roleFilter = null;
+    notifyListeners();
+  }
+
+  /// Roster narrowed by [memberQuery] (case-insensitive, trimmed; name first,
+  /// then student code) and [roleFilter]. Purely local over rows RLS already
+  /// returned — it never widens what the server permitted.
+  List<GroupMember> get filteredMembers {
+    final q = _memberQuery.trim().toLowerCase();
+    final r = _roleFilter;
+    if (q.isEmpty && r == null) return _members;
+    return [
+      for (final m in _members)
+        if ((r == null || GroupRole.fromDb(m.role) == r) &&
+            (q.isEmpty ||
+                m.displayName.toLowerCase().contains(q) ||
+                (m.studentCode ?? '').toLowerCase().contains(q)))
+          m,
+    ];
+  }
+
+  /// The caller's own membership row, when loaded.
+  GroupMember? get me =>
+      _members.where((m) => m.userId == _currentUserId).firstOrNull;
   bool get isLoading => _loading;
   bool get hasLoaded => _loadedOnce;
   bool get isBusy => _busy;

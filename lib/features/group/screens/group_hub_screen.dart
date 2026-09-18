@@ -2,11 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/theme/app_colors.dart';
-import '../../../core/models/group_member.dart';
-import '../domain/group_role.dart';
 import '../state/group_hub_controller.dart';
 import '../widgets/group_avatar.dart';
-import '../widgets/role_badge.dart';
+import '../widgets/member_tile.dart';
 
 /// One group's hub: profile header, roster, and the G1 membership actions.
 /// Later phases (announcements, chat, group tests, leaderboard) attach here;
@@ -61,6 +59,12 @@ class _GroupHubScreenState extends State<GroupHubScreen> {
     if (mounted) await _c.refresh();
   }
 
+  Future<void> _openMembers() async {
+    await context.push('/groups/${widget.groupId}/members');
+    // Roles / roster / count may have changed there.
+    if (mounted) await _c.refresh();
+  }
+
   Future<void> _leave() async {
     if (!_c.canLeave) {
       _snack(_c.leaveBlockedReason, error: true);
@@ -97,36 +101,6 @@ class _GroupHubScreenState extends State<GroupHubScreen> {
     } else {
       _snack(_c.error ?? 'Could not leave the group.', error: true);
     }
-  }
-
-  Future<void> _removeMember(GroupMember member) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Remove member?'),
-        content: Text('${member.displayName} will lose access to this group.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            key: const Key('confirm_remove'),
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Remove'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-    final ok = await _c.removeMember(member.userId);
-    if (!mounted) return;
-    _snack(
-      ok
-          ? '${member.displayName} was removed.'
-          : (_c.error ?? 'Could not remove.'),
-      error: !ok,
-    );
   }
 
   @override
@@ -221,9 +195,34 @@ class _GroupHubScreenState extends State<GroupHubScreen> {
               Text(group.description!.trim()),
             ],
             const SizedBox(height: 24),
-            Text('Members', style: Theme.of(context).textTheme.titleMedium),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Members · ${_c.memberCount}',
+                    key: const Key('hub_members_heading'),
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+                TextButton(
+                  key: const Key('view_all_members'),
+                  onPressed: () => _openMembers(),
+                  child: const Text('View all'),
+                ),
+              ],
+            ),
             const SizedBox(height: 8),
-            for (final m in _c.members) _memberTile(m),
+            for (final m in _c.members)
+              MemberTile(
+                member: m,
+                controller: _c,
+                onTap: () => MemberDetailSheet.show(
+                  context,
+                  member: m,
+                  groupName: group.name,
+                  isMe: m.userId == _c.currentUserId,
+                ),
+              ),
             const SizedBox(height: 24),
             if (_c.canLeave)
               OutlinedButton.icon(
@@ -241,85 +240,6 @@ class _GroupHubScreenState extends State<GroupHubScreen> {
           ],
         ),
       ),
-    );
-  }
-
-  Widget _memberTile(GroupMember m) {
-    final role = GroupRole.fromDb(m.role);
-    final isMe = m.userId == _c.currentUserId;
-    // Offered only when the server confirmed MANAGE_MEMBERS, never for the
-    // owner and never for yourself — the server refuses those too.
-    final canRemove = _c.canManageMembers && !isMe && !role.isOwner;
-    // Role editing: MANAGE_ROLES confirmed by the server, never yourself and
-    // never the owner (an invariant, not a permission).
-    final canChangeRole = _c.canManageRoles && !isMe && !role.isOwner;
-    return ListTile(
-      key: Key('member_${m.userId}'),
-      contentPadding: EdgeInsets.zero,
-      leading: CircleAvatar(child: Text(m.displayName[0].toUpperCase())),
-      title: Text(isMe ? '${m.displayName} (you)' : m.displayName),
-      subtitle: Align(alignment: Alignment.centerLeft, child: RoleBadge(role)),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (canChangeRole)
-            PopupMenuButton<GroupRole>(
-              key: Key('role_menu_${m.userId}'),
-              tooltip: 'Change role',
-              enabled: !_c.isBusy,
-              icon: const Icon(Icons.manage_accounts_outlined),
-              onSelected: (r) => _changeRole(m, r),
-              itemBuilder: (_) => [
-                for (final r in GroupHubController.assignableRoles)
-                  PopupMenuItem(
-                    key: Key('role_option_${m.userId}_${r.name}'),
-                    value: r,
-                    enabled: r != role,
-                    child: Text(r == role ? '${r.label} (current)' : r.label),
-                  ),
-              ],
-            ),
-          if (canRemove)
-            IconButton(
-              key: Key('remove_${m.userId}'),
-              tooltip: 'Remove member',
-              icon: const Icon(Icons.person_remove_outlined),
-              onPressed: _c.isBusy ? null : () => _removeMember(m),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _changeRole(GroupMember member, GroupRole role) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Change role?'),
-        content: Text(
-          '${member.displayName} will become ${role.label} of this group.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            key: const Key('confirm_role_change'),
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Change'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-    final ok = await _c.changeRole(member.userId, role);
-    if (!mounted) return;
-    _snack(
-      ok
-          ? '${member.displayName} is now ${role.label}.'
-          : (_c.error ?? 'Could not change the role.'),
-      error: !ok,
     );
   }
 

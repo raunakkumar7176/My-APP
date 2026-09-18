@@ -50,6 +50,11 @@ class InMemoryGroupRepository implements GroupRepository {
   final List<String> joinRequests = [];
   int nextId = 1;
 
+  /// Optional profile fields per user id, mirroring the profiles embed.
+  final Map<String, String> profileNames = {};
+  final Map<String, String> studentCodes = {};
+  final Map<String, String> bios = {};
+
   /// Thrown by the next mutating call, to exercise the error paths.
   Object? failNextWith;
 
@@ -133,7 +138,9 @@ class InMemoryGroupRepository implements GroupRepository {
           userId: e.key,
           role: e.value,
           joinedAt: DateTime(2026, 9, 1),
-          fullName: 'User ${e.key}',
+          fullName: profileNames[e.key] ?? 'User ${e.key}',
+          studentCode: studentCodes[e.key],
+          bio: bios[e.key],
         ),
     ];
   }

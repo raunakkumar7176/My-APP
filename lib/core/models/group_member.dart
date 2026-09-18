@@ -9,6 +9,8 @@ final class GroupMember {
     required this.joinedAt,
     this.fullName,
     this.avatarUrl,
+    this.studentCode,
+    this.bio,
   });
 
   final String groupId;
@@ -22,6 +24,12 @@ final class GroupMember {
   /// "fellow members read profiles" policy). Null when it was not selected.
   final String? fullName;
   final String? avatarUrl;
+
+  /// `profiles.student_code` / `profiles.bio` — public-facing profile fields the
+  /// live "fellow members read profiles" policy already exposes to members.
+  /// Never `mobile` or `exam_targets`.
+  final String? studentCode;
+  final String? bio;
 
   String get displayName => (fullName != null && fullName!.trim().isNotEmpty)
       ? fullName!.trim()
@@ -43,6 +51,8 @@ final class GroupMember {
       joinedAt: DateTime.parse(json['joined_at'] as String).toLocal(),
       fullName: p['full_name'] as String?,
       avatarUrl: p['avatar_url'] as String?,
+      studentCode: p['student_code'] as String?,
+      bio: p['bio'] as String?,
     );
   }
 

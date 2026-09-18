@@ -167,21 +167,20 @@ class SupabaseGroupRepository implements GroupRepository {
   );
 
   @override
-  Future<List<GroupMember>> members(
-    String groupId,
-  ) => _guard(GroupErrorContext.load, () async {
-    final rows = await _client
-        .from('group_members')
-        .select(
-          'group_id, user_id, role, joined_at, profiles(full_name, avatar_url)',
-        )
-        .eq('group_id', groupId)
-        .order('joined_at');
-    return [
-      for (final r in rows as List)
-        GroupMember.fromJson(r as Map<String, dynamic>),
-    ];
-  });
+  Future<List<GroupMember>> members(String groupId) =>
+      _guard(GroupErrorContext.load, () async {
+        final rows = await _client
+            .from('group_members')
+            .select(
+              'group_id, user_id, role, joined_at, profiles(full_name, avatar_url, student_code, bio)',
+            )
+            .eq('group_id', groupId)
+            .order('joined_at');
+        return [
+          for (final r in rows as List)
+            GroupMember.fromJson(r as Map<String, dynamic>),
+        ];
+      });
 
   @override
   Future<String> create({
