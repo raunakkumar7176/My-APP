@@ -82,10 +82,12 @@ abstract interface class GroupRepository {
     List<GroupPermission> of = GroupPermission.live,
   });
 
-  /// Changes another member's role. Today this is the direct
-  /// `group_members` UPDATE the live "role changes" policy allows to
-  /// MANAGE_ROLES holders; owner demotion is refused by `trg_owner_guard`.
-  /// If the guarded RPC proposed in G3 is approved, only this body changes.
+  /// Changes another member's role via a direct `group_members` UPDATE.
+  /// Live policy "role changes" (G3 audit, verified): USING and CHECK are
+  /// both `(role <> 'owner') AND fn_has_permission(group_id, uid,
+  /// 'MANAGE_ROLES')` — no self-update branch, owner rows cannot be targeted,
+  /// no row may become owner; `trg_owner_guard` additionally protects the
+  /// owner. No RPC is needed; the policy is the security boundary.
   Future<void> setMemberRole({
     required String groupId,
     required String userId,

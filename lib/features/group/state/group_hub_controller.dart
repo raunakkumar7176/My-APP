@@ -86,11 +86,10 @@ class GroupHubController extends DisposableNotifier {
     GroupRole.member,
   ];
 
-  /// The owner has no way out today: the live `self leave group` policy would
-  /// happily delete the owner's membership row and orphan the group, and no
-  /// ownership-transfer function exists. The client therefore refuses, and
-  /// the restriction is reported as a backend dependency rather than
-  /// inventing a transfer.
+  /// The owner cannot leave: live `trg_owner_guard` (fn_prevent_owner_removal,
+  /// verified in the G3 audit) raises CANNOT_REMOVE_OWNER on deleting an owner
+  /// row, and no ownership-transfer function exists. The client refuses up
+  /// front with the same outcome the server would give.
   bool get canLeave => _group != null && !isOwner;
 
   String get leaveBlockedReason =>
@@ -153,11 +152,12 @@ class GroupHubController extends DisposableNotifier {
     return ok;
   }
 
-  /// Changes another member's role. Client invariants (all also expected of
-  /// the server): never yourself, never the owner, never *to* owner, only a
-  /// live assignable role, and only a user who is in this group's roster.
-  /// `MANAGE_ROLES` is enforced by the live policy; the client merely does not
-  /// offer the action without it.
+  /// Changes another member's role. Client invariants (each also enforced by
+  /// the live "role changes" policy / trg_owner_guard, verified in the G3
+  /// audit): never yourself, never the owner, never *to* owner, only a live
+  /// assignable role, and only a user who is in this group's roster.
+  /// `MANAGE_ROLES` is enforced server-side; the client merely does not offer
+  /// the action without it.
   Future<bool> changeRole(String userId, GroupRole role) async {
     if (!canManageRoles) {
       _error = GroupErrors.map(

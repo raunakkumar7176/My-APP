@@ -270,14 +270,13 @@ class InMemoryGroupRepository implements GroupRepository {
     });
   }
 
-  /// Whether the fake models the live `trg_owner_guard` trigger
-  /// (CANNOT_DEMOTE_OWNER / CANNOT_REMOVE_OWNER). On by default.
-  bool ownerGuardTrigger = true;
-
-  /// Mirrors the live "role changes" UPDATE policy **as it is today**:
-  /// `fn_has_permission(MANAGE_ROLES) OR user_id = auth.uid()` — i.e. the
-  /// self-update branch is deliberately reproduced so tests can prove the
-  /// client never relies on it, and to document the defect G3 must fix.
+  /// Mirrors the LIVE "role changes" UPDATE policy as verified by the G3
+  /// audit (docs/G3_LIVE_AUDIT_AND_CLOSURE.md):
+  ///   USING  (role <> 'owner') AND fn_has_permission(group_id, uid, 'MANAGE_ROLES')
+  ///   CHECK  (role <> 'owner') AND fn_has_permission(group_id, uid, 'MANAGE_ROLES')
+  /// There is no self-update branch; owner rows cannot be targeted and no row
+  /// may become 'owner'. Under RLS a row that fails USING simply does not
+  /// match (0 rows updated); a new row failing CHECK raises.
   @override
   Future<void> setMemberRole({
     required String groupId,
@@ -291,12 +290,14 @@ class InMemoryGroupRepository implements GroupRepository {
       // No row matches → PostgREST updates 0 rows silently.
       return;
     }
-    final allowed =
-        hasPermission(groupId, GroupPermission.manageRoles) ||
-        userId == currentUser;
-    if (!allowed) throw _notAuthorized(GroupErrorContext.changeRole);
-    if (ownerGuardTrigger && g.roles[userId] == 'owner' && !role.isOwner) {
-      throw const DataError(message: 'The group owner cannot be demoted.');
+    final manage = hasPermission(groupId, GroupPermission.manageRoles);
+    // USING: owner rows and non-managers never match → 0 rows, no change.
+    if (!manage || g.roles[userId] == 'owner') return;
+    // CHECK: the new row may not be 'owner'.
+    if (role.isOwner) {
+      throw const DataError(
+        message: 'new row violates row-level security policy for table "group_members"',
+      );
     }
     g.roles[userId] = role.db;
   }

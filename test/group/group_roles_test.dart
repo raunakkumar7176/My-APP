@@ -1,7 +1,7 @@
-// G3 — roles & permission engine. The fake reproduces the live rules,
-// including the live "role changes" UPDATE policy's self-update branch, so
-// these tests prove the client never relies on it and document what the
-// server must still enforce (see G3 report, section E).
+// G3 — roles & permission engine. The fake mirrors the LIVE rules verified
+// by the G3 audit (docs/G3_LIVE_AUDIT_AND_CLOSURE.md): the "role changes"
+// UPDATE policy is (role <> 'owner') AND MANAGE_ROLES on both USING and CHECK,
+// with no self-update branch.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -136,7 +136,7 @@ void main() {
     );
 
     test(
-      'unauthorized: server refuses even if the client is bypassed',
+      'unauthorized: live policy matches 0 rows if the client is bypassed',
       () async {
         final repo = InMemoryGroupRepository()
           ..seed(
@@ -144,20 +144,19 @@ void main() {
             ownerId: 'u-owner',
             members: {'u-me': 'leader', 'u-2': 'member'},
           );
-        await expectLater(
-          repo.setMemberRole(
-            groupId: 'g-1',
-            userId: 'u-2',
-            role: GroupRole.leader,
-          ),
-          throwsA(isA<DataError>()),
+        // Live USING clause: a non-MANAGE_ROLES caller matches 0 rows —
+        // PostgREST reports success with nothing changed.
+        await repo.setMemberRole(
+          groupId: 'g-1',
+          userId: 'u-2',
+          role: GroupRole.leader,
         );
         expect(repo.groups['g-1']!.roles['u-2'], 'member');
       },
     );
 
     test(
-      'self-role escalation: client refuses; the LIVE policy would not',
+      'self-role escalation: client refuses; live policy also blocks it',
       () async {
         final repo = InMemoryGroupRepository()
           ..seed(id: 'g-1', ownerId: 'u-owner', members: {'u-me': 'member'});
@@ -170,9 +169,9 @@ void main() {
         expect(c.error, contains('own role'));
         expect(repo.calls.where((x) => x.startsWith('setRole')), isEmpty);
 
-        // Documented live defect: the "role changes" policy's
-        // `user_id = auth.uid()` branch lets a direct table update through.
-        // This is what the G3 backend fix must close; the client never uses it.
+        // LIVE (G3 audit): the "role changes" policy has no self-update
+        // branch — USING/CHECK are (role <> 'owner') AND MANAGE_ROLES — so
+        // a direct table update by a member matches 0 rows.
         repo.roleGrants.clear();
         await repo.setMemberRole(
           groupId: 'g-1',
@@ -181,8 +180,8 @@ void main() {
         );
         expect(
           repo.groups['g-1']!.roles['u-me'],
-          'leader',
-          reason: 'live policy defect reproduced, not endorsed',
+          'member',
+          reason: 'live policy blocks self-role escalation',
         );
         c.dispose();
       },
@@ -212,16 +211,24 @@ void main() {
           isNot(contains(GroupRole.owner)),
         );
 
-        // Server side: trg_owner_guard refuses demotion even when bypassed.
+        // Server side (live): owner rows never match USING, and CHECK
+        // forbids a row becoming 'owner' — so bypassing the client changes
+        // nothing / raises.
+        await repo.setMemberRole(
+          groupId: 'g-1',
+          userId: 'u-owner',
+          role: GroupRole.member,
+        );
+        expect(repo.groups['g-1']!.roles['u-owner'], 'owner');
         await expectLater(
           repo.setMemberRole(
             groupId: 'g-1',
-            userId: 'u-owner',
-            role: GroupRole.member,
+            userId: 'u-2',
+            role: GroupRole.owner,
           ),
           throwsA(isA<DataError>()),
         );
-        expect(repo.groups['g-1']!.roles['u-owner'], 'owner');
+        expect(repo.groups['g-1']!.roles['u-2'], 'member');
         c.dispose();
       },
     );
