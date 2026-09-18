@@ -35,7 +35,7 @@ class FakeGroup {
   String description;
   final String ownerId;
   String privacy;
-  final String inviteCode;
+  String inviteCode;
   String? logoUrl;
   final Map<String, String> roles = {}; // userId -> group_role
   DateTime createdAt = DateTime(2026, 9, 1);
@@ -342,5 +342,41 @@ class InMemoryGroupRepository implements GroupRepository {
       throw _notAuthorized(GroupErrorContext.update);
     }
     g.logoUrl = null;
+  }
+
+  /// Every invite-code read/rotation, so tests can prove non-settings flows
+  /// never touch it.
+  final List<String> inviteCodeReads = [];
+  int rotations = 0;
+
+  /// Live: `groups.invite_code` is row-readable by members (and by anyone for
+  /// public groups). The client only calls this from the gated settings flow.
+  @override
+  Future<String> inviteCode(String groupId) async {
+    inviteCodeReads.add(groupId);
+    _maybeFail();
+    final g = groups[groupId];
+    final visible =
+        g != null &&
+        (g.roles.containsKey(currentUser) || g.privacy == 'public');
+    if (!visible) {
+      throw const DataError(message: 'Invite code is not available.');
+    }
+    return g.inviteCode;
+  }
+
+  /// Live `fn_reset_group_invite`: GROUP_SETTINGS or owner, else NOT_AUTHORIZED;
+  /// server generates the new code.
+  @override
+  Future<String> rotateInviteCode(String groupId) async {
+    calls.add('rotate:$groupId');
+    _maybeFail();
+    if (!await canEditSettings(groupId)) {
+      throw _notAuthorized(GroupErrorContext.inviteCode);
+    }
+    rotations++;
+    final g = groups[groupId]!;
+    g.inviteCode = 'ROT${rotations.toString().padLeft(5, '0')}';
+    return g.inviteCode;
   }
 }

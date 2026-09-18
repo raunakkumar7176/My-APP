@@ -16,6 +16,7 @@ enum GroupErrorContext {
   removeMember,
   update,
   changeRole,
+  inviteCode,
 }
 
 class GroupErrors {
@@ -63,6 +64,8 @@ class GroupErrors {
           return 'You do not have permission to change this group.';
         case GroupErrorContext.changeRole:
           return 'You do not have permission to change roles in this group.';
+        case GroupErrorContext.inviteCode:
+          return 'Only the group owner or a member with the settings permission can manage the invite code.';
         default:
           return 'You do not have permission to do that.';
       }
@@ -97,6 +100,8 @@ class GroupErrors {
         return 'Could not save the group. Please try again.';
       case GroupErrorContext.changeRole:
         return 'Could not change that role. Please try again.';
+      case GroupErrorContext.inviteCode:
+        return 'Could not load the invite code. Please try again.';
     }
   }
 

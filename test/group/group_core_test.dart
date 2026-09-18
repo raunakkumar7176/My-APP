@@ -689,6 +689,12 @@ class _FailingRepository implements GroupRepository {
   @override
   Future<void> clearLogo(String groupId) async {}
   @override
+  Future<String> inviteCode(String groupId) async =>
+      throw const DataError(message: 'nope');
+  @override
+  Future<String> rotateInviteCode(String groupId) async =>
+      throw const DataError(message: 'nope');
+  @override
   Future<GroupPermissions> permissionsFor(
     String groupId, {
     List<GroupPermission> of = GroupPermission.live,

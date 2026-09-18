@@ -107,6 +107,16 @@ abstract interface class GroupRepository {
   /// Sets `groups.logo_url` to NULL. Same UPDATE policy. The storage object
   /// (if any) is not touched: no group-scoped storage policy exists live.
   Future<void> clearLogo(String groupId);
+
+  /// The group's `invite_code`, read as a single explicit column by exact id.
+  /// Called only from the permission-gated settings flow; never from list,
+  /// hub, members or any other screen. The value is never logged or cached.
+  Future<String> inviteCode(String groupId);
+
+  /// `fn_reset_group_invite(p_group)` — the server generates and returns the
+  /// new code (GROUP_SETTINGS or owner; `NOT_AUTHORIZED` otherwise). Nothing
+  /// is generated client-side.
+  Future<String> rotateInviteCode(String groupId);
 }
 
 class SupabaseGroupRepository implements GroupRepository {
@@ -330,6 +340,38 @@ class SupabaseGroupRepository implements GroupRepository {
       await _client.from('groups').update({'logo_url': null}).eq('id', groupId);
     },
   );
+
+  @override
+  Future<String> inviteCode(String groupId) =>
+      _guard(GroupErrorContext.inviteCode, () async {
+        final row = await _client
+            .from('groups')
+            .select('invite_code')
+            .eq('id', groupId)
+            .maybeSingle();
+        final code = row?['invite_code'];
+        if (code is! String || code.isEmpty) {
+          throw const DataError(message: 'Invite code is not available.');
+        }
+        return code; // never logged
+      });
+
+  @override
+  Future<String> rotateInviteCode(String groupId) =>
+      _guard(GroupErrorContext.inviteCode, () async {
+        final response = await _client.rpc(
+          'fn_reset_group_invite',
+          params: {'p_group': groupId},
+        );
+        // Deliberately no rpcShape() here: the response IS the secret.
+        final code = response is Map
+            ? (response['fn_reset_group_invite'] ?? response['invite_code'])
+            : response;
+        if (code is! String || code.isEmpty) {
+          throw const DataError(message: 'The invite code was not rotated.');
+        }
+        return code;
+      });
 
   static Future<T> _guard<T>(
     GroupErrorContext context,

@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/theme/app_colors.dart';
 import '../domain/group_errors.dart';
 import '../domain/group_privacy.dart';
 import '../state/group_hub_controller.dart';
+import '../state/invite_code_controller.dart';
 import '../widgets/group_avatar.dart';
 
 /// Basic group settings: name, description, privacy, and logo removal.
@@ -17,11 +19,16 @@ class GroupSettingsScreen extends StatefulWidget {
   const GroupSettingsScreen({
     required this.groupId,
     this.controller,
+    this.inviteCodeController,
     super.key,
   });
 
   final String groupId;
   final GroupHubController? controller;
+
+  /// Injectable for tests; created lazily otherwise, and only once the
+  /// caller is known to hold GROUP_SETTINGS / be the owner.
+  final InviteCodeController? inviteCodeController;
 
   @override
   State<GroupSettingsScreen> createState() => _GroupSettingsScreenState();
@@ -30,6 +37,8 @@ class GroupSettingsScreen extends StatefulWidget {
 class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
   late final GroupHubController _c;
   late final bool _owns;
+  InviteCodeController? _invite;
+  bool _ownsInvite = false;
   final _name = TextEditingController();
   final _description = TextEditingController();
   GroupPrivacy _privacy = GroupPrivacy.public;
@@ -45,6 +54,7 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
     _c.addListener(_onChanged);
     if (_c.hasLoaded) {
       _seedFromGroup();
+      _ensureInviteController();
     } else {
       _c.load();
     }
@@ -53,7 +63,25 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
   void _onChanged() {
     if (!mounted) return;
     if (!_seeded && _c.group != null) _seedFromGroup();
+    _ensureInviteController();
     setState(() {});
+  }
+
+  /// The invite code is requested only after the server-derived permission
+  /// says this caller may manage settings. Nobody else ever triggers the read.
+  void _ensureInviteController() {
+    if (_invite != null ||
+        !_c.hasLoaded ||
+        _c.group == null ||
+        !_c.canEditBasics) {
+      return;
+    }
+    _ownsInvite = widget.inviteCodeController == null;
+    _invite =
+        widget.inviteCodeController ??
+        InviteCodeController(groupId: widget.groupId);
+    _invite!.addListener(_onChanged);
+    if (!_invite!.hasLoaded) _invite!.load();
   }
 
   /// Seeds the fields once from the loaded group; a later reload (after
@@ -71,6 +99,8 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
   void dispose() {
     _c.removeListener(_onChanged);
     if (_owns) _c.dispose();
+    _invite?.removeListener(_onChanged);
+    if (_ownsInvite) _invite?.dispose();
     _name.dispose();
     _description.dispose();
     super.dispose();
@@ -94,6 +124,138 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('Group settings saved.')));
     }
+  }
+
+  // ── invite code (G5.1) ──
+  // Rendered only when canEditBasics (the controller is only created then).
+  // The value is displayed, copied and rotated here and nowhere else.
+  Widget _inviteSection(BuildContext context) {
+    final i = _invite;
+    if (i == null) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+    return Column(
+      key: const Key('invite_section'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Invite code', style: theme.textTheme.titleSmall),
+        const SizedBox(height: 4),
+        Text(
+          'Share this code so people can join. Rotating it invalidates the old '
+          'code immediately.',
+          style: theme.textTheme.bodySmall,
+        ),
+        const SizedBox(height: 8),
+        if (i.isLoading && !i.hasLoaded)
+          const Padding(
+            key: Key('invite_loading'),
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: LinearProgressIndicator(),
+          )
+        else if (i.code == null)
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  i.error ?? 'Invite code is not available.',
+                  key: const Key('invite_error'),
+                  style: const TextStyle(color: AppColors.error),
+                ),
+              ),
+              TextButton(
+                key: const Key('invite_retry'),
+                onPressed: i.isBusy ? null : i.retry,
+                child: const Text('Retry'),
+              ),
+            ],
+          )
+        else ...[
+          Row(
+            children: [
+              Expanded(
+                child: SelectableText(
+                  i.code!,
+                  key: const Key('invite_code_value'),
+                  style: theme.textTheme.headlineSmall?.copyWith(
+                    fontFamily: 'monospace',
+                    letterSpacing: 2,
+                  ),
+                ),
+              ),
+              IconButton(
+                key: const Key('invite_copy'),
+                tooltip: 'Copy invite code',
+                icon: const Icon(Icons.copy_outlined),
+                onPressed: i.isBusy ? null : () => _copyInvite(i.code!),
+              ),
+            ],
+          ),
+          if (i.error != null)
+            Text(
+              i.error!,
+              key: const Key('invite_error'),
+              style: const TextStyle(color: AppColors.error),
+            ),
+          if (i.justRotated && i.error == null)
+            const Text(
+              'New code generated.',
+              key: Key('invite_rotated'),
+              style: TextStyle(color: AppColors.success),
+            ),
+          OutlinedButton.icon(
+            key: const Key('invite_rotate'),
+            onPressed: i.isBusy ? null : _rotateInvite,
+            icon: const Icon(Icons.refresh),
+            label: Text(i.isRotating ? 'Rotating…' : 'Rotate invite code'),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Future<void> _copyInvite(String code) async {
+    await Clipboard.setData(ClipboardData(text: code));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('Invite code copied.')));
+  }
+
+  Future<void> _rotateInvite() async {
+    final i = _invite;
+    if (i == null) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Rotate invite code?'),
+        content: const Text(
+          'The current code will stop working immediately. Anyone who has not '
+          'joined yet will need the new code.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const Key('confirm_rotate'),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Rotate'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final ok = await i.rotate();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          ok
+              ? 'Invite code rotated.'
+              : (i.error ?? 'Could not rotate the code.'),
+        ),
+        backgroundColor: ok ? null : AppColors.error,
+      ),
+    );
   }
 
   Future<void> _removeLogo() async {
@@ -206,6 +368,8 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
             ],
           ),
           const SizedBox(height: 24),
+          const SizedBox(height: 24),
+          _inviteSection(context),
           TextField(
             key: const Key('settings_name_field'),
             controller: _name,
