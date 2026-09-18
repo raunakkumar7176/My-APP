@@ -701,6 +701,14 @@ class _FailingRepository implements GroupRepository {
   @override
   Future<List<GroupJoinRequest>> myPendingJoinRequests() async => const [];
   @override
+  Future<List<GroupJoinRequest>> pendingJoinRequests(String groupId) async =>
+      const [];
+  @override
+  Future<void> decideJoinRequest(
+    String requestId, {
+    required bool approve,
+  }) async {}
+  @override
   Future<List<GroupInvitation>> myInvitations() async => const [];
   @override
   Future<void> acceptInvitation(String invitationId) async {}

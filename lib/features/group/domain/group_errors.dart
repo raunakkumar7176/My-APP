@@ -18,6 +18,7 @@ enum GroupErrorContext {
   changeRole,
   inviteCode,
   invitation,
+  joinRequest,
 }
 
 class GroupErrors {
@@ -72,6 +73,8 @@ class GroupErrors {
           return 'You do not have permission to change roles in this group.';
         case GroupErrorContext.inviteCode:
           return 'Only the group owner or a member with the settings permission can manage the invite code.';
+        case GroupErrorContext.joinRequest:
+          return 'You do not have permission to decide join requests for this group.';
         default:
           return 'You do not have permission to do that.';
       }
@@ -110,6 +113,8 @@ class GroupErrors {
         return 'Could not load the invite code. Please try again.';
       case GroupErrorContext.invitation:
         return 'Could not update the invitation. Please try again.';
+      case GroupErrorContext.joinRequest:
+        return 'Could not update the join request. Please try again.';
     }
   }
 

@@ -1,6 +1,7 @@
 import '../../../core/errors/app_error.dart';
 import '../../../core/logging/app_logger.dart';
 import '../../../core/models/group.dart';
+import '../../../core/models/group_join_request.dart';
 import '../../../core/models/group_member.dart';
 import '../../../core/services/auth_service.dart';
 import '../../test/state/disposable_notifier.dart';
@@ -36,6 +37,24 @@ class GroupHubController extends DisposableNotifier {
   bool _accessDenied = false;
   bool _leftGroup = false;
   GroupPermissions _permissions = GroupPermissions.none;
+
+  // ── manager join-request queue (G5.3) ──
+  List<GroupJoinRequest> _joinRequests = const [];
+  bool _joinRequestsLoading = false;
+  String? _joinRequestsError;
+  String? _actingRequestId;
+
+  /// Pending requests for this group. Loaded only when the server-reported
+  /// MANAGE_MEMBERS is true; otherwise never queried. A requester is not a
+  /// member and their profile is not readable, so rows carry no identity.
+  List<GroupJoinRequest> get joinRequests => _joinRequests;
+  int get pendingRequestCount => _joinRequests.length;
+  bool get joinRequestsLoading => _joinRequestsLoading;
+  String? get joinRequestsError => _joinRequestsError;
+
+  /// Request currently being decided (single-flight per request; other
+  /// items stay enabled unless a global mutation is running).
+  String? get actingRequestId => _actingRequestId;
   String? _error;
 
   Group? get group => _group;
@@ -170,6 +189,13 @@ class GroupHubController extends DisposableNotifier {
             GroupPermission.groupSettings,
           ],
         );
+        // Manager queue: loaded only when the server says MANAGE_MEMBERS.
+        if (_permissions.canManageMembers) {
+          await _loadJoinRequests();
+        } else {
+          _joinRequests = const [];
+          _joinRequestsError = null;
+        }
       }
     } on AppError catch (e) {
       _error = e.message;
@@ -183,6 +209,78 @@ class GroupHubController extends DisposableNotifier {
   }
 
   Future<void> refresh() => load();
+
+  Future<void> _loadJoinRequests() async {
+    _joinRequestsLoading = true;
+    _joinRequestsError = null;
+    try {
+      _joinRequests = await _repo.pendingJoinRequests(groupId);
+    } on AppError catch (e) {
+      _joinRequestsError = e.message;
+    } catch (e, st) {
+      AppLogger.error('Join requests load failed: $e', stackTrace: st);
+      _joinRequestsError = GroupErrors.map(
+        e.toString(),
+        context: GroupErrorContext.joinRequest,
+      );
+    }
+    _joinRequestsLoading = false;
+  }
+
+  Future<void> retryJoinRequests() async {
+    if (!canManageMembers || _joinRequestsLoading) return;
+    notifyListeners();
+    await _loadJoinRequests();
+    notifyListeners();
+  }
+
+  /// Approves or declines via `fn_approve_group_join_request(id, approve)`.
+  /// Only the request id is sent — the server derives the group from the
+  /// row and checks MANAGE_MEMBERS there. On approval the whole hub reloads
+  /// (members, count, queue) so the new member comes from the server row the
+  /// function inserted; on decline only the queue is re-read. Any error is
+  /// mapped and followed by a server re-read — nothing is fabricated.
+  Future<bool> decideJoinRequest(
+    GroupJoinRequest request, {
+    required bool approve,
+  }) async {
+    if (!canManageMembers) {
+      _error = GroupErrors.map(
+        'NOT_AUTHORIZED',
+        context: GroupErrorContext.joinRequest,
+      );
+      notifyListeners();
+      return false;
+    }
+    if (_actingRequestId == request.id || _busy) return false;
+    _actingRequestId = request.id;
+    _error = null;
+    notifyListeners();
+    try {
+      await _repo.decideJoinRequest(request.id, approve: approve);
+      if (approve) {
+        await load();
+      } else {
+        await _loadJoinRequests();
+      }
+      return true;
+    } on AppError catch (e) {
+      _error = e.message;
+      await _loadJoinRequests();
+      return false;
+    } catch (e, st) {
+      AppLogger.error('Join request decision failed: $e', stackTrace: st);
+      _error = GroupErrors.map(
+        e.toString(),
+        context: GroupErrorContext.joinRequest,
+      );
+      await _loadJoinRequests();
+      return false;
+    } finally {
+      _actingRequestId = null;
+      notifyListeners();
+    }
+  }
 
   /// Leaves the group. Returns true when the membership is gone.
   Future<bool> leave() async {

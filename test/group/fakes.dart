@@ -423,6 +423,60 @@ class InMemoryGroupRepository implements GroupRepository {
     ];
   }
 
+  /// Live SELECT policy on group_join_requests: own row OR MANAGE_MEMBERS on
+  /// the row's group. Returned rows are whatever RLS lets the caller see.
+  @override
+  Future<List<GroupJoinRequest>> pendingJoinRequests(String groupId) async {
+    requestReads.add('group:$groupId');
+    final manage = hasPermission(groupId, GroupPermission.manageMembers);
+    return [
+      for (final e in requestStatus.entries)
+        if (e.key.startsWith('$groupId:') &&
+            e.value == 'pending' &&
+            (manage || e.key.endsWith(':$currentUser')))
+          _request(e.key, e.value),
+    ];
+  }
+
+  /// Live `fn_approve_group_join_request(p_request_id, p_approve)`: loads the
+  /// row, derives its group, requires MANAGE_MEMBERS **on that group** else
+  /// NOT_AUTHORIZED; approve → membership ON CONFLICT DO NOTHING + approved;
+  /// decline → declined. Only the request id is received.
+  @override
+  Future<void> decideJoinRequest(
+    String requestId, {
+    required bool approve,
+  }) async {
+    calls.add('decide:$requestId:$approve');
+    _maybeFail();
+    final key = _requestIds.entries
+        .where((e) => e.value == requestId)
+        .map((e) => e.key)
+        .firstOrNull;
+    final status = key == null ? null : requestStatus[key];
+    if (key == null || status == null) {
+      throw _notAuthorized(GroupErrorContext.joinRequest); // row not visible
+    }
+    final groupId = key.split(':')[0];
+    final userId = key.split(':')[1];
+    if (!hasPermission(groupId, GroupPermission.manageMembers)) {
+      throw _notAuthorized(GroupErrorContext.joinRequest);
+    }
+    if (approve) {
+      groups[groupId]?.roles.putIfAbsent(userId, () => 'member');
+      requestStatus[key] = 'approved';
+    } else {
+      requestStatus[key] = 'declined';
+    }
+  }
+
+  /// Seeds a pending request and returns its id (as the live row would have).
+  String seedJoinRequest({required String groupId, required String userId}) {
+    final key = '$groupId:$userId';
+    requestStatus[key] = 'pending';
+    return _request(key, 'pending').id;
+  }
+
   /// Invitations as live rows.
   final List<GroupInvitation> invitations = [];
   final List<String> invitationReads = [];

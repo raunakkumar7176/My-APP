@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/constants/theme/app_colors.dart';
 import '../state/group_hub_controller.dart';
 import '../widgets/group_avatar.dart';
+import '../widgets/join_request_queue.dart';
 import '../widgets/member_tile.dart';
 
 /// One group's hub: profile header, roster, and the G1 membership actions.
@@ -195,6 +196,10 @@ class _GroupHubScreenState extends State<GroupHubScreen> {
               Text(group.description!.trim()),
             ],
             const SizedBox(height: 24),
+            if (_c.canManageMembers) ...[
+              JoinRequestQueue(controller: _c),
+              const SizedBox(height: 24),
+            ],
             Row(
               children: [
                 Expanded(

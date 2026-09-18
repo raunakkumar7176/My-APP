@@ -130,6 +130,19 @@ abstract interface class GroupRepository {
   /// client which group it was, so this is how the pending state is found).
   Future<List<GroupJoinRequest>> myPendingJoinRequests();
 
+  /// Pending join requests of one group (exact `group_id`, `status='pending'`).
+  /// The live SELECT policy (own row OR MANAGE_MEMBERS) decides what comes
+  /// back; the client calls this only for managers, and never across groups.
+  /// No requester profile is embedded: a requester is not a member, so their
+  /// `profiles` row is not readable under the live policy.
+  Future<List<GroupJoinRequest>> pendingJoinRequests(String groupId);
+
+  /// `fn_approve_group_join_request(p_request_id, p_approve)`. The server
+  /// loads the request, derives its group, checks MANAGE_MEMBERS for **that**
+  /// group, and inserts the membership itself on approval. Only the request
+  /// id is sent; no group id is ever passed as authorization.
+  Future<void> decideJoinRequest(String requestId, {required bool approve});
+
   /// The caller's own **pending incoming** invitations (`invitee_id = uid`).
   /// One query, the five live columns, nothing about the group or inviter:
   /// a non-member cannot read a private/restricted group's row, so nothing
@@ -474,6 +487,30 @@ class SupabaseGroupRepository implements GroupRepository {
         await _client.rpc(
           'fn_decline_group_invitation',
           params: {'p_invite_id': invitationId},
+        );
+      });
+
+  @override
+  Future<List<GroupJoinRequest>> pendingJoinRequests(String groupId) =>
+      _guard(GroupErrorContext.joinRequest, () async {
+        final rows = await _client
+            .from('group_join_requests')
+            .select(_joinRequestColumns)
+            .eq('group_id', groupId)
+            .eq('status', GroupJoinRequest.statusPending)
+            .order('created_at');
+        return [
+          for (final r in rows as List)
+            GroupJoinRequest.fromJson(r as Map<String, dynamic>),
+        ];
+      });
+
+  @override
+  Future<void> decideJoinRequest(String requestId, {required bool approve}) =>
+      _guard(GroupErrorContext.joinRequest, () async {
+        await _client.rpc(
+          'fn_approve_group_join_request',
+          params: {'p_request_id': requestId, 'p_approve': approve},
         );
       });
 
