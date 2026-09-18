@@ -28,7 +28,7 @@ class QuestionsStep extends StatefulWidget {
   /// Throw an [AppError] to show its message.
   final Future<void> Function(Question question) onDeleteServerQuestion;
   final Future<void> Function(Question original, QuestionDraft updated)
-      onUpdateServerQuestion;
+  onUpdateServerQuestion;
 
   /// Non-blocking hint (e.g. Quick Test size guidance).
   final String? guidance;
@@ -40,13 +40,18 @@ class QuestionsStep extends StatefulWidget {
 
 class _QuestionsStepState extends State<QuestionsStep> {
   void _snack(String message, {bool error = false}) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(message),
-      backgroundColor: error ? AppColors.error : AppColors.success,
-    ));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: error ? AppColors.error : AppColors.success,
+      ),
+    );
   }
 
-  Future<void> _openEditor({QuestionDraft? initial, required ValueChanged<QuestionDraft> onSave}) {
+  Future<void> _openEditor({
+    QuestionDraft? initial,
+    required ValueChanged<QuestionDraft> onSave,
+  }) {
     return showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -65,50 +70,52 @@ class _QuestionsStepState extends State<QuestionsStep> {
   }
 
   void _addLocal() => _openEditor(
-        onSave: (d) => widget.onLocalQuestionsChanged([...widget.localQuestions, d]),
-      );
+    onSave: (d) =>
+        widget.onLocalQuestionsChanged([...widget.localQuestions, d]),
+  );
 
   void _editLocal(int index) => _openEditor(
-        initial: widget.localQuestions[index],
-        onSave: (d) {
-          final updated = List<QuestionDraft>.from(widget.localQuestions);
-          updated[index] = d;
-          widget.onLocalQuestionsChanged(updated);
-        },
-      );
+    initial: widget.localQuestions[index],
+    onSave: (d) {
+      final updated = List<QuestionDraft>.from(widget.localQuestions);
+      updated[index] = d;
+      widget.onLocalQuestionsChanged(updated);
+    },
+  );
 
   void _deleteLocal(int index) {
-    final updated = List<QuestionDraft>.from(widget.localQuestions)..removeAt(index);
+    final updated = List<QuestionDraft>.from(widget.localQuestions)
+      ..removeAt(index);
     widget.onLocalQuestionsChanged(updated);
   }
 
   Future<void> _editServer(Question q) => _openEditor(
-        initial: QuestionDraft(
-          id: q.id,
-          questionText: q.question,
-          questionType: q.questionType ?? QuestionType.mcqSingle,
-          options: [
-            for (final o in q.options ?? const <QuestionOption>[])
-              QuestionOptionDraft(id: o.id, text: o.text),
-          ],
-          correctOptionIndex: null, // never exposed by the safe RPC
-          explanation: q.explanation,
-          subjectId: q.subjectId,
-          topicNodeId: q.topicNodeId,
-          difficulty: q.difficulty,
-          marks: q.marks,
-          negativeMarks: q.negativeMarks,
-          language: q.language,
-        ),
-        onSave: (d) async {
-          try {
-            await widget.onUpdateServerQuestion(q, d);
-            if (mounted) _snack('Question updated');
-          } on AppError catch (e) {
-            if (mounted) _snack(e.message, error: true);
-          }
-        },
-      );
+    initial: QuestionDraft(
+      id: q.id,
+      questionText: q.question,
+      questionType: q.questionType ?? QuestionType.mcqSingle,
+      options: [
+        for (final o in q.options ?? const <QuestionOption>[])
+          QuestionOptionDraft(id: o.id, text: o.text),
+      ],
+      correctOptionIndex: null, // never exposed by the safe RPC
+      explanation: q.explanation,
+      subjectId: q.subjectId,
+      topicNodeId: q.topicNodeId,
+      difficulty: q.difficulty,
+      marks: q.marks,
+      negativeMarks: q.negativeMarks,
+      language: q.language,
+    ),
+    onSave: (d) async {
+      try {
+        await widget.onUpdateServerQuestion(q, d);
+        if (mounted) _snack('Question updated');
+      } on AppError catch (e) {
+        if (mounted) _snack(e.message, error: true);
+      }
+    },
+  );
 
   Future<void> _deleteServer(Question q) async {
     final confirmed = await showDialog<bool>(
@@ -117,7 +124,10 @@ class _QuestionsStepState extends State<QuestionsStep> {
         title: const Text('Delete Question'),
         content: const Text('Are you sure you want to delete this question?'),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
             style: TextButton.styleFrom(foregroundColor: AppColors.error),
@@ -153,8 +163,10 @@ class _QuestionsStepState extends State<QuestionsStep> {
                 const Icon(Icons.info_outline, size: 18),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Text(widget.guidance!,
-                      style: Theme.of(context).textTheme.bodySmall),
+                  child: Text(
+                    widget.guidance!,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
                 ),
               ],
             ),
@@ -165,7 +177,8 @@ class _QuestionsStepState extends State<QuestionsStep> {
               : ListView.builder(
                   padding: const EdgeInsets.all(16),
                   itemCount: items.length,
-                  itemBuilder: (context, index) => _tile(context, items[index], index),
+                  itemBuilder: (context, index) =>
+                      _tile(context, items[index], index),
                 ),
         ),
         Padding(
@@ -191,12 +204,13 @@ class _QuestionsStepState extends State<QuestionsStep> {
           radius: 16,
           backgroundColor: item.isServer
               ? AppColors.primaryLight.withValues(alpha: 0.1)
-              : Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.5),
-          child: Text('${index + 1}',
-              style: Theme.of(context)
-                  .textTheme
-                  .bodySmall
-                  ?.copyWith(fontWeight: FontWeight.w600)),
+              : Theme.of(context).colorScheme.primaryContainer
+                    .withValues(alpha: 0.5),
+          child: Text(
+            '${index + 1}',
+            style: Theme.of(context).textTheme.bodySmall
+                ?.copyWith(fontWeight: FontWeight.w600),
+          ),
         ),
         title: Text(
           item.text.isEmpty ? 'Untitled Question' : item.text,
@@ -216,9 +230,13 @@ class _QuestionsStepState extends State<QuestionsStep> {
           ],
           onSelected: (value) {
             if (value == 'edit') {
-              item.isServer ? _editServer(item.server!) : _editLocal(item.localIndex!);
+              item.isServer
+                  ? _editServer(item.server!)
+                  : _editLocal(item.localIndex!);
             } else {
-              item.isServer ? _deleteServer(item.server!) : _deleteLocal(item.localIndex!);
+              item.isServer
+                  ? _deleteServer(item.server!)
+                  : _deleteLocal(item.localIndex!);
             }
           },
         ),
@@ -233,14 +251,22 @@ class _QuestionsStepState extends State<QuestionsStep> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.question_answer_outlined,
-                size: 64, color: Theme.of(context).colorScheme.outline),
+            Icon(
+              Icons.question_answer_outlined,
+              size: 64,
+              color: Theme.of(context).colorScheme.outline,
+            ),
             const SizedBox(height: 16),
-            Text('No questions yet', style: Theme.of(context).textTheme.headlineSmall),
+            Text(
+              'No questions yet',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
             const SizedBox(height: 8),
-            Text('Tap "Add Question" to create your first question.',
-                style: Theme.of(context).textTheme.bodyMedium,
-                textAlign: TextAlign.center),
+            Text(
+              'Tap "Add Question" to create your first question.',
+              style: Theme.of(context).textTheme.bodyMedium,
+              textAlign: TextAlign.center,
+            ),
           ],
         ),
       ),
@@ -266,9 +292,7 @@ class _QuestionsStepState extends State<QuestionsStep> {
 }
 
 class _Item {
-  _Item.server(this.server)
-      : local = null,
-        localIndex = null;
+  _Item.server(this.server) : local = null, localIndex = null;
   _Item.local(this.local, this.localIndex) : server = null;
 
   final Question? server;

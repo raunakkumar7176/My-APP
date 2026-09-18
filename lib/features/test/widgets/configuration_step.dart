@@ -68,13 +68,14 @@ class _ConfigurationStepState extends State<ConfigurationStep> {
   late LateJoinSettings _lateJoin;
   late QuestionConfig _questionConfig;
   DateTime? _startsAt;
+
   /// Derived from start + duration; kept only for the calculated display.
   DateTime? get _calculatedEnd => ScheduleMath.endFor(
-        startsAt: _startsAt,
-        durationSec: int.tryParse(_durationController.text) == null
-            ? null
-            : int.parse(_durationController.text) * 60,
-      );
+    startsAt: _startsAt,
+    durationSec: int.tryParse(_durationController.text) == null
+        ? null
+        : int.parse(_durationController.text) * 60,
+  );
 
   @override
   void initState() {
@@ -168,7 +169,13 @@ class _ConfigurationStepState extends State<ConfigurationStep> {
     if (time == null || !mounted) return;
 
     setState(() {
-      _startsAt = DateTime(date.year, date.month, date.day, time.hour, time.minute);
+      _startsAt = DateTime(
+        date.year,
+        date.month,
+        date.day,
+        time.hour,
+        time.minute,
+      );
     });
     _update();
   }
@@ -231,8 +238,11 @@ class _ConfigurationStepState extends State<ConfigurationStep> {
           ],
           // ── Question configuration (target; review compares with actual) ──
           const SizedBox(height: 24),
-          Text('Question Configuration',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+          Text(
+            'Question Configuration',
+            style: Theme.of(context).textTheme.titleMedium
+                ?.copyWith(fontWeight: FontWeight.w600),
+          ),
           const SizedBox(height: 4),
           Text(
             'MCQ only in V1 (4 options each). Set a total and how many Easy / '
@@ -252,8 +262,11 @@ class _ConfigurationStepState extends State<ConfigurationStep> {
           // ── Schedule ──
           if (widget.kind.isScheduled) ...[
             const SizedBox(height: 24),
-            Text('Schedule',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+            Text(
+              'Schedule',
+              style: Theme.of(context).textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w600),
+            ),
             const SizedBox(height: 12),
             _buildDateTimeRow(
               context,
@@ -283,7 +296,9 @@ class _ConfigurationStepState extends State<ConfigurationStep> {
             SwitchListTile(
               key: const Key('allow_late_join'),
               title: const Text('Allow Late Joining'),
-              subtitle: const Text('New participants may still join for a while after the start'),
+              subtitle: const Text(
+                'New participants may still join for a while after the start',
+              ),
               value: _lateJoin.enabled,
               onChanged: (value) {
                 setState(() => _lateJoin = _lateJoin.copyWith(enabled: value));
@@ -293,10 +308,13 @@ class _ConfigurationStepState extends State<ConfigurationStep> {
             ),
             DropdownButtonFormField<int>(
               key: const Key('late_join_minutes'),
-              initialValue: LateJoinSettings.allowedMinutes.contains(_lateJoin.minutes)
+              initialValue:
+                  LateJoinSettings.allowedMinutes.contains(_lateJoin.minutes)
                   ? _lateJoin.minutes
                   : LateJoinSettings.defaultMinutes,
-              decoration: const InputDecoration(labelText: 'Late Join Window (minutes after start)'),
+              decoration: const InputDecoration(
+                labelText: 'Late Join Window (minutes after start)',
+              ),
               items: [
                 for (final m in LateJoinSettings.allowedMinutes)
                   DropdownMenuItem(value: m, child: Text('$m minutes')),
@@ -304,15 +322,20 @@ class _ConfigurationStepState extends State<ConfigurationStep> {
               onChanged: _lateJoin.enabled
                   ? (v) {
                       if (v == null) return;
-                      setState(() => _lateJoin = _lateJoin.copyWith(minutes: v));
+                      setState(
+                        () => _lateJoin = _lateJoin.copyWith(minutes: v),
+                      );
                       _update();
                     }
                   : null,
             ),
             // ── Participants / access ──
             const SizedBox(height: 24),
-            Text('Participants',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+            Text(
+              'Participants',
+              style: Theme.of(context).textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w600),
+            ),
             const SizedBox(height: 12),
             TextFormField(
               controller: _maxParticipantsController,
@@ -346,7 +369,10 @@ class _ConfigurationStepState extends State<ConfigurationStep> {
           ],
           // ── Attempt settings (every kind) ──
           const SizedBox(height: 24),
-          Text('Attempt Settings', style: Theme.of(context).textTheme.titleMedium),
+          Text(
+            'Attempt Settings',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
           const SizedBox(height: 4),
           Text(
             'Students can take this test once unless re-attempts are allowed. '
@@ -358,14 +384,17 @@ class _ConfigurationStepState extends State<ConfigurationStep> {
             title: const Text('Allow Re-attempt'),
             value: _attempts.allowReattempt,
             onChanged: (value) {
-              setState(() => _attempts = _attempts.copyWith(allowReattempt: value));
+              setState(
+                () => _attempts = _attempts.copyWith(allowReattempt: value),
+              );
               _update();
             },
             contentPadding: EdgeInsets.zero,
           ),
           DropdownButtonFormField<int>(
             key: const Key('max_attempts'),
-            initialValue: AttemptSettings.allowedMaxValues.contains(_attempts.maxAttempts)
+            initialValue:
+                AttemptSettings.allowedMaxValues.contains(_attempts.maxAttempts)
                 ? _attempts.maxAttempts
                 : 1,
             decoration: const InputDecoration(labelText: 'Maximum Attempts'),
@@ -376,7 +405,9 @@ class _ConfigurationStepState extends State<ConfigurationStep> {
             onChanged: _attempts.allowReattempt
                 ? (v) {
                     if (v == null) return;
-                    setState(() => _attempts = _attempts.copyWith(maxAttempts: v));
+                    setState(
+                      () => _attempts = _attempts.copyWith(maxAttempts: v),
+                    );
                     _update();
                   }
                 : null,
@@ -542,7 +573,11 @@ class _ConfigurationStepState extends State<ConfigurationStep> {
 
 /// Total + Easy/Medium/Hard target; validates E+M+H = Total inline.
 class _QuestionConfigFields extends StatefulWidget {
-  const _QuestionConfigFields({required this.value, required this.onChanged, this.maxTotal});
+  const _QuestionConfigFields({
+    required this.value,
+    required this.onChanged,
+    this.maxTotal,
+  });
 
   final QuestionConfig value;
   final int? maxTotal;
@@ -578,26 +613,26 @@ class _QuestionConfigFieldsState extends State<_QuestionConfigFields> {
   }
 
   QuestionConfig get _current => QuestionConfig(
-        total: int.tryParse(_total.text) ?? 0,
-        easy: int.tryParse(_easy.text) ?? 0,
-        medium: int.tryParse(_medium.text) ?? 0,
-        hard: int.tryParse(_hard.text) ?? 0,
-      );
+    total: int.tryParse(_total.text) ?? 0,
+    easy: int.tryParse(_easy.text) ?? 0,
+    medium: int.tryParse(_medium.text) ?? 0,
+    hard: int.tryParse(_hard.text) ?? 0,
+  );
 
   void _emit() => widget.onChanged(_current);
 
   Widget _field(String label, TextEditingController c, {Key? key}) => Expanded(
-        child: TextFormField(
-          key: key,
-          controller: c,
-          decoration: InputDecoration(labelText: label, isDense: true),
-          keyboardType: TextInputType.number,
-          onChanged: (_) {
-            setState(() {});
-            _emit();
-          },
-        ),
-      );
+    child: TextFormField(
+      key: key,
+      controller: c,
+      decoration: InputDecoration(labelText: label, isDense: true),
+      keyboardType: TextInputType.number,
+      onChanged: (_) {
+        setState(() {});
+        _emit();
+      },
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -606,34 +641,38 @@ class _QuestionConfigFieldsState extends State<_QuestionConfigFields> {
     final status = !v.isSet
         ? 'No target set (optional)'
         : overMax
-            ? 'Total cannot exceed ${widget.maxTotal} for this test type'
-            : v.isValid
-                ? 'Total ${v.sum} / ${v.total} ✓'
-                : 'Total ${v.sum} / ${v.total} — Easy + Medium + Hard must equal Total';
+        ? 'Total cannot exceed ${widget.maxTotal} for this test type'
+        : v.isValid
+        ? 'Total ${v.sum} / ${v.total} ✓'
+        : 'Total ${v.sum} / ${v.total} — Easy + Medium + Hard must equal Total';
     final ok = !v.isSet || (v.isValid && !overMax);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(children: [
-          _field('Total Questions', _total, key: const Key('qc_total')),
-          const SizedBox(width: 12),
-          const Expanded(child: Text('Question Type: MCQ')),
-        ]),
+        Row(
+          children: [
+            _field('Total Questions', _total, key: const Key('qc_total')),
+            const SizedBox(width: 12),
+            const Expanded(child: Text('Question Type: MCQ')),
+          ],
+        ),
         const SizedBox(height: 8),
-        Row(children: [
-          _field('Easy', _easy, key: const Key('qc_easy')),
-          const SizedBox(width: 8),
-          _field('Medium', _medium, key: const Key('qc_medium')),
-          const SizedBox(width: 8),
-          _field('Hard', _hard, key: const Key('qc_hard')),
-        ]),
+        Row(
+          children: [
+            _field('Easy', _easy, key: const Key('qc_easy')),
+            const SizedBox(width: 8),
+            _field('Medium', _medium, key: const Key('qc_medium')),
+            const SizedBox(width: 8),
+            _field('Hard', _hard, key: const Key('qc_hard')),
+          ],
+        ),
         const SizedBox(height: 4),
         Text(
           status,
           key: const Key('qc_status'),
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: ok ? null : Theme.of(context).colorScheme.error,
-              ),
+            color: ok ? null : Theme.of(context).colorScheme.error,
+          ),
         ),
       ],
     );

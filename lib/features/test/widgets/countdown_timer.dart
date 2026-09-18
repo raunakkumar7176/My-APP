@@ -92,10 +92,10 @@ class _CountdownTimerState extends State<CountdownTimer> {
         Text(
           _format(_remaining),
           style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                color: _color(),
-                fontWeight: FontWeight.w600,
-                fontFeatures: const [FontFeature.tabularFigures()],
-              ),
+            color: _color(),
+            fontWeight: FontWeight.w600,
+            fontFeatures: const [FontFeature.tabularFigures()],
+          ),
         ),
       ],
     );

@@ -29,7 +29,7 @@ abstract final class AttemptLaunchStore {
   }
 
   static ({StartedAttempt started, List<Question> questions, Test test})?
-      takeLaunch(String attemptId) {
+  takeLaunch(String attemptId) {
     final s = _starts.remove(attemptId);
     final q = _questions.remove(attemptId);
     final t = _tests.remove(attemptId);

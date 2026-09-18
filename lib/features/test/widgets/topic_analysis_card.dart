@@ -19,16 +19,14 @@ class TopicAnalysisCard extends StatelessWidget {
             children: [
               Text(
                 'Topic Analysis',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
+                style: Theme.of(context).textTheme.titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 12),
               Text(
                 'Topic analysis is not available for this test.',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: AppColors.textSecondaryLight,
-                    ),
+                style: Theme.of(context).textTheme.bodyMedium
+                    ?.copyWith(color: AppColors.textSecondaryLight),
               ),
             ],
           ),
@@ -44,9 +42,8 @@ class TopicAnalysisCard extends StatelessWidget {
           children: [
             Text(
               'Topic Analysis',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
+              style: Theme.of(context).textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 12),
             ...items.map((item) => _buildTopicRow(context, item)),
@@ -75,9 +72,8 @@ class TopicAnalysisCard extends StatelessWidget {
             flex: 3,
             child: Text(
               item.topicName,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w500,
-                  ),
+              style: Theme.of(context).textTheme.bodyMedium
+                  ?.copyWith(fontWeight: FontWeight.w500),
               overflow: TextOverflow.ellipsis,
             ),
           ),
@@ -85,9 +81,8 @@ class TopicAnalysisCard extends StatelessWidget {
             flex: 2,
             child: Text(
               '${item.correct}/${item.attempted} correct',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: AppColors.textSecondaryLight,
-                  ),
+              style: Theme.of(context).textTheme.bodySmall
+                  ?.copyWith(color: AppColors.textSecondaryLight),
               textAlign: TextAlign.center,
             ),
           ),
@@ -95,10 +90,8 @@ class TopicAnalysisCard extends StatelessWidget {
             width: 48,
             child: Text(
               '${accuracy.toStringAsFixed(0)}%',
-              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: accuracyColor,
-                    fontWeight: FontWeight.w600,
-                  ),
+              style: Theme.of(context).textTheme.labelLarge
+                  ?.copyWith(color: accuracyColor, fontWeight: FontWeight.w600),
               textAlign: TextAlign.end,
             ),
           ),

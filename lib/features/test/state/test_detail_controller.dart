@@ -22,7 +22,11 @@ import '../domain/test_pdf.dart';
 import 'disposable_notifier.dart';
 
 /// Everything a started attempt needs to open the taking screen.
-typedef LaunchedAttempt = ({StartedAttempt started, List<Question> questions, Test test});
+typedef LaunchedAttempt = ({
+  StartedAttempt started,
+  List<Question> questions,
+  Test test,
+});
 
 /// Loads one test by id (never from a route object) and exposes the
 /// lifecycle-derived action flags. All actions go through repositories; the
@@ -37,13 +41,13 @@ class TestDetailController extends DisposableNotifier {
     GroupRepository? groups,
     String? Function()? currentUserId,
     DateTime Function()? clock,
-  })  : _tests = tests ?? const SupabaseTestRepository(),
-        _questions = questions ?? const SupabaseQuestionRepository(),
-        _attempts = attempts ?? const SupabaseAttemptRepository(),
-        _results = results ?? const SupabaseResultRepository(),
-        _groups = groups ?? const SupabaseGroupRepository(),
-        _currentUserId = currentUserId ?? (() => AuthService.currentUser?.id),
-        _clock = clock ?? DateTime.now;
+  }) : _tests = tests ?? const SupabaseTestRepository(),
+       _questions = questions ?? const SupabaseQuestionRepository(),
+       _attempts = attempts ?? const SupabaseAttemptRepository(),
+       _results = results ?? const SupabaseResultRepository(),
+       _groups = groups ?? const SupabaseGroupRepository(),
+       _currentUserId = currentUserId ?? (() => AuthService.currentUser?.id),
+       _clock = clock ?? DateTime.now;
 
   final String testId;
   final TestRepository _tests;
@@ -95,7 +99,10 @@ class TestDetailController extends DisposableNotifier {
   /// server answers idempotently (`reused`).
   bool get canGenerateResults =>
       _test != null &&
-      TestLifecycle.canGenerateResults(isOwner: isOwner, status: _test!.status) &&
+      TestLifecycle.canGenerateResults(
+        isOwner: isOwner,
+        status: _test!.status,
+      ) &&
       (_batch == null || _batch!.canTrigger);
 
   /// Presentation-only window phase (device clock). The server decides for
@@ -103,7 +110,11 @@ class TestDetailController extends DisposableNotifier {
   SchedulePhase? get phase {
     final t = _test;
     if (t == null) return null;
-    return TestLifecycle.phase(startsAt: t.startsAt, endsAt: t.endsAt, now: _clock());
+    return TestLifecycle.phase(
+      startsAt: t.startsAt,
+      endsAt: t.endsAt,
+      now: _clock(),
+    );
   }
 
   /// Null when startable; else a user-facing reason.
@@ -138,7 +149,10 @@ class TestDetailController extends DisposableNotifier {
         t.allowLateJoin &&
         t.startsAt != null &&
         attemptState?.inProgress == null) {
-      final lj = LateJoinSettings.fromTest(allowLateJoin: true, settings: t.settings);
+      final lj = LateJoinSettings.fromTest(
+        allowLateJoin: true,
+        settings: t.settings,
+      );
       if (!lj.joinOpenAt(startsAt: t.startsAt, now: _clock())) {
         return 'The late-join window (${lj.minutes} min after start) has closed.';
       }
@@ -149,7 +163,8 @@ class TestDetailController extends DisposableNotifier {
   /// Join codes are a sharing feature (Challenge with Friends / group); a
   /// Self test's stored code is not shown even if the row carries one.
   bool get showsJoinCode =>
-      _test?.joinCode != null && TestMode.fromDb(_test?.testMode) != TestMode.self;
+      _test?.joinCode != null &&
+      TestMode.fromDb(_test?.testMode) != TestMode.self;
 
   Future<void> load() async {
     _loading = true;
@@ -175,9 +190,9 @@ class TestDetailController extends DisposableNotifier {
 
   /// Publishes and reloads. Throws [AppError] with a user-facing message.
   Future<void> publish() => _action(() async {
-        await _tests.publish(testId);
-        await load();
-      });
+    await _tests.publish(testId);
+    await load();
+  });
 
   /// Soft-deletes a draft (server-enforced rule). The gate is re-checked here
   /// so a stale screen cannot fire the RPC for a non-draft; on success the
@@ -185,13 +200,15 @@ class TestDetailController extends DisposableNotifier {
   /// Throws [AppError] with a user-facing message; the test stays loaded on
   /// failure so the screen keeps showing it.
   Future<void> deleteDraft({String? reason}) => _action(() async {
-        if (!canDelete) {
-          throw const ValidationError(message: 'Only your draft tests can be deleted.');
-        }
-        await _tests.deleteDraft(testId, reason: reason);
-        _test = null;
-        _deleted = true;
-      });
+    if (!canDelete) {
+      throw const ValidationError(
+        message: 'Only your draft tests can be deleted.',
+      );
+    }
+    await _tests.deleteDraft(testId, reason: reason);
+    _test = null;
+    _deleted = true;
+  });
 
   bool _deleted = false;
 
@@ -218,23 +235,32 @@ class TestDetailController extends DisposableNotifier {
   int? _scopeNodeCount;
   String? _groupName;
 
-  String get questionCountLabel => _questionCount == null ? '--' : '$_questionCount';
+  String get questionCountLabel =>
+      _questionCount == null ? '--' : '$_questionCount';
 
   String get attemptPolicyLabel {
     final s = AttemptSettings.fromSettings(_test?.settings);
-    return s.allowReattempt ? 'Up to ${s.effectiveMax} attempts' : 'Single attempt';
+    return s.allowReattempt
+        ? 'Up to ${s.effectiveMax} attempts'
+        : 'Single attempt';
   }
 
   String get lateJoinLabel {
     final t = _test;
     if (t == null) return '--';
-    final lj = LateJoinSettings.fromTest(allowLateJoin: t.allowLateJoin, settings: t.settings);
-    return lj.enabled ? 'Allowed for ${lj.minutes} min after start' : 'Not allowed';
+    final lj = LateJoinSettings.fromTest(
+      allowLateJoin: t.allowLateJoin,
+      settings: t.settings,
+    );
+    return lj.enabled
+        ? 'Allowed for ${lj.minutes} min after start'
+        : 'Not allowed';
   }
 
   /// Number of syllabus topics attached; null when none / unreadable.
-  String? get scopeLabel =>
-      (_scopeNodeCount == null || _scopeNodeCount == 0) ? null : '$_scopeNodeCount topic(s)';
+  String? get scopeLabel => (_scopeNodeCount == null || _scopeNodeCount == 0)
+      ? null
+      : '$_scopeNodeCount topic(s)';
 
   String get groupLabel => _groupName ?? 'Assigned group';
 
@@ -287,12 +313,14 @@ class TestDetailController extends DisposableNotifier {
   /// Explicit re-attempt: the only path that requests attempt N+1. Gated
   /// here for UX; enforced by the server (REATTEMPT_LIMIT_REACHED).
   Future<LaunchedAttempt> reattempt() => _action(() async {
-        final s = attemptState;
-        if (s != null && !_attemptsLoadFailed && !s.canReattempt) {
-          throw const ValidationError(message: 'Re-attempt is not available for this test.');
-        }
-        return _launch(reattempt: true);
-      });
+    final s = attemptState;
+    if (s != null && !_attemptsLoadFailed && !s.canReattempt) {
+      throw const ValidationError(
+        message: 'Re-attempt is not available for this test.',
+      );
+    }
+    return _launch(reattempt: true);
+  });
 
   Future<LaunchedAttempt> _launch({required bool reattempt}) async {
     final started = await _attempts.start(testId, reattempt: reattempt);
@@ -304,27 +332,29 @@ class TestDetailController extends DisposableNotifier {
   /// (server-authorized, no `correct_option`). Throws [AppError] on
   /// permission/network failure and a [DataError] when there are no questions.
   Future<Uint8List> buildQuestionPaperPdf() => _action(() async {
-        final t = _test;
-        if (t == null) throw const DataError(message: 'Test not loaded.');
-        final qs = await _questions.safeQuestions(t.id);
-        if (qs.isEmpty) {
-          throw const DataError(message: 'This test has no questions to print yet.');
-        }
-        try {
-          return await TestPdf.questionPaper(test: t, kind: kind, questions: qs);
-        } catch (e, st) {
-          AppLogger.error('Question paper PDF failed: $e', stackTrace: st);
-          throw const DataError(message: 'Could not generate the question paper.');
-        }
-      });
+    final t = _test;
+    if (t == null) throw const DataError(message: 'Test not loaded.');
+    final qs = await _questions.safeQuestions(t.id);
+    if (qs.isEmpty) {
+      throw const DataError(
+        message: 'This test has no questions to print yet.',
+      );
+    }
+    try {
+      return await TestPdf.questionPaper(test: t, kind: kind, questions: qs);
+    } catch (e, st) {
+      AppLogger.error('Question paper PDF failed: $e', stackTrace: st);
+      throw const DataError(message: 'Could not generate the question paper.');
+    }
+  });
 
   /// Requests generation; the returned batch (from the RPC JSON) is the
   /// authoritative state and is kept for display / button gating.
   Future<ResultBatch> generateResults() => _action(() async {
-        final batch = await _results.generateResults(testId);
-        _batch = batch;
-        return batch;
-      });
+    final batch = await _results.generateResults(testId);
+    _batch = batch;
+    return batch;
+  });
 
   Future<T> _action<T>(Future<T> Function() body) async {
     if (_busy) throw const ValidationError(message: 'Please wait…');

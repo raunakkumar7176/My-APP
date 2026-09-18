@@ -44,9 +44,8 @@ class AnswerGrid extends StatelessWidget {
           const SizedBox(height: 16),
           Text(
             'Questions',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
+            style: Theme.of(context).textTheme.titleMedium
+                ?.copyWith(fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 12),
           _buildLegend(context),
@@ -87,10 +86,7 @@ class AnswerGrid extends StatelessWidget {
         Container(
           width: 12,
           height: 12,
-          decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
-          ),
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
         ),
         const SizedBox(width: 4),
         Text(label, style: Theme.of(context).textTheme.labelSmall),
@@ -135,10 +131,8 @@ class AnswerGrid extends StatelessWidget {
         alignment: Alignment.center,
         child: Text(
           '${index + 1}',
-          style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                color: fgColor,
-                fontWeight: FontWeight.w600,
-              ),
+          style: Theme.of(context).textTheme.labelMedium
+              ?.copyWith(color: fgColor, fontWeight: FontWeight.w600),
         ),
       ),
     );

@@ -4,10 +4,7 @@ import '../../../core/models/result.dart';
 /// One completed attempt joined with its stored result. Nothing here is
 /// computed beyond what the `results` and `attempts` rows contain.
 final class AttemptHistoryEntry {
-  const AttemptHistoryEntry({
-    required this.result,
-    this.attempt,
-  });
+  const AttemptHistoryEntry({required this.result, this.attempt});
 
   final Result result;
 
@@ -50,7 +47,10 @@ final class ResultDelta {
   final int? unanswered;
   final Duration? time;
 
-  static ResultDelta between(AttemptHistoryEntry current, AttemptHistoryEntry previous) {
+  static ResultDelta between(
+    AttemptHistoryEntry current,
+    AttemptHistoryEntry previous,
+  ) {
     double? d(double? a, double? b) => (a == null || b == null) ? null : a - b;
     int? i(int? a, int? b) => (a == null || b == null) ? null : a - b;
     final ct = current.duration;
@@ -61,7 +61,10 @@ final class ResultDelta {
       accuracy: d(current.result.accuracy, previous.result.accuracy),
       correct: i(current.result.correctCount, previous.result.correctCount),
       wrong: i(current.result.wrongCount, previous.result.wrongCount),
-      unanswered: i(current.result.unansweredCount, previous.result.unansweredCount),
+      unanswered: i(
+        current.result.unansweredCount,
+        previous.result.unansweredCount,
+      ),
       time: (ct == null || pt == null) ? null : ct - pt,
     );
   }
@@ -80,21 +83,28 @@ final class ResultDelta {
 abstract final class AttemptHistory {
   /// Joins results to attempts by `attempt_id`; ordered oldest → newest by
   /// attempt_number when known, else by computed_at.
-  static List<AttemptHistoryEntry> build(List<Result> results, List<Attempt> attempts) {
+  static List<AttemptHistoryEntry> build(
+    List<Result> results,
+    List<Attempt> attempts,
+  ) {
     final byId = {for (final a in attempts) a.id: a};
-    final entries = [
-      for (final r in results) AttemptHistoryEntry(result: r, attempt: byId[r.attemptId]),
-    ]..sort((x, y) {
-        final nx = x.attemptNumber;
-        final ny = y.attemptNumber;
-        if (nx != null && ny != null) return nx.compareTo(ny);
-        return (x.result.computedAt ?? DateTime(0))
-            .compareTo(y.result.computedAt ?? DateTime(0));
-      });
+    final entries =
+        [
+          for (final r in results)
+            AttemptHistoryEntry(result: r, attempt: byId[r.attemptId]),
+        ]..sort((x, y) {
+          final nx = x.attemptNumber;
+          final ny = y.attemptNumber;
+          if (nx != null && ny != null) return nx.compareTo(ny);
+          return (x.result.computedAt ?? DateTime(0)).compareTo(
+            y.result.computedAt ?? DateTime(0),
+          );
+        });
     return entries;
   }
 
-  static AttemptHistoryEntry? latest(List<AttemptHistoryEntry> h) => h.isEmpty ? null : h.last;
+  static AttemptHistoryEntry? latest(List<AttemptHistoryEntry> h) =>
+      h.isEmpty ? null : h.last;
 
   /// Highest score; ties resolved to the earliest attempt. Null when no
   /// entry carries a score (never derived from other fields).
@@ -109,7 +119,10 @@ abstract final class AttemptHistory {
   }
 
   /// The entry immediately before [current] in history order.
-  static AttemptHistoryEntry? previousOf(List<AttemptHistoryEntry> h, String attemptId) {
+  static AttemptHistoryEntry? previousOf(
+    List<AttemptHistoryEntry> h,
+    String attemptId,
+  ) {
     final i = h.indexWhere((e) => e.result.attemptId == attemptId);
     return i <= 0 ? null : h[i - 1];
   }

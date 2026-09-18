@@ -47,42 +47,42 @@ class TestWriteInput {
   /// `rpc_create_test` params (`p_test_mode` etc.). Null fields are omitted so
   /// server defaults apply.
   Map<String, dynamic> toCreateParams() => {
-        'p_title': title,
-        if (description != null) 'p_description': description,
-        if (durationSec != null) 'p_duration_sec': durationSec,
-        if (marksPerQuestion != null) 'p_marks_per_question': marksPerQuestion,
-        if (negativeMarks != null) 'p_negative_marks': negativeMarks,
-        if (testMode != null) 'p_test_mode': testMode,
-        'p_creation_method': 'manual',
-        if (groupId != null) 'p_group_id': groupId,
-        if (startsAt != null) 'p_starts_at': startsAt!.toUtc().toIso8601String(),
-        if (endsAt != null) 'p_ends_at': endsAt!.toUtc().toIso8601String(),
-        if (maxParticipants != null) 'p_max_participants': maxParticipants,
-        if (allowLateJoin != null) 'p_allow_late_join': allowLateJoin,
-        if (config != null) 'p_config': config,
-        if (settings != null) 'p_settings': settings,
-        if (accessCode != null) 'p_access_code': accessCode,
-        if (joinCode != null) 'p_join_code': joinCode,
-      };
+    'p_title': title,
+    if (description != null) 'p_description': description,
+    if (durationSec != null) 'p_duration_sec': durationSec,
+    if (marksPerQuestion != null) 'p_marks_per_question': marksPerQuestion,
+    if (negativeMarks != null) 'p_negative_marks': negativeMarks,
+    if (testMode != null) 'p_test_mode': testMode,
+    'p_creation_method': 'manual',
+    if (groupId != null) 'p_group_id': groupId,
+    if (startsAt != null) 'p_starts_at': startsAt!.toUtc().toIso8601String(),
+    if (endsAt != null) 'p_ends_at': endsAt!.toUtc().toIso8601String(),
+    if (maxParticipants != null) 'p_max_participants': maxParticipants,
+    if (allowLateJoin != null) 'p_allow_late_join': allowLateJoin,
+    if (config != null) 'p_config': config,
+    if (settings != null) 'p_settings': settings,
+    if (accessCode != null) 'p_access_code': accessCode,
+    if (joinCode != null) 'p_join_code': joinCode,
+  };
 
   /// `rpc_update_test` params. Mode and group cannot change after creation
   /// (the RPC has no such params).
   Map<String, dynamic> toUpdateParams(String testId) => {
-        'p_test_id': testId,
-        'p_title': title,
-        if (description != null) 'p_description': description,
-        if (durationSec != null) 'p_duration_sec': durationSec,
-        if (marksPerQuestion != null) 'p_marks_per_question': marksPerQuestion,
-        if (negativeMarks != null) 'p_negative_marks': negativeMarks,
-        if (startsAt != null) 'p_starts_at': startsAt!.toUtc().toIso8601String(),
-        if (endsAt != null) 'p_ends_at': endsAt!.toUtc().toIso8601String(),
-        if (maxParticipants != null) 'p_max_participants': maxParticipants,
-        if (allowLateJoin != null) 'p_allow_late_join': allowLateJoin,
-        if (config != null) 'p_config': config,
-        if (settings != null) 'p_settings': settings,
-        if (accessCode != null) 'p_access_code': accessCode,
-        if (joinCode != null) 'p_join_code': joinCode,
-      };
+    'p_test_id': testId,
+    'p_title': title,
+    if (description != null) 'p_description': description,
+    if (durationSec != null) 'p_duration_sec': durationSec,
+    if (marksPerQuestion != null) 'p_marks_per_question': marksPerQuestion,
+    if (negativeMarks != null) 'p_negative_marks': negativeMarks,
+    if (startsAt != null) 'p_starts_at': startsAt!.toUtc().toIso8601String(),
+    if (endsAt != null) 'p_ends_at': endsAt!.toUtc().toIso8601String(),
+    if (maxParticipants != null) 'p_max_participants': maxParticipants,
+    if (allowLateJoin != null) 'p_allow_late_join': allowLateJoin,
+    if (config != null) 'p_config': config,
+    if (settings != null) 'p_settings': settings,
+    if (accessCode != null) 'p_access_code': accessCode,
+    if (joinCode != null) 'p_join_code': joinCode,
+  };
 }
 
 abstract interface class TestRepository {
@@ -123,114 +123,129 @@ class SupabaseTestRepository implements TestRepository {
 
   @override
   Future<Test?> getById(String testId) => _guard(() async {
-        final row = await _client
-            .from('tests')
-            .select()
-            .eq('id', testId)
-            .eq('is_soft_deleted', false)
-            .maybeSingle();
-        return row == null ? null : Test.fromJson(row);
-      }, TestErrorContext.load);
+    final row = await _client
+        .from('tests')
+        .select()
+        .eq('id', testId)
+        .eq('is_soft_deleted', false)
+        .maybeSingle();
+    return row == null ? null : Test.fromJson(row);
+  }, TestErrorContext.load);
 
   @override
   Future<List<Test>> listAccessible({int limit = 100}) => _guard(() async {
-        final rows = await _client
-            .from('tests')
-            .select()
-            .eq('is_soft_deleted', false)
-            .order('created_at', ascending: false)
-            .range(0, limit - 1);
-        return _rows(rows);
-      }, TestErrorContext.load);
+    final rows = await _client
+        .from('tests')
+        .select()
+        .eq('is_soft_deleted', false)
+        .order('created_at', ascending: false)
+        .range(0, limit - 1);
+    return _rows(rows);
+  }, TestErrorContext.load);
 
   @override
   Future<List<Test>> listMyDrafts({int limit = 50}) => _guard(() async {
-        final uid = _requireUser();
-        final rows = await _client
-            .from('tests')
-            .select()
-            .eq('is_soft_deleted', false)
-            .eq('status', 'draft')
-            .eq('created_by', uid)
-            .order('created_at', ascending: false)
-            .range(0, limit - 1);
-        return _rows(rows);
-      }, TestErrorContext.load);
+    final uid = _requireUser();
+    final rows = await _client
+        .from('tests')
+        .select()
+        .eq('is_soft_deleted', false)
+        .eq('status', 'draft')
+        .eq('created_by', uid)
+        .order('created_at', ascending: false)
+        .range(0, limit - 1);
+    return _rows(rows);
+  }, TestErrorContext.load);
 
   @override
   Future<Test> create(TestWriteInput input) => _guard(() async {
-        final response =
-            await _client.rpc('rpc_create_test', params: input.toCreateParams());
-        AppLogger.rpcShape('rpc_create_test', response);
-        final id = _idFrom(response, 'test_id');
-        final test = await getById(id);
-        if (test == null) {
-          throw const DataError(
-              message: 'Test created but could not be loaded. Please refresh.');
-        }
-        return test;
-      }, TestErrorContext.save);
+    final response = await _client.rpc(
+      'rpc_create_test',
+      params: input.toCreateParams(),
+    );
+    AppLogger.rpcShape('rpc_create_test', response);
+    final id = _idFrom(response, 'test_id');
+    final test = await getById(id);
+    if (test == null) {
+      throw const DataError(
+        message: 'Test created but could not be loaded. Please refresh.',
+      );
+    }
+    return test;
+  }, TestErrorContext.save);
 
   @override
   Future<void> update(String testId, TestWriteInput input) => _guard(() async {
-        final response = await _client.rpc('rpc_update_test',
-            params: input.toUpdateParams(testId));
-        AppLogger.rpcShape('rpc_update_test', response);
-      }, TestErrorContext.save);
+    final response = await _client.rpc(
+      'rpc_update_test',
+      params: input.toUpdateParams(testId),
+    );
+    AppLogger.rpcShape('rpc_update_test', response);
+  }, TestErrorContext.save);
 
   @override
   Future<void> publish(String testId) => _guard(() async {
-        final response =
-            await _client.rpc('rpc_publish_test', params: {'p_test_id': testId});
-        AppLogger.rpcShape('rpc_publish_test', response);
-      }, TestErrorContext.publish);
+    final response = await _client.rpc(
+      'rpc_publish_test',
+      params: {'p_test_id': testId},
+    );
+    AppLogger.rpcShape('rpc_publish_test', response);
+  }, TestErrorContext.publish);
 
   @override
   Future<void> deleteDraft(String testId, {String? reason}) => _guard(() async {
-        final response =
-            await _client.rpc('rpc_delete_test', params: {
-          'p_test_id': testId,
-          // Live: rpc_delete_test(p_test_id uuid, p_reason text DEFAULT NULL).
-          if (reason != null && reason.trim().isNotEmpty) 'p_reason': reason.trim(),
-        });
-        AppLogger.rpcShape('rpc_delete_test', response);
-        if (!deletedFromResponse(response)) {
-          throw const DataError(message: 'The server did not confirm the deletion.');
-        }
-      }, TestErrorContext.delete);
+    final response = await _client.rpc(
+      'rpc_delete_test',
+      params: {
+        'p_test_id': testId,
+        // Live: rpc_delete_test(p_test_id uuid, p_reason text DEFAULT NULL).
+        if (reason != null && reason.trim().isNotEmpty)
+          'p_reason': reason.trim(),
+      },
+    );
+    AppLogger.rpcShape('rpc_delete_test', response);
+    if (!deletedFromResponse(response)) {
+      throw const DataError(
+        message: 'The server did not confirm the deletion.',
+      );
+    }
+  }, TestErrorContext.delete);
 
   /// `rpc_delete_test` returns `{test_id, deleted: true}`; anything else is
   /// not treated as success (no misleading "deleted" feedback).
   static bool deletedFromResponse(dynamic response) {
-    final data = response is List && response.isNotEmpty ? response.first : response;
+    final data = response is List && response.isNotEmpty
+        ? response.first
+        : response;
     return data is Map && data['deleted'] == true;
   }
 
   @override
   Future<List<TestSyllabus>> syllabusFor(String testId) => _guard(() async {
-        final rows =
-            await _client.from('test_syllabus').select().eq('test_id', testId);
-        return (rows as List)
-            .map((r) => TestSyllabus.fromJson(r as Map<String, dynamic>))
-            .toList();
-      }, TestErrorContext.load);
+    final rows = await _client
+        .from('test_syllabus')
+        .select()
+        .eq('test_id', testId);
+    return (rows as List)
+        .map((r) => TestSyllabus.fromJson(r as Map<String, dynamic>))
+        .toList();
+  }, TestErrorContext.load);
 
   @override
   Future<void> addSyllabus(String testId, String nodeId) => _guard(() async {
-        await _client.rpc('rpc_add_test_syllabus', params: {
-          'p_test_id': testId,
-          'p_syllabus_node_id': nodeId,
-        });
-      }, TestErrorContext.save);
+    await _client.rpc(
+      'rpc_add_test_syllabus',
+      params: {'p_test_id': testId, 'p_syllabus_node_id': nodeId},
+    );
+  }, TestErrorContext.save);
 
   @override
-  Future<void> removeSyllabus(String testId, String nodeId) =>
-      _guard(() async {
-        await _client.rpc('rpc_remove_test_syllabus', params: {
-          'p_test_id': testId,
-          'p_syllabus_node_id': nodeId,
-        });
-      }, TestErrorContext.save);
+  Future<void> removeSyllabus(String testId, String nodeId) => _guard(() async {
+    await _client.rpc(
+      'rpc_remove_test_syllabus',
+      params: {'p_test_id': testId, 'p_syllabus_node_id': nodeId},
+    );
+  }, TestErrorContext.save);
 
   // ── helpers ──
 
@@ -249,19 +264,25 @@ class SupabaseTestRepository implements TestRepository {
   /// Extracts an id from the jsonb an RPC returns (`{test_id: ...}`, a bare
   /// string, or a one-element list of either).
   static String _idFrom(dynamic response, String key) {
-    final data = response is List && response.isNotEmpty ? response.first : response;
+    final data = response is List && response.isNotEmpty
+        ? response.first
+        : response;
     if (data is Map && data[key] is String) return data[key] as String;
     if (data is String && data.isNotEmpty) return data;
     throw const DataError(message: 'Unexpected response from server.');
   }
 
   static Future<T> _guard<T>(
-      Future<T> Function() body, TestErrorContext context) async {
+    Future<T> Function() body,
+    TestErrorContext context,
+  ) async {
     try {
       return await body();
     } on PostgrestException catch (e) {
-      AppLogger.error('TestRepository PostgrestException: code=${e.code}, '
-          'message=${e.message}, details=${e.details}, hint=${e.hint}');
+      AppLogger.error(
+        'TestRepository PostgrestException: code=${e.code}, '
+        'message=${e.message}, details=${e.details}, hint=${e.hint}',
+      );
       throw DataError(message: TestErrors.map(e.message, context: context));
     } on AppError {
       rethrow;

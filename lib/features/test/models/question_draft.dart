@@ -38,7 +38,8 @@ final class QuestionDraft {
   static bool isSupportedType(QuestionType t) => t == QuestionType.mcqSingle;
 
   bool get hasValidOptions =>
-      options.length >= minOptions && options.every((o) => o.text.trim().isNotEmpty);
+      options.length >= minOptions &&
+      options.every((o) => o.text.trim().isNotEmpty);
 
   bool get hasCorrectOption =>
       correctOptionIndex != null &&
@@ -171,28 +172,16 @@ final class QuestionDraft {
 }
 
 final class QuestionOptionDraft {
-  const QuestionOptionDraft({
-    this.id,
-    required this.text,
-  });
+  const QuestionOptionDraft({this.id, required this.text});
 
   final String? id;
   final String text;
 
-  QuestionOptionDraft copyWith({
-    String? id,
-    String? text,
-  }) {
-    return QuestionOptionDraft(
-      id: id ?? this.id,
-      text: text ?? this.text,
-    );
+  QuestionOptionDraft copyWith({String? id, String? text}) {
+    return QuestionOptionDraft(id: id ?? this.id, text: text ?? this.text);
   }
 
   Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'text': text,
-    };
+    return {'id': id, 'text': text};
   }
 }

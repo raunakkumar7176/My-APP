@@ -22,6 +22,7 @@ class QuestionCard extends StatelessWidget {
   final Answer? answer;
   final int questionNumber;
   final int totalQuestions;
+
   /// Called with the option's index in the server's `options` array
   /// (`QuestionOption.index`), which is what the backend stores and scores.
   final ValueChanged<int?> onOptionSelected;

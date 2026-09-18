@@ -31,67 +31,73 @@ class SupabaseResultRepository implements ResultRepository {
 
   @override
   Future<Result?> byAttempt(String attemptId) => _guard(() async {
-        final row = await _client
-            .from('results')
-            .select()
-            .eq('attempt_id', attemptId)
-            .maybeSingle();
-        // Live `results` columns are not yet frozen; log the key set (no
-        // answer keys are ever in this row) so a parse failure is diagnosable.
-        if (row != null) {
-          AppLogger.rpcShape('results.select', row);
-          final missing = [
-            for (final k in const ['attempt_id', 'test_id', 'user_id'])
-              if (row[k] == null) k,
-          ];
-          if (missing.isNotEmpty) {
-            AppLogger.warning('results row null required columns: $missing');
-          }
-        }
-        return row == null ? null : Result.fromJson(row);
-      }, TestErrorContext.load);
+    final row = await _client
+        .from('results')
+        .select()
+        .eq('attempt_id', attemptId)
+        .maybeSingle();
+    // Live `results` columns are not yet frozen; log the key set (no
+    // answer keys are ever in this row) so a parse failure is diagnosable.
+    if (row != null) {
+      AppLogger.rpcShape('results.select', row);
+      final missing = [
+        for (final k in const ['attempt_id', 'test_id', 'user_id'])
+          if (row[k] == null) k,
+      ];
+      if (missing.isNotEmpty) {
+        AppLogger.warning('results row null required columns: $missing');
+      }
+    }
+    return row == null ? null : Result.fromJson(row);
+  }, TestErrorContext.load);
 
   @override
   Future<List<Result>> mineForTest(String testId) => _guard(() async {
-        final uid = _client.auth.currentUser?.id;
-        if (uid == null) {
-          throw const AuthError(message: 'You must be logged in.');
-        }
-        final rows = await _client
-            .from('results')
-            .select()
-            .eq('test_id', testId)
-            .eq('user_id', uid)
-            .order('computed_at', ascending: false);
-        return [
-          for (final r in rows as List) Result.fromJson(r as Map<String, dynamic>),
-        ];
-      }, TestErrorContext.load);
+    final uid = _client.auth.currentUser?.id;
+    if (uid == null) {
+      throw const AuthError(message: 'You must be logged in.');
+    }
+    final rows = await _client
+        .from('results')
+        .select()
+        .eq('test_id', testId)
+        .eq('user_id', uid)
+        .order('computed_at', ascending: false);
+    return [
+      for (final r in rows as List) Result.fromJson(r as Map<String, dynamic>),
+    ];
+  }, TestErrorContext.load);
 
   @override
   Future<ResultBatch> generateResults(String testId) => _guard(() async {
-        final response = await _client
-            .rpc('rpc_generate_results', params: {'p_test_id': testId});
-        AppLogger.rpcShape('rpc_generate_results', response);
-        return batchFromRpcResponse(response);
-      }, TestErrorContext.generic);
+    final response = await _client.rpc(
+      'rpc_generate_results',
+      params: {'p_test_id': testId},
+    );
+    AppLogger.rpcShape('rpc_generate_results', response);
+    return batchFromRpcResponse(response);
+  }, TestErrorContext.generic);
 
   /// Parses the RPC jsonb (`{batch_id, test_id, status, reports_done,
   /// reports_total, errors, reused}`; a one-element list is tolerated).
   /// Anything without `batch_id` is an unexpected response — reported, never
   /// papered over with a table read.
   static ResultBatch batchFromRpcResponse(dynamic response) {
-    final data =
-        response is List && response.isNotEmpty ? response.first : response;
+    final data = response is List && response.isNotEmpty
+        ? response.first
+        : response;
     if (data is Map && data['batch_id'] is String) {
       return ResultBatch.fromRpcJson(Map<String, dynamic>.from(data));
     }
     throw const DataError(
-        message: 'Result generation returned an unexpected response.');
+      message: 'Result generation returned an unexpected response.',
+    );
   }
 
   static Future<T> _guard<T>(
-      Future<T> Function() body, TestErrorContext context) async {
+    Future<T> Function() body,
+    TestErrorContext context,
+  ) async {
     try {
       return await body();
     } on PostgrestException catch (e) {

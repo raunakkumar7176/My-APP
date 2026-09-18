@@ -54,10 +54,10 @@ class SupabaseQuestionRepository implements QuestionRepository {
   @override
   Future<List<Question>> safeQuestions(String testId, {String? accessCode}) =>
       _guard(() async {
-        final response = await _client.rpc('get_test_questions_safe', params: {
-          'p_test_id': testId,
-          'p_access_code': ?accessCode,
-        });
+        final response = await _client.rpc(
+          'get_test_questions_safe',
+          params: {'p_test_id': testId, 'p_access_code': ?accessCode},
+        );
         AppLogger.rpcShape('get_test_questions_safe', response);
         if (response == null) return const <Question>[];
         final list = response is List ? response : [response];
@@ -65,7 +65,8 @@ class SupabaseQuestionRepository implements QuestionRepository {
             list.first is Map &&
             (list.first as Map).containsKey('correct_option')) {
           AppLogger.error(
-              'SECURITY: get_test_questions_safe returned a correct_option key');
+            'SECURITY: get_test_questions_safe returned a correct_option key',
+          );
         }
         return list
             .map((r) => Question.fromJson(r as Map<String, dynamic>))
@@ -74,65 +75,69 @@ class SupabaseQuestionRepository implements QuestionRepository {
 
   @override
   Future<String> create(String testId, QuestionDraft draft) => _guard(() async {
-        final params = <String, dynamic>{
-          'p_test_id': testId,
-          ..._draftParams(draft),
-        };
-        final response =
-            await _client.rpc('rpc_create_question', params: params);
-        AppLogger.rpcShape('rpc_create_question', response);
-        final data =
-            response is List && response.isNotEmpty ? response.first : response;
-        if (data is Map && data['question_id'] is String) {
-          return data['question_id'] as String;
-        }
-        if (data is String && data.isNotEmpty) return data;
-        throw const DataError(message: 'Unexpected response from server.');
-      }, TestErrorContext.save);
+    final params = <String, dynamic>{
+      'p_test_id': testId,
+      ..._draftParams(draft),
+    };
+    final response = await _client.rpc('rpc_create_question', params: params);
+    AppLogger.rpcShape('rpc_create_question', response);
+    final data = response is List && response.isNotEmpty
+        ? response.first
+        : response;
+    if (data is Map && data['question_id'] is String) {
+      return data['question_id'] as String;
+    }
+    if (data is String && data.isNotEmpty) return data;
+    throw const DataError(message: 'Unexpected response from server.');
+  }, TestErrorContext.save);
 
   @override
   Future<void> update(String questionId, QuestionDraft draft) =>
       _guard(() async {
-        await _client.rpc('rpc_update_question', params: {
-          'p_question_id': questionId,
-          ..._draftParams(draft),
-        });
+        await _client.rpc(
+          'rpc_update_question',
+          params: {'p_question_id': questionId, ..._draftParams(draft)},
+        );
       }, TestErrorContext.save);
 
   @override
   Future<void> approve(String questionId) => _guard(() async {
-        await _client.rpc('rpc_update_question', params: {
-          'p_question_id': questionId,
-          'p_status': 'approved',
-        });
-      }, TestErrorContext.save);
+    await _client.rpc(
+      'rpc_update_question',
+      params: {'p_question_id': questionId, 'p_status': 'approved'},
+    );
+  }, TestErrorContext.save);
 
   @override
   Future<void> delete(String questionId) => _guard(() async {
-        await _client
-            .rpc('rpc_delete_question', params: {'p_question_id': questionId});
-      }, TestErrorContext.save);
+    await _client.rpc(
+      'rpc_delete_question',
+      params: {'p_question_id': questionId},
+    );
+  }, TestErrorContext.save);
 
   /// Shared create/update param mapping. Option ids are sent as-is (empty for
   /// new options — the server assigns ids); `correct_option` is an index.
   static Map<String, dynamic> _draftParams(QuestionDraft d) => {
-        'p_question': d.questionText,
-        'p_question_type': questionTypeToRpc(d.questionType),
-        'p_options': [
-          for (final o in d.options) {'id': o.id ?? '', 'text': o.text},
-        ],
-        if (d.correctOptionIndex != null) 'p_correct_option': d.correctOptionIndex,
-        if (d.explanation != null) 'p_explanation': d.explanation,
-        if (d.subjectId != null) 'p_subject_id': d.subjectId,
-        if (d.topicNodeId != null) 'p_topic_node_id': d.topicNodeId,
-        'p_difficulty': d.difficulty.name,
-        'p_marks': d.marks,
-        if (d.negativeMarks != null) 'p_negative_marks': d.negativeMarks,
-        if (d.language != null) 'p_language': d.language,
-      };
+    'p_question': d.questionText,
+    'p_question_type': questionTypeToRpc(d.questionType),
+    'p_options': [
+      for (final o in d.options) {'id': o.id ?? '', 'text': o.text},
+    ],
+    if (d.correctOptionIndex != null) 'p_correct_option': d.correctOptionIndex,
+    if (d.explanation != null) 'p_explanation': d.explanation,
+    if (d.subjectId != null) 'p_subject_id': d.subjectId,
+    if (d.topicNodeId != null) 'p_topic_node_id': d.topicNodeId,
+    'p_difficulty': d.difficulty.name,
+    'p_marks': d.marks,
+    if (d.negativeMarks != null) 'p_negative_marks': d.negativeMarks,
+    if (d.language != null) 'p_language': d.language,
+  };
 
   static Future<T> _guard<T>(
-      Future<T> Function() body, TestErrorContext context) async {
+    Future<T> Function() body,
+    TestErrorContext context,
+  ) async {
     try {
       return await body();
     } on PostgrestException catch (e) {

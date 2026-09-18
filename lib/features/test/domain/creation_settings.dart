@@ -23,13 +23,22 @@ final class LateJoinSettings {
   final bool enabled;
   final int minutes;
 
-  static LateJoinSettings fromTest({required bool allowLateJoin, Map<String, dynamic>? settings}) {
+  static LateJoinSettings fromTest({
+    required bool allowLateJoin,
+    Map<String, dynamic>? settings,
+  }) {
     final raw = settings?[key];
     final m = raw is num ? raw.toInt() : int.tryParse('${raw ?? ''}');
-    return LateJoinSettings(enabled: allowLateJoin, minutes: (m == null || m < 0) ? defaultMinutes : m);
+    return LateJoinSettings(
+      enabled: allowLateJoin,
+      minutes: (m == null || m < 0) ? defaultMinutes : m,
+    );
   }
 
-  Map<String, dynamic> applyTo(Map<String, dynamic>? existing) => {...?existing, key: minutes};
+  Map<String, dynamic> applyTo(Map<String, dynamic>? existing) => {
+    ...?existing,
+    key: minutes,
+  };
 
   /// Presentation mirror of the server boundary (instants; zone-agnostic).
   /// Returns true when a new participant may still join at [now].
@@ -39,12 +48,16 @@ final class LateJoinSettings {
     return !now.isAfter(startsAt.add(Duration(minutes: minutes)));
   }
 
-  LateJoinSettings copyWith({bool? enabled, int? minutes}) =>
-      LateJoinSettings(enabled: enabled ?? this.enabled, minutes: minutes ?? this.minutes);
+  LateJoinSettings copyWith({bool? enabled, int? minutes}) => LateJoinSettings(
+    enabled: enabled ?? this.enabled,
+    minutes: minutes ?? this.minutes,
+  );
 
   @override
   bool operator ==(Object other) =>
-      other is LateJoinSettings && other.enabled == enabled && other.minutes == minutes;
+      other is LateJoinSettings &&
+      other.enabled == enabled &&
+      other.minutes == minutes;
 
   @override
   int get hashCode => Object.hash(enabled, minutes);
@@ -54,7 +67,12 @@ final class LateJoinSettings {
 /// It is a target, not a generator: the review/publish step compares it
 /// with the actual question difficulties and reports the gap truthfully.
 final class QuestionConfig {
-  const QuestionConfig({this.total = 0, this.easy = 0, this.medium = 0, this.hard = 0});
+  const QuestionConfig({
+    this.total = 0,
+    this.easy = 0,
+    this.medium = 0,
+    this.hard = 0,
+  });
 
   static const key = 'question_config';
   static const none = QuestionConfig();
@@ -68,7 +86,9 @@ final class QuestionConfig {
   int get sum => easy + medium + hard;
 
   /// Easy + Medium + Hard must equal Total (when a target is set).
-  bool get isValid => !isSet || (total > 0 && sum == total && easy >= 0 && medium >= 0 && hard >= 0);
+  bool get isValid =>
+      !isSet ||
+      (total > 0 && sum == total && easy >= 0 && medium >= 0 && hard >= 0);
 
   static QuestionConfig fromSettings(Map<String, dynamic>? settings) {
     final raw = settings?[key];
@@ -77,13 +97,25 @@ final class QuestionConfig {
       final v = raw[k];
       return v is num ? v.toInt() : int.tryParse('${v ?? ''}') ?? 0;
     }
-    return QuestionConfig(total: n('total'), easy: n('easy'), medium: n('medium'), hard: n('hard'));
+
+    return QuestionConfig(
+      total: n('total'),
+      easy: n('easy'),
+      medium: n('medium'),
+      hard: n('hard'),
+    );
   }
 
   Map<String, dynamic> applyTo(Map<String, dynamic>? existing) {
     final out = {...?existing};
     if (isSet) {
-      out[key] = {'total': total, 'easy': easy, 'medium': medium, 'hard': hard, 'type': 'mcq'};
+      out[key] = {
+        'total': total,
+        'easy': easy,
+        'medium': medium,
+        'hard': hard,
+        'type': 'mcq',
+      };
     } else {
       out.remove(key);
     }
@@ -92,13 +124,14 @@ final class QuestionConfig {
 
   /// Actual difficulty counts vs this target. [actual] keys: easy/medium/hard.
   DistributionCheck check(Map<String, int> actual) => DistributionCheck(
-        target: this,
-        easy: actual['easy'] ?? 0,
-        medium: actual['medium'] ?? 0,
-        hard: actual['hard'] ?? 0,
-      );
+    target: this,
+    easy: actual['easy'] ?? 0,
+    medium: actual['medium'] ?? 0,
+    hard: actual['hard'] ?? 0,
+  );
 
-  QuestionConfig copyWith({int? total, int? easy, int? medium, int? hard}) => QuestionConfig(
+  QuestionConfig copyWith({int? total, int? easy, int? medium, int? hard}) =>
+      QuestionConfig(
         total: total ?? this.total,
         easy: easy ?? this.easy,
         medium: medium ?? this.medium,
@@ -119,7 +152,12 @@ final class QuestionConfig {
 
 /// Truthful comparison of actual questions against a [QuestionConfig].
 final class DistributionCheck {
-  const DistributionCheck({required this.target, required this.easy, required this.medium, required this.hard});
+  const DistributionCheck({
+    required this.target,
+    required this.easy,
+    required this.medium,
+    required this.hard,
+  });
 
   final QuestionConfig target;
   final int easy;
@@ -127,7 +165,8 @@ final class DistributionCheck {
   final int hard;
 
   int get total => easy + medium + hard;
-  bool get satisfied => easy == target.easy && medium == target.medium && hard == target.hard;
+  bool get satisfied =>
+      easy == target.easy && medium == target.medium && hard == target.hard;
 
   String get summary =>
       'Easy $easy/${target.easy} · Medium $medium/${target.medium} · Hard $hard/${target.hard} '
@@ -137,8 +176,12 @@ final class DistributionCheck {
 /// Duration-driven schedule: the creator picks a start time and a duration;
 /// the end is derived (`ends_at = starts_at + duration_sec`), never typed.
 abstract final class ScheduleMath {
-  static DateTime? endFor({required DateTime? startsAt, required int? durationSec}) {
-    if (startsAt == null || durationSec == null || durationSec <= 0) return null;
+  static DateTime? endFor({
+    required DateTime? startsAt,
+    required int? durationSec,
+  }) {
+    if (startsAt == null || durationSec == null || durationSec <= 0)
+      return null;
     return startsAt.add(Duration(seconds: durationSec));
   }
 }

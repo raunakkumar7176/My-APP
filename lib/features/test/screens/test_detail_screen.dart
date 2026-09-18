@@ -52,10 +52,12 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
   }
 
   void _snack(String message, {bool error = false}) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(message),
-      backgroundColor: error ? AppColors.error : AppColors.success,
-    ));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: error ? AppColors.error : AppColors.success,
+      ),
+    );
   }
 
   Future<void> _run(Future<void> Function() action) async {
@@ -67,9 +69,9 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
   }
 
   Future<void> _publish() => _run(() async {
-        await _c.publish();
-        if (mounted) _snack('Test published successfully');
-      });
+    await _c.publish();
+    if (mounted) _snack('Test published successfully');
+  });
 
   /// Instructions / disclaimer gate: shown before a NEW attempt (Start Test
   /// and Re-attempt). Resuming an in_progress attempt skips it — the timer
@@ -88,7 +90,8 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
       'Attempts: ${_c.attemptPolicyLabel}.',
       if (t.negativeMarks != null && t.negativeMarks! > 0)
         'Negative marking: ${t.negativeMarks} per wrong answer.',
-      if (t.instructions != null && t.instructions!.trim().isNotEmpty) t.instructions!.trim(),
+      if (t.instructions != null && t.instructions!.trim().isNotEmpty)
+        t.instructions!.trim(),
     ];
     final ok = await showDialog<bool>(
       context: context,
@@ -108,7 +111,10 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
             child: Text(reattempt ? 'Start Re-attempt' : 'Start Test'),
@@ -121,7 +127,8 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
 
   Future<void> _start() async {
     // Resume needs no gate; only a brand-new attempt does.
-    final resuming = _c.attemptState?.inProgress != null && !_c.attemptsLoadFailed;
+    final resuming =
+        _c.attemptState?.inProgress != null && !_c.attemptsLoadFailed;
     if (!resuming && !await _acknowledgeInstructions(reattempt: false)) return;
     await _launch(_c.start);
   }
@@ -135,20 +142,21 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
   /// server applies access rules; the response never carries the key) and
   /// hands it to the platform share/save sheet.
   Future<void> _downloadQuestionPaper() => _run(() async {
-        final bytes = await _c.buildQuestionPaperPdf();
-        if (!mounted) return;
-        await Printing.sharePdf(
-          bytes: bytes,
-          filename: '${_c.test?.title ?? 'test'} - question paper.pdf',
-        );
-      });
+    final bytes = await _c.buildQuestionPaperPdf();
+    if (!mounted) return;
+    await Printing.sharePdf(
+      bytes: bytes,
+      filename: '${_c.test?.title ?? 'test'} - question paper.pdf',
+    );
+  });
 
   Future<void> _copyJoinCode(String code) async {
     await Clipboard.setData(ClipboardData(text: code));
     if (mounted) _snack('Join code copied');
   }
 
-  Future<void> _launch(Future<LaunchedAttempt> Function() action) => _run(() async {
+  Future<void> _launch(Future<LaunchedAttempt> Function() action) =>
+      _run(() async {
         final launched = await action();
         if (!mounted) return;
         // Hand the server response to the taking screen in memory; the route
@@ -163,9 +171,9 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
       });
 
   Future<void> _generate() => _run(() async {
-        final batch = await _c.generateResults();
-        if (mounted) _snack(_batchMessage(batch), error: batch.isFailed);
-      });
+    final batch = await _c.generateResults();
+    if (mounted) _snack(_batchMessage(batch), error: batch.isFailed);
+  });
 
   /// Communicates exactly what the RPC returned; `errors > 0` is a partial
   /// outcome, not an RPC failure.
@@ -243,20 +251,20 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
   }
 
   Future<void> _delete({String? reason}) => _run(() async {
-        await _c.deleteDraft(reason: reason);
-        if (!mounted) return;
-        // Feedback on the root messenger so it survives leaving this route.
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(const SnackBar(content: Text('Test deleted.')));
-        // Opened from the listing → pop (the listing refreshes on return);
-        // cold-started deep link → go to My Drafts.
-        if (context.canPop()) {
-          context.pop();
-        } else {
-          context.go('/tests/drafts');
-        }
-      });
+    await _c.deleteDraft(reason: reason);
+    if (!mounted) return;
+    // Feedback on the root messenger so it survives leaving this route.
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(const SnackBar(content: Text('Test deleted.')));
+    // Opened from the listing → pop (the listing refreshes on return);
+    // cold-started deep link → go to My Drafts.
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go('/tests/drafts');
+    }
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -283,9 +291,16 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(Icons.error_outline, size: 48, color: AppColors.error),
+                const Icon(
+                  Icons.error_outline,
+                  size: 48,
+                  color: AppColors.error,
+                ),
                 const SizedBox(height: 12),
-                Text(_c.error ?? 'Test not found.', textAlign: TextAlign.center),
+                Text(
+                  _c.error ?? 'Test not found.',
+                  textAlign: TextAlign.center,
+                ),
                 const SizedBox(height: 12),
                 FilledButton(onPressed: _c.refresh, child: const Text('Retry')),
               ],
@@ -296,7 +311,9 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
     }
 
     final statusColor = TestFormatters.statusColor(test.status);
-    final startReason = _c.startBlockReason(formatDateTime: TestFormatters.dateTime);
+    final startReason = _c.startBlockReason(
+      formatDateTime: TestFormatters.dateTime,
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -365,10 +382,14 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
               _row('What it is', _c.kind.purpose),
               _row('Questions', _c.questionCountLabel),
               _row('Duration', TestFormatters.duration(test.durationSec)),
-              _row('Marks per question', test.marksPerQuestion?.toString() ?? '--'),
+              _row(
+                'Marks per question',
+                test.marksPerQuestion?.toString() ?? '--',
+              ),
               _row('Negative marks', test.negativeMarks?.toString() ?? 'None'),
               _row('Attempts', _c.attemptPolicyLabel),
-              if (_c.kind.supportsLateJoin) _row('Late joining', _c.lateJoinLabel),
+              if (_c.kind.supportsLateJoin)
+                _row('Late joining', _c.lateJoinLabel),
               if (_c.scopeLabel != null) _row('Syllabus scope', _c.scopeLabel!),
               if (test.groupId != null) _row('Group', _c.groupLabel),
               if (test.instructions != null && test.instructions!.isNotEmpty)
@@ -389,13 +410,16 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
                     padding: const EdgeInsets.symmetric(vertical: 4),
                     child: Row(
                       children: [
-                        Text('Join code', style: Theme.of(context).textTheme.bodyMedium),
+                        Text(
+                          'Join code',
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
                         const Spacer(),
-                        SelectableText(test.joinCode!,
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodyMedium
-                                ?.copyWith(fontWeight: FontWeight.w600)),
+                        SelectableText(
+                          test.joinCode!,
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(fontWeight: FontWeight.w600),
+                        ),
                         IconButton(
                           tooltip: 'Copy join code',
                           icon: const Icon(Icons.copy, size: 18),
@@ -408,11 +432,14 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
             if (_c.isOwner && _c.latestBatch != null)
               _section(context, 'Batch results', [
                 _row('Status', _c.latestBatch!.status.name),
-                _row('Reports',
-                    '${_c.latestBatch!.reportsDone ?? 0} / ${_c.latestBatch!.reportsTotal ?? 0}'),
+                _row(
+                  'Reports',
+                  '${_c.latestBatch!.reportsDone ?? 0} / ${_c.latestBatch!.reportsTotal ?? 0}',
+                ),
                 if (_c.latestBatch!.hasErrors)
                   _row('Errors', '${_c.latestBatch!.errors}'),
-                if (_c.latestBatch!.reused) _row('Note', 'Existing batch reused'),
+                if (_c.latestBatch!.reused)
+                  _row('Note', 'Existing batch reused'),
               ]),
             const SizedBox(height: 16),
             ..._actions(startReason),
@@ -427,9 +454,8 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
   /// "Back to Tests" is navigation only; only Re-attempt asks for attempt N+1.
   List<Widget> _attemptActions(bool busy) {
     final s = _c.attemptState;
-    final muted = Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: Theme.of(context).colorScheme.outline,
-        );
+    final muted = Theme.of(context).textTheme.bodySmall
+        ?.copyWith(color: Theme.of(context).colorScheme.outline);
     FilledButton primary(IconData icon, String label, VoidCallback onTap) =>
         FilledButton.icon(
           onPressed: busy ? null : onTap,
@@ -447,8 +473,11 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
         return [primary(Icons.play_arrow, 'Start Test', _start)];
       case AttemptCta.continueTest:
         return [
-          Text('Attempt ${s.inProgress!.attemptNumber} · In progress',
-              textAlign: TextAlign.center, style: muted),
+          Text(
+            'Attempt ${s.inProgress!.attemptNumber} · In progress',
+            textAlign: TextAlign.center,
+            style: muted,
+          ),
           const SizedBox(height: 8),
           primary(Icons.play_arrow, 'Continue Test', _start),
         ];
@@ -456,11 +485,16 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
       case AttemptCta.limitReached:
         final last = s.latestCompleted!;
         return [
-          Text('Attempt ${last.attemptNumber} · Completed · ${s.usageLabel}',
-              textAlign: TextAlign.center, style: muted),
+          Text(
+            'Attempt ${last.attemptNumber} · Completed · ${s.usageLabel}',
+            textAlign: TextAlign.center,
+            style: muted,
+          ),
           const SizedBox(height: 8),
           OutlinedButton.icon(
-            onPressed: busy ? null : () => context.push('/attempts/${last.id}/result'),
+            onPressed: busy
+                ? null
+                : () => context.push('/attempts/${last.id}/result'),
             icon: const Icon(Icons.assessment_outlined),
             label: const Text('View Result'),
           ),
@@ -484,19 +518,23 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
     final widgets = <Widget>[];
 
     if (_c.canEdit) {
-      widgets.add(FilledButton.icon(
-        onPressed: busy ? null : _edit,
-        icon: const Icon(Icons.edit),
-        label: const Text('Continue Editing'),
-      ));
+      widgets.add(
+        FilledButton.icon(
+          onPressed: busy ? null : _edit,
+          icon: const Icon(Icons.edit),
+          label: const Text('Continue Editing'),
+        ),
+      );
     }
     if (_c.canPublish) {
       widgets.add(const SizedBox(height: 8));
-      widgets.add(OutlinedButton.icon(
-        onPressed: busy ? null : _publish,
-        icon: busy ? _spinner() : const Icon(Icons.publish),
-        label: Text(busy ? 'Working…' : 'Publish'),
-      ));
+      widgets.add(
+        OutlinedButton.icon(
+          onPressed: busy ? null : _publish,
+          icon: busy ? _spinner() : const Icon(Icons.publish),
+          label: Text(busy ? 'Working…' : 'Publish'),
+        ),
+      );
     }
     if (!_c.canEdit) {
       if (startReason == null) {
@@ -505,38 +543,43 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
         // Window closed / not open: a completed attempt's result stays reachable.
         final last = _c.attemptState?.latestCompleted;
         if (last != null) {
-          widgets.add(OutlinedButton.icon(
-            onPressed: () => context.push('/attempts/${last.id}/result'),
-            icon: const Icon(Icons.assessment_outlined),
-            label: Text('View Result (Attempt ${last.attemptNumber})'),
-          ));
+          widgets.add(
+            OutlinedButton.icon(
+              onPressed: () => context.push('/attempts/${last.id}/result'),
+              icon: const Icon(Icons.assessment_outlined),
+              label: Text('View Result (Attempt ${last.attemptNumber})'),
+            ),
+          );
           widgets.add(const SizedBox(height: 8));
         }
-        widgets.add(Text(
-          startReason,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Theme.of(context).colorScheme.outline,
-              ),
-          textAlign: TextAlign.center,
-        ));
+        widgets.add(
+          Text(
+            startReason,
+            style: Theme.of(context).textTheme.bodyMedium
+                ?.copyWith(color: Theme.of(context).colorScheme.outline),
+            textAlign: TextAlign.center,
+          ),
+        );
       }
     }
     if (_c.canGenerateResults) {
       widgets.add(const SizedBox(height: 8));
-      widgets.add(OutlinedButton.icon(
-        onPressed: busy ? null : _generate,
-        icon: const Icon(Icons.assessment_outlined),
-        label: const Text('Generate Results'),
-      ));
+      widgets.add(
+        OutlinedButton.icon(
+          onPressed: busy ? null : _generate,
+          icon: const Icon(Icons.assessment_outlined),
+          label: const Text('Generate Results'),
+        ),
+      );
     }
     return widgets;
   }
 
   Widget _spinner() => const SizedBox(
-        width: 16,
-        height: 16,
-        child: CircularProgressIndicator(strokeWidth: 2),
-      );
+    width: 16,
+    height: 16,
+    child: CircularProgressIndicator(strokeWidth: 2),
+  );
 
   Widget _badge(String text, Color color) {
     return Container(
@@ -545,8 +588,14 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
         color: color.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(8),
       ),
-      child: Text(text,
-          style: TextStyle(color: color, fontWeight: FontWeight.w600, fontSize: 12)),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: color,
+          fontWeight: FontWeight.w600,
+          fontSize: 12,
+        ),
+      ),
     );
   }
 
@@ -558,11 +607,11 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title,
-                style: Theme.of(context)
-                    .textTheme
-                    .titleSmall
-                    ?.copyWith(fontWeight: FontWeight.w600)),
+            Text(
+              title,
+              style: Theme.of(context).textTheme.titleSmall
+                  ?.copyWith(fontWeight: FontWeight.w600),
+            ),
             const SizedBox(height: 8),
             ...rows,
           ],
@@ -580,12 +629,12 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
           Text(label, style: Theme.of(context).textTheme.bodyMedium),
           const SizedBox(width: 16),
           Expanded(
-            child: Text(value,
-                textAlign: TextAlign.end,
-                style: Theme.of(context)
-                    .textTheme
-                    .bodyMedium
-                    ?.copyWith(fontWeight: FontWeight.w500)),
+            child: Text(
+              value,
+              textAlign: TextAlign.end,
+              style: Theme.of(context).textTheme.bodyMedium
+                  ?.copyWith(fontWeight: FontWeight.w500),
+            ),
           ),
         ],
       ),

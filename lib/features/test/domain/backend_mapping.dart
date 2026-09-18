@@ -29,7 +29,10 @@ abstract final class BackendMapping {
   }
 
   /// Product kind from a stored row. Non-self modes ignore `settings`.
-  static TestKind fromBackend(String? testMode, Map<String, dynamic>? settings) {
+  static TestKind fromBackend(
+    String? testMode,
+    Map<String, dynamic>? settings,
+  ) {
     switch (TestMode.fromDb(testMode)) {
       case TestMode.live:
         return TestKind.challengeWithFriends;

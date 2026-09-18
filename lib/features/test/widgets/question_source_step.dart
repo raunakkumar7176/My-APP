@@ -67,7 +67,11 @@ extension QuestionSourceInfo on QuestionSource {
 /// Question Source step. Selecting an unavailable source shows its honest
 /// "Not configured" state and keeps Next disabled; nothing is faked.
 class QuestionSourceStep extends StatelessWidget {
-  const QuestionSourceStep({required this.selected, required this.onChanged, super.key});
+  const QuestionSourceStep({
+    required this.selected,
+    required this.onChanged,
+    super.key,
+  });
 
   final QuestionSource selected;
   final ValueChanged<QuestionSource> onChanged;
@@ -80,12 +84,19 @@ class QuestionSourceStep extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Question Source',
-              style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600)),
+          Text(
+            'Question Source',
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
           const SizedBox(height: 8),
-          Text('Choose how questions get into this test.',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurface.withValues(alpha: 0.6))),
+          Text(
+            'Choose how questions get into this test.',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+            ),
+          ),
           const SizedBox(height: 16),
           for (final s in QuestionSource.values)
             Card(
@@ -95,15 +106,18 @@ class QuestionSourceStep extends StatelessWidget {
                 groupValue: selected,
                 onChanged: (v) => v == null ? null : onChanged(v),
                 secondary: Icon(s.icon),
-                title: Row(children: [
-                  Expanded(child: Text(s.label)),
-                  if (!s.isAvailable)
-                    Chip(
-                      label: const Text('Not configured'),
-                      visualDensity: VisualDensity.compact,
-                      backgroundColor: theme.colorScheme.surfaceContainerHighest,
-                    ),
-                ]),
+                title: Row(
+                  children: [
+                    Expanded(child: Text(s.label)),
+                    if (!s.isAvailable)
+                      Chip(
+                        label: const Text('Not configured'),
+                        visualDensity: VisualDensity.compact,
+                        backgroundColor:
+                            theme.colorScheme.surfaceContainerHighest,
+                      ),
+                  ],
+                ),
                 subtitle: Text(s.description),
               ),
             ),

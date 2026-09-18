@@ -78,146 +78,191 @@ abstract final class PublishReadiness {
     final items = <ReadinessItem>[];
 
     final hasTitle = i.title.trim().isNotEmpty;
-    items.add(ReadinessItem(
-      label: 'Test title',
-      isValid: hasTitle,
-      reason: hasTitle ? null : 'Enter a test title',
-    ));
+    items.add(
+      ReadinessItem(
+        label: 'Test title',
+        isValid: hasTitle,
+        reason: hasTitle ? null : 'Enter a test title',
+      ),
+    );
 
     final hasDuration = i.durationSec != null && i.durationSec! > 0;
-    items.add(ReadinessItem(
-      label: 'Duration set',
-      isValid: hasDuration,
-      reason: hasDuration ? null : 'Set a valid duration',
-    ));
+    items.add(
+      ReadinessItem(
+        label: 'Duration set',
+        isValid: hasDuration,
+        reason: hasDuration ? null : 'Set a valid duration',
+      ),
+    );
 
     final hasMarks = i.marksPerQuestion != null && i.marksPerQuestion! > 0;
-    items.add(ReadinessItem(
-      label: 'Scoring configured',
-      isValid: hasMarks,
-      reason: hasMarks ? null : 'Set marks per question',
-    ));
+    items.add(
+      ReadinessItem(
+        label: 'Scoring configured',
+        isValid: hasMarks,
+        reason: hasMarks ? null : 'Set marks per question',
+      ),
+    );
 
     if (i.kind.requiresGroup) {
       final hasGroup = i.groupId != null && i.groupId!.isNotEmpty;
-      items.add(ReadinessItem(
-        label: 'Group selected',
-        isValid: hasGroup,
-        reason: hasGroup ? null : 'Select a group for Group Test',
-      ));
+      items.add(
+        ReadinessItem(
+          label: 'Group selected',
+          isValid: hasGroup,
+          reason: hasGroup ? null : 'Select a group for Group Test',
+        ),
+      );
     }
 
     final total = i.serverQuestionStatuses.length + i.localDraftValidity.length;
-    items.add(ReadinessItem(
-      label: 'Questions added',
-      isValid: total > 0,
-      reason: total > 0 ? null : 'Add at least one question',
-    ));
+    items.add(
+      ReadinessItem(
+        label: 'Questions added',
+        isValid: total > 0,
+        reason: total > 0 ? null : 'Add at least one question',
+      ),
+    );
 
     if (total > 0) {
-      final pending =
-          i.serverQuestionStatuses.where((s) => s != approvedStatus).length;
-      items.add(ReadinessItem(
-        label: 'All questions approved',
-        isValid: pending == 0,
-        reason: pending == 0
-            ? null
-            : '$pending question(s) need approval before publishing',
-      ));
+      final pending = i.serverQuestionStatuses
+          .where((s) => s != approvedStatus)
+          .length;
+      items.add(
+        ReadinessItem(
+          label: 'All questions approved',
+          isValid: pending == 0,
+          reason: pending == 0
+              ? null
+              : '$pending question(s) need approval before publishing',
+        ),
+      );
     }
 
     if (i.serverQuestionOptionCounts.isNotEmpty) {
       final short = i.serverQuestionOptionCounts
           .where((n) => n < PublishReadinessInput.minOptions)
           .length;
-      items.add(ReadinessItem(
-        label: 'Every question has ${PublishReadinessInput.minOptions} options',
-        isValid: short == 0,
-        reason: short == 0
-            ? null
-            : '$short question(s) have fewer than ${PublishReadinessInput.minOptions} options',
-      ));
+      items.add(
+        ReadinessItem(
+          label:
+              'Every question has ${PublishReadinessInput.minOptions} options',
+          isValid: short == 0,
+          reason: short == 0
+              ? null
+              : '$short question(s) have fewer than ${PublishReadinessInput.minOptions} options',
+        ),
+      );
     }
 
     if (i.localDraftValidity.isNotEmpty) {
       final invalid = i.localDraftValidity.where((v) => !v).length;
-      items.add(ReadinessItem(
-        label: 'All questions valid',
-        isValid: invalid == 0,
-        reason: invalid == 0 ? null : '$invalid question(s) need fixing',
-      ));
+      items.add(
+        ReadinessItem(
+          label: 'All questions valid',
+          isValid: invalid == 0,
+          reason: invalid == 0 ? null : '$invalid question(s) need fixing',
+        ),
+      );
     }
 
-    final scheduleOk = i.startsAt == null ||
+    final scheduleOk =
+        i.startsAt == null ||
         i.endsAt == null ||
         !i.endsAt!.isBefore(i.startsAt!);
-    items.add(ReadinessItem(
-      label: 'Schedule valid',
-      isValid: scheduleOk,
-      reason: scheduleOk ? null : 'End time must be after start time',
-    ));
+    items.add(
+      ReadinessItem(
+        label: 'Schedule valid',
+        isValid: scheduleOk,
+        reason: scheduleOk ? null : 'End time must be after start time',
+      ),
+    );
 
     if (i.kind.requiresStartTime) {
       final ok = i.startsAt != null;
-      items.add(ReadinessItem(
-        label: 'Start time set',
-        isValid: ok,
-        reason: ok ? null : '${i.kind.label} needs a start time',
-      ));
+      items.add(
+        ReadinessItem(
+          label: 'Start time set',
+          isValid: ok,
+          reason: ok ? null : '${i.kind.label} needs a start time',
+        ),
+      );
     }
 
     if (i.kind.requiresScope && i.syllabusNodeCount != null) {
       final ok = i.syllabusNodeCount! > 0;
-      items.add(ReadinessItem(
-        label: 'Syllabus scope selected',
-        isValid: ok,
-        reason: ok ? null : 'Select at least one syllabus topic for ${i.kind.label}',
-      ));
+      items.add(
+        ReadinessItem(
+          label: 'Syllabus scope selected',
+          isValid: ok,
+          reason: ok
+              ? null
+              : 'Select at least one syllabus topic for ${i.kind.label}',
+        ),
+      );
     }
 
     final qc = i.questionConfig;
     if (qc != null && qc.isSet) {
-      items.add(ReadinessItem(
-        label: 'Difficulty distribution valid',
-        isValid: qc.isValid,
-        reason: qc.isValid ? null : 'Easy + Medium + Hard must equal ${qc.total}',
-      ));
+      items.add(
+        ReadinessItem(
+          label: 'Difficulty distribution valid',
+          isValid: qc.isValid,
+          reason: qc.isValid
+              ? null
+              : 'Easy + Medium + Hard must equal ${qc.total}',
+        ),
+      );
       if (qc.isValid && i.actualDifficultyCounts != null) {
         final check = qc.check(i.actualDifficultyCounts!);
-        items.add(ReadinessItem(
-          label: 'Questions match the difficulty target',
-          isValid: check.satisfied,
-          reason: check.satisfied ? null : 'Target not met: ${check.summary}',
-        ));
+        items.add(
+          ReadinessItem(
+            label: 'Questions match the difficulty target',
+            isValid: check.satisfied,
+            reason: check.satisfied ? null : 'Target not met: ${check.summary}',
+          ),
+        );
       }
     }
 
     final a = i.attemptSettings;
     if (a != null) {
-      final ok = !a.allowReattempt || AttemptSettings.allowedMaxValues.contains(a.maxAttempts);
-      items.add(ReadinessItem(
-        label: 'Attempt settings valid',
-        isValid: ok,
-        reason: ok ? null : 'Maximum attempts must be one of ${AttemptSettings.allowedMaxValues}',
-      ));
+      final ok =
+          !a.allowReattempt ||
+          AttemptSettings.allowedMaxValues.contains(a.maxAttempts);
+      items.add(
+        ReadinessItem(
+          label: 'Attempt settings valid',
+          isValid: ok,
+          reason: ok
+              ? null
+              : 'Maximum attempts must be one of ${AttemptSettings.allowedMaxValues}',
+        ),
+      );
     }
 
-    if (i.kind.supportsLateJoin && i.lateJoin != null && i.allowLateJoin == true) {
+    if (i.kind.supportsLateJoin &&
+        i.lateJoin != null &&
+        i.allowLateJoin == true) {
       final ok = i.lateJoin!.minutes >= 0;
-      items.add(ReadinessItem(
-        label: 'Late-join window valid',
-        isValid: ok,
-        reason: ok ? null : 'Late-join window cannot be negative',
-      ));
+      items.add(
+        ReadinessItem(
+          label: 'Late-join window valid',
+          isValid: ok,
+          reason: ok ? null : 'Late-join window cannot be negative',
+        ),
+      );
     }
 
     if (i.kind.requiresJoinCode && i.joinCode != null) {
       final ok = i.joinCode!.trim().isNotEmpty;
-      items.add(ReadinessItem(
-        label: 'Join code set',
-        isValid: ok,
-        reason: ok ? null : 'Challenge with Friends needs a join code',
-      ));
+      items.add(
+        ReadinessItem(
+          label: 'Join code set',
+          isValid: ok,
+          reason: ok ? null : 'Challenge with Friends needs a join code',
+        ),
+      );
     }
 
     return items;
@@ -228,7 +273,7 @@ abstract final class PublishReadiness {
 
   /// Actionable reasons only (what the publish error dialog shows).
   static List<String> blockingReasons(PublishReadinessInput i) => [
-        for (final item in evaluate(i))
-          if (!item.isValid && item.reason != null) item.reason!,
-      ];
+    for (final item in evaluate(i))
+      if (!item.isValid && item.reason != null) item.reason!,
+  ];
 }

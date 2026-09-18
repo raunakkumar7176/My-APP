@@ -78,19 +78,25 @@ class _JoinWithCodeSheetState extends State<JoinWithCodeSheet> {
       'You have already completed this test. Use Re-attempt to try again.';
 
   Future<bool?> _confirmReattempt() => showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Re-attempt this test?'),
-          content: const Text(
-            'You have already completed this test. Start a new attempt? '
-            'Your previous results are kept.',
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
-            FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Re-attempt')),
-          ],
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Re-attempt this test?'),
+      content: const Text(
+        'You have already completed this test. Start a new attempt? '
+        'Your previous results are kept.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(false),
+          child: const Text('Cancel'),
         ),
-      );
+        FilledButton(
+          onPressed: () => Navigator.of(ctx).pop(true),
+          child: const Text('Re-attempt'),
+        ),
+      ],
+    ),
+  );
 
   Future<void> _join({bool reattempt = false}) async {
     if (_isJoining) return;
@@ -105,7 +111,10 @@ class _JoinWithCodeSheetState extends State<JoinWithCodeSheet> {
     });
 
     try {
-      final started = await widget.attempts.startByCode(code, reattempt: reattempt);
+      final started = await widget.attempts.startByCode(
+        code,
+        reattempt: reattempt,
+      );
       final attempt = started.attempt;
 
       Test? test;
@@ -119,12 +128,17 @@ class _JoinWithCodeSheetState extends State<JoinWithCodeSheet> {
         title: started.testTitle,
       );
 
-      final questions = await widget.questions
-          .safeQuestions(attempt.testId, accessCode: code);
+      final questions = await widget.questions.safeQuestions(
+        attempt.testId,
+        accessCode: code,
+      );
 
       if (!mounted) return;
       AttemptLaunchStore.putLaunch(
-          started: started, questions: questions, test: test);
+        started: started,
+        questions: questions,
+        test: test,
+      );
       final router = GoRouter.of(context);
       Navigator.of(context).pop();
       router.go(
@@ -164,8 +178,10 @@ class _JoinWithCodeSheetState extends State<JoinWithCodeSheet> {
         children: [
           Text('Join with code', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 8),
-          Text('Enter the code shared by the test creator.',
-              style: Theme.of(context).textTheme.bodyMedium),
+          Text(
+            'Enter the code shared by the test creator.',
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
           const SizedBox(height: 16),
           TextField(
             controller: _controller,

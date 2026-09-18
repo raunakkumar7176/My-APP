@@ -12,7 +12,11 @@ import '../widgets/question_review_card.dart';
 /// not expose the answer key or per-question correctness, and the client
 /// never fabricates it.
 class QuestionReviewScreen extends StatefulWidget {
-  const QuestionReviewScreen({required this.attemptId, this.controller, super.key});
+  const QuestionReviewScreen({
+    required this.attemptId,
+    this.controller,
+    super.key,
+  });
 
   final String attemptId;
   final ResultsController? controller;
@@ -61,7 +65,8 @@ class _QuestionReviewScreenState extends State<QuestionReviewScreen> {
     } on AppError catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message), backgroundColor: AppColors.error));
+        SnackBar(content: Text(e.message), backgroundColor: AppColors.error),
+      );
     }
   }
 
@@ -91,51 +96,55 @@ class _QuestionReviewScreenState extends State<QuestionReviewScreen> {
       body: loading
           ? const Center(child: CircularProgressIndicator())
           : _c.error != null && !_c.reviewLoaded
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.error_outline, size: 48, color: AppColors.error),
-                        const SizedBox(height: 12),
-                        Text(_c.error!, textAlign: TextAlign.center),
-                        const SizedBox(height: 12),
-                        FilledButton(onPressed: _init, child: const Text('Retry')),
-                      ],
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(
+                      Icons.error_outline,
+                      size: 48,
+                      color: AppColors.error,
                     ),
-                  ),
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: _c.questions.length + (_c.answersLoadFailed ? 1 : 0),
-                  itemBuilder: (context, index) {
-                    if (_c.answersLoadFailed && index == 0) {
-                      return const Padding(
-                        padding: EdgeInsets.only(bottom: 12),
-                        child: MaterialBanner(
-                          leading: Icon(Icons.info_outline, size: 20),
-                          content: Text(
-                            'Your selections could not be loaded; '
-                            'scoring was done on the server.',
-                          ),
-                          actions: [SizedBox.shrink()],
-                        ),
-                      );
-                    }
-                    final i = _c.answersLoadFailed ? index - 1 : index;
-                    final q = _c.questions[i];
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: QuestionReviewCard(
-                        question: q,
-                        answer: _c.answerFor(q.id),
-                        questionNumber: i + 1,
-                        totalQuestions: _c.questions.length,
-                      ),
-                    );
-                  },
+                    const SizedBox(height: 12),
+                    Text(_c.error!, textAlign: TextAlign.center),
+                    const SizedBox(height: 12),
+                    FilledButton(onPressed: _init, child: const Text('Retry')),
+                  ],
                 ),
+              ),
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: _c.questions.length + (_c.answersLoadFailed ? 1 : 0),
+              itemBuilder: (context, index) {
+                if (_c.answersLoadFailed && index == 0) {
+                  return const Padding(
+                    padding: EdgeInsets.only(bottom: 12),
+                    child: MaterialBanner(
+                      leading: Icon(Icons.info_outline, size: 20),
+                      content: Text(
+                        'Your selections could not be loaded; '
+                        'scoring was done on the server.',
+                      ),
+                      actions: [SizedBox.shrink()],
+                    ),
+                  );
+                }
+                final i = _c.answersLoadFailed ? index - 1 : index;
+                final q = _c.questions[i];
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: QuestionReviewCard(
+                    question: q,
+                    answer: _c.answerFor(q.id),
+                    questionNumber: i + 1,
+                    totalQuestions: _c.questions.length,
+                  ),
+                );
+              },
+            ),
     );
   }
 }

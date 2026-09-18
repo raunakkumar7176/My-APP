@@ -2,7 +2,13 @@ import '../../../core/models/test.dart' show TestStatus;
 import 'test_mode.dart';
 
 /// Where a test shows up in the listing.
-enum ListingCategory { upcoming, challengeWithFriends, previous, drafts, hidden }
+enum ListingCategory {
+  upcoming,
+  challengeWithFriends,
+  previous,
+  drafts,
+  hidden,
+}
 
 /// Position of "now" relative to a test's `starts_at` / `ends_at` window.
 enum SchedulePhase { notStarted, active, ended }
@@ -45,8 +51,7 @@ abstract final class TestLifecycle {
     required bool isOwner,
     required TestStatus status,
     required bool isSoftDeleted,
-  }) =>
-      isOwner && status == TestStatus.draft && !isSoftDeleted;
+  }) => isOwner && status == TestStatus.draft && !isSoftDeleted;
 
   /// Owner may request batch results once the test is over.
   static bool canGenerateResults({
@@ -67,7 +72,8 @@ abstract final class TestLifecycle {
     required DateTime? endsAt,
     required DateTime now,
   }) {
-    if (startsAt != null && now.isBefore(startsAt)) return SchedulePhase.notStarted;
+    if (startsAt != null && now.isBefore(startsAt))
+      return SchedulePhase.notStarted;
     if (endsAt != null && !now.isBefore(endsAt)) return SchedulePhase.ended;
     return SchedulePhase.active;
   }

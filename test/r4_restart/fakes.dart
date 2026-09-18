@@ -44,8 +44,12 @@ class FakeTestRepository implements TestRepository {
   Future<List<Test>> listMyDrafts({int limit = 50}) async {
     calls.add('listMyDrafts');
     return rows.values
-        .where((t) =>
-            t.status == TestStatus.draft && t.createdBy == currentUser && !t.isSoftDeleted)
+        .where(
+          (t) =>
+              t.status == TestStatus.draft &&
+              t.createdBy == currentUser &&
+              !t.isSoftDeleted,
+        )
         .toList();
   }
 
@@ -111,16 +115,25 @@ class FakeTestRepository implements TestRepository {
     final t = rows[testId];
     if (t == null) throw const DataError(message: 'Test not found.');
     if (t.createdBy != currentUser) {
-      throw const DataError(message: 'You do not have permission to perform this action.');
+      throw const DataError(
+        message: 'You do not have permission to perform this action.',
+      );
     }
-    if (t.isSoftDeleted) throw const DataError(message: 'This test has already been deleted.');
+    if (t.isSoftDeleted)
+      throw const DataError(message: 'This test has already been deleted.');
     if (t.status != TestStatus.draft) {
       throw const DataError(message: 'Only draft tests can be deleted.');
     }
     rows[testId] = Test(
-      id: t.id, createdBy: t.createdBy, title: t.title, status: t.status,
-      testMode: t.testMode, durationSec: t.durationSec, settings: t.settings,
-      isSoftDeleted: true, deletedAt: DateTime(2026, 9, 16),
+      id: t.id,
+      createdBy: t.createdBy,
+      title: t.title,
+      status: t.status,
+      testMode: t.testMode,
+      durationSec: t.durationSec,
+      settings: t.settings,
+      isSoftDeleted: true,
+      deletedAt: DateTime(2026, 9, 16),
     );
   }
 
@@ -140,9 +153,14 @@ class FakeTestRepository implements TestRepository {
 
   @override
   Future<List<TestSyllabus>> syllabusFor(String testId) async => [
-        for (final n in syllabus[testId] ?? const <String>{})
-          TestSyllabus(id: '', testId: testId, syllabusNodeId: n, createdAt: DateTime(2026)),
-      ];
+    for (final n in syllabus[testId] ?? const <String>{})
+      TestSyllabus(
+        id: '',
+        testId: testId,
+        syllabusNodeId: n,
+        createdAt: DateTime(2026),
+      ),
+  ];
 
   @override
   Future<void> addSyllabus(String testId, String nodeId) async {
@@ -169,7 +187,10 @@ class FakeQuestionRepository implements QuestionRepository {
   final Set<String> failApprove = {};
 
   @override
-  Future<List<Question>> safeQuestions(String testId, {String? accessCode}) async {
+  Future<List<Question>> safeQuestions(
+    String testId, {
+    String? accessCode,
+  }) async {
     calls.add('safe:$testId');
     return List.of(byTest[testId] ?? const []);
   }
@@ -187,22 +208,27 @@ class FakeQuestionRepository implements QuestionRepository {
     }
     final k = draft.correctOptionIndex;
     if (k == null || k < 0 || k >= draft.options.length) {
-      throw const DataError(message: 'correct_option must be a valid option index.');
+      throw const DataError(
+        message: 'correct_option must be a valid option index.',
+      );
     }
     final id = 'q-${nextId++}';
-    (byTest[testId] ??= []).add(Question(
-      id: id,
-      testId: testId,
-      ordinal: byTest[testId]!.length + 1,
-      question: draft.questionText,
-      options: [
-        for (final o in draft.options) QuestionOption(id: o.id ?? 'o', text: o.text),
-      ],
-      difficulty: draft.difficulty,
-      marks: draft.marks,
-      status: 'pending_review',
-      questionType: draft.questionType,
-    ));
+    (byTest[testId] ??= []).add(
+      Question(
+        id: id,
+        testId: testId,
+        ordinal: byTest[testId]!.length + 1,
+        question: draft.questionText,
+        options: [
+          for (final o in draft.options)
+            QuestionOption(id: o.id ?? 'o', text: o.text),
+        ],
+        difficulty: draft.difficulty,
+        marks: draft.marks,
+        status: 'pending_review',
+        questionType: draft.questionType,
+      ),
+    );
     return id;
   }
 
@@ -226,7 +252,9 @@ class FakeQuestionRepository implements QuestionRepository {
     }
     final k = draft.correctOptionIndex;
     if (k != null && (k < 0 || k >= finalOptions.length)) {
-      throw const DataError(message: 'correct_option must be a valid option index.');
+      throw const DataError(
+        message: 'correct_option must be a valid option index.',
+      );
     }
   }
 
@@ -282,15 +310,25 @@ class FakeAttemptRepository implements AttemptRepository {
     calls.add('start:$testId${reattempt ? ':reattempt' : ''}');
     if (failStartWith != null) throw failStartWith!;
     if (next != null && rows.isEmpty) return (attempt: next!, testTitle: null);
-    return (attempt: _serverStart(testId, reattempt: reattempt), testTitle: null);
+    return (
+      attempt: _serverStart(testId, reattempt: reattempt),
+      testTitle: null,
+    );
   }
 
   @override
-  Future<StartedAttempt> startByCode(String code, {bool reattempt = false}) async {
+  Future<StartedAttempt> startByCode(
+    String code, {
+    bool reattempt = false,
+  }) async {
     calls.add('code:$code${reattempt ? ':reattempt' : ''}');
     if (failStartWith != null) throw failStartWith!;
-    if (next != null && rows.isEmpty) return (attempt: next!, testTitle: 'Coded');
-    return (attempt: _serverStart('t-coded', reattempt: reattempt), testTitle: 'Coded');
+    if (next != null && rows.isEmpty)
+      return (attempt: next!, testTitle: 'Coded');
+    return (
+      attempt: _serverStart('t-coded', reattempt: reattempt),
+      testTitle: 'Coded',
+    );
   }
 
   @override
@@ -303,21 +341,31 @@ class FakeAttemptRepository implements AttemptRepository {
   }
 
   Attempt _serverStart(String testId, {required bool reattempt}) {
-    final own = [for (final a in rows) if (a.testId == testId && a.userId == currentUser) a];
+    final own = [
+      for (final a in rows)
+        if (a.testId == testId && a.userId == currentUser) a,
+    ];
     for (final a in own) {
       if (a.status == AttemptStatus.inProgress) return a; // resume
     }
     final settings = testSettings[testId];
     final allow = settings?['allow_reattempt'] == true;
-    final max = allow ? ((settings?['max_attempts'] as int?) ?? 1).clamp(1, 1 << 30) : 1;
+    final max = allow
+        ? ((settings?['max_attempts'] as int?) ?? 1).clamp(1, 1 << 30)
+        : 1;
     if (own.length >= max) {
-      throw const DataError(message: 'You have used all attempts allowed for this test.');
+      throw const DataError(
+        message: 'You have used all attempts allowed for this test.',
+      );
     }
     if (own.isNotEmpty && !reattempt) {
       throw const DataError(
-          message: 'You have already completed this test. Use Re-attempt to try again.');
+        message: 'You have already completed this test. Use Re-attempt to try again.',
+      );
     }
-    final number = own.fold<int>(0, (m, a) => a.attemptNumber > m ? a.attemptNumber : m) + 1;
+    final number =
+        own.fold<int>(0, (m, a) => a.attemptNumber > m ? a.attemptNumber : m) +
+        1;
     final a = Attempt(
       id: 'a-${_seq++}',
       testId: testId,
@@ -332,13 +380,21 @@ class FakeAttemptRepository implements AttemptRepository {
   }
 
   /// Simulates the server closing an attempt (submit → scored).
-  void complete(String attemptId, {AttemptStatus status = AttemptStatus.scored}) {
+  void complete(
+    String attemptId, {
+    AttemptStatus status = AttemptStatus.scored,
+  }) {
     final i = rows.indexWhere((a) => a.id == attemptId);
     if (i == -1) return;
     final a = rows[i];
     rows[i] = Attempt(
-      id: a.id, testId: a.testId, userId: a.userId, status: status,
-      startedAt: a.startedAt, deadlineAt: a.deadlineAt, attemptNumber: a.attemptNumber,
+      id: a.id,
+      testId: a.testId,
+      userId: a.userId,
+      status: status,
+      startedAt: a.startedAt,
+      deadlineAt: a.deadlineAt,
+      attemptNumber: a.attemptNumber,
       submittedAt: a.startedAt.add(const Duration(minutes: 20)),
     );
   }
@@ -346,7 +402,10 @@ class FakeAttemptRepository implements AttemptRepository {
   @override
   Future<Result> submit(String attemptId, {required bool timedOut}) async {
     calls.add('submit:$attemptId:$timedOut');
-    complete(attemptId, status: timedOut ? AttemptStatus.autoSubmitted : AttemptStatus.scored);
+    complete(
+      attemptId,
+      status: timedOut ? AttemptStatus.autoSubmitted : AttemptStatus.scored,
+    );
     return submitResult ??
         Result(
           id: 'r-1',

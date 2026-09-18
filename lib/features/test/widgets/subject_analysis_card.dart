@@ -19,16 +19,14 @@ class SubjectAnalysisCard extends StatelessWidget {
             children: [
               Text(
                 'Subject Analysis',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
+                style: Theme.of(context).textTheme.titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 12),
               Text(
                 'Subject-wise data is not available for this test.',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: AppColors.textSecondaryLight,
-                    ),
+                style: Theme.of(context).textTheme.bodyMedium
+                    ?.copyWith(color: AppColors.textSecondaryLight),
               ),
             ],
           ),
@@ -44,9 +42,8 @@ class SubjectAnalysisCard extends StatelessWidget {
           children: [
             Text(
               'Subject Analysis',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
+              style: Theme.of(context).textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 12),
             ...items.map((item) => _buildSubjectRow(context, item)),
@@ -83,33 +80,44 @@ class SubjectAnalysisCard extends StatelessWidget {
                 Expanded(
                   child: Text(
                     item.subjectName,
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
+                    style: Theme.of(context).textTheme.titleSmall
+                        ?.copyWith(fontWeight: FontWeight.w600),
                   ),
                 ),
                 Text(
                   '${accuracy.toStringAsFixed(0)}%',
                   style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        color: accuracyColor,
-                        fontWeight: FontWeight.w700,
-                      ),
+                    color: accuracyColor,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ],
             ),
             const SizedBox(height: 8),
             Row(
               children: [
-                _miniStat(context, 'Attempted', '${item.attempted}',
-                    AppColors.primaryLight),
+                _miniStat(
+                  context,
+                  'Attempted',
+                  '${item.attempted}',
+                  AppColors.primaryLight,
+                ),
                 const SizedBox(width: 12),
                 _miniStat(
-                    context, 'Correct', '${item.correct}', AppColors.success),
+                  context,
+                  'Correct',
+                  '${item.correct}',
+                  AppColors.success,
+                ),
                 const SizedBox(width: 12),
                 _miniStat(context, 'Wrong', '${item.wrong}', AppColors.error),
                 const SizedBox(width: 12),
-                _miniStat(context, 'Skipped', '${item.unanswered}',
-                    AppColors.textSecondaryLight),
+                _miniStat(
+                  context,
+                  'Skipped',
+                  '${item.unanswered}',
+                  AppColors.textSecondaryLight,
+                ),
               ],
             ),
             const SizedBox(height: 8),
@@ -129,22 +137,22 @@ class SubjectAnalysisCard extends StatelessWidget {
   }
 
   Widget _miniStat(
-      BuildContext context, String label, String value, Color color) {
+    BuildContext context,
+    String label,
+    String value,
+    Color color,
+  ) {
     return Column(
       children: [
         Text(
           value,
-          style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                color: color,
-                fontWeight: FontWeight.w600,
-              ),
+          style: Theme.of(context).textTheme.labelLarge
+              ?.copyWith(color: color, fontWeight: FontWeight.w600),
         ),
         Text(
           label,
-          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: AppColors.textSecondaryLight,
-                fontSize: 10,
-              ),
+          style: Theme.of(context).textTheme.labelSmall
+              ?.copyWith(color: AppColors.textSecondaryLight, fontSize: 10),
         ),
       ],
     );

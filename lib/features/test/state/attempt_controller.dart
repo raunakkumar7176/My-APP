@@ -1,6 +1,5 @@
 import 'dart:async';
 
-
 import '../../../core/errors/app_error.dart';
 import '../../../core/logging/app_logger.dart';
 import '../../../core/models/answer.dart';
@@ -19,6 +18,11 @@ import '../domain/test_kind.dart';
 import 'attempt_launch_store.dart';
 import 'disposable_notifier.dart';
 
+/// Client-side view of the last autosave. Purely informational: the server
+/// row is the truth; this only tells the user whether the latest local
+/// answers have reached it.
+enum SaveStatus { idle, saving, saved, failed }
+
 /// Owns one attempt on the client: questions (safe RPC), answers, dirty
 /// tracking, autosave and submission. The server owns access, the deadline,
 /// answer validation and scoring; nothing here computes a score or a
@@ -33,10 +37,10 @@ class AttemptController extends DisposableNotifier {
     AnswerRepository? answers,
     TestRepository? tests,
     this.autosaveInterval = const Duration(seconds: 5),
-  })  : _attempts = attempts ?? const SupabaseAttemptRepository(),
-        _questions = questions ?? const SupabaseQuestionRepository(),
-        _answers = answers ?? const SupabaseAnswerRepository(),
-        _tests = tests ?? const SupabaseTestRepository();
+  }) : _attempts = attempts ?? const SupabaseAttemptRepository(),
+       _questions = questions ?? const SupabaseQuestionRepository(),
+       _answers = answers ?? const SupabaseAnswerRepository(),
+       _tests = tests ?? const SupabaseTestRepository();
 
   final String attemptId;
   final String testId;
@@ -77,7 +81,41 @@ class AttemptController extends DisposableNotifier {
   /// tells the user that earlier selections could not be restored.
   bool get answersLoadFailed => _answersLoadFailed;
 
-  TestKind get kind => BackendMapping.fromBackend(_test?.testMode, _test?.settings);
+  // ── save status (informational; the server row is the truth) ──
+  SaveStatus _saveStatus = SaveStatus.idle;
+  DateTime? _lastSavedAt;
+  String? _saveError;
+  int _saveFailures = 0;
+
+  SaveStatus get saveStatus => _saveStatus;
+  DateTime? get lastSavedAt => _lastSavedAt;
+
+  /// User-facing message of the last failed save (mapped by the repository).
+  String? get saveError => _saveError;
+
+  /// Consecutive failed saves since the last success.
+  int get saveFailures => _saveFailures;
+
+  /// True when local answers may not be on the server yet: something changed
+  /// since the last successful save, a save is in flight, or the last save
+  /// failed. The screen uses this before Leave / Submit.
+  bool get hasUnsavedAnswers =>
+      _answersById.isNotEmpty &&
+      (_dirty ||
+          _saveStatus == SaveStatus.saving ||
+          _saveStatus == SaveStatus.failed);
+
+  /// Forces a save now regardless of the timer. Returns true on success (or
+  /// when there was nothing to save).
+  Future<bool> retrySave() async {
+    if (_answersById.isEmpty || _submitting) return true;
+    _dirty = true;
+    await autosaveIfDirty();
+    return _saveStatus != SaveStatus.failed;
+  }
+
+  TestKind get kind =>
+      BackendMapping.fromBackend(_test?.testMode, _test?.settings);
 
   /// True while the server-side attempt is still in progress.
   bool get isInteractive =>
@@ -91,7 +129,8 @@ class AttemptController extends DisposableNotifier {
 
   Answer? answerFor(String questionId) => _answersById[questionId];
 
-  int get answeredCount => _answersById.values.where((a) => a.isAnswered).length;
+  int get answeredCount =>
+      _answersById.values.where((a) => a.isAnswered).length;
   int get markedCount =>
       _answersById.values.where((a) => a.markedForReview).length;
 
@@ -114,11 +153,14 @@ class AttemptController extends DisposableNotifier {
     final hasInProgress = mine.any((a) => a.status == AttemptStatus.inProgress);
     if (requested != null && requested.status != AttemptStatus.inProgress) {
       throw const ValidationError(
-          message: 'This attempt has already been submitted. Open its result instead.');
+        message:
+            'This attempt has already been submitted. Open its result instead.',
+      );
     }
     if (requested == null && !hasInProgress) {
       throw const ValidationError(
-          message: 'No attempt is in progress for this test. Start it from the test page.');
+        message: 'No attempt is in progress for this test. Start it from the test page.',
+      );
     }
   }
 
@@ -145,15 +187,19 @@ class AttemptController extends DisposableNotifier {
             : await _attempts.start(testId);
         if (started.attempt.id != attemptId) {
           AppLogger.warning(
-              'Server resumed a different attempt (${started.attempt.id}) than requested ($attemptId)');
+            'Server resumed a different attempt (${started.attempt.id}) than requested ($attemptId)',
+          );
         }
         _attempt = started.attempt;
-        _test = await _tests.getById(started.attempt.testId) ??
+        _test =
+            await _tests.getById(started.attempt.testId) ??
             _fallbackTest(started.attempt.testId, started.testTitle);
-        _applyQuestions(await _questions.safeQuestions(
-          started.attempt.testId,
-          accessCode: accessCode,
-        ));
+        _applyQuestions(
+          await _questions.safeQuestions(
+            started.attempt.testId,
+            accessCode: accessCode,
+          ),
+        );
       }
       await _loadExistingAnswers();
       if (isInteractive) _startAutosave();
@@ -171,8 +217,9 @@ class AttemptController extends DisposableNotifier {
   void _applyQuestions(List<Question> qs) {
     final shuffle = _test?.shuffleQuestions ?? false;
     final seed = _attempt!.id;
-    _questionsInOrder =
-        shuffle ? DeterministicShuffle.questions(qs, seed) : List.of(qs);
+    _questionsInOrder = shuffle
+        ? DeterministicShuffle.questions(qs, seed)
+        : List.of(qs);
     _optionsInOrder.clear();
     for (final q in _questionsInOrder) {
       if (!q.hasOptions) continue;
@@ -208,14 +255,14 @@ class AttemptController extends DisposableNotifier {
   }
 
   static Test _fallbackTest(String id, String? title) => Test(
-        id: id,
-        createdBy: '',
-        title: (title == null || title.trim().isEmpty)
-            ? TestKind.challengeWithFriends.label
-            : title.trim(),
-        status: TestStatus.live,
-        testMode: 'live',
-      );
+    id: id,
+    createdBy: '',
+    title: (title == null || title.trim().isEmpty)
+        ? TestKind.challengeWithFriends.label
+        : title.trim(),
+    status: TestStatus.live,
+    testMode: 'live',
+  );
 
   // ── answering ──
 
@@ -237,16 +284,17 @@ class AttemptController extends DisposableNotifier {
   /// backend (no `text_answer` column): BACKEND GAP — nothing is recorded.
   void selectOption(String questionId, int? optionIndex) {
     if (!isInteractive) return;
-    _answersById[questionId] =
-        _answerOrNew(questionId).withSelection(optionIndex);
+    _answersById[questionId] = _answerOrNew(questionId)
+        .withSelection(optionIndex);
     _markDirty();
   }
 
   void toggleMarkForReview(String questionId) {
     if (!isInteractive) return;
     final current = _answerOrNew(questionId);
-    _answersById[questionId] =
-        current.withMarkedForReview(!current.markedForReview);
+    _answersById[questionId] = current.withMarkedForReview(
+      !current.markedForReview,
+    );
     _markDirty();
   }
 
@@ -266,13 +314,26 @@ class AttemptController extends DisposableNotifier {
   /// retries; no infinite loop, no data loss.
   Future<void> autosaveIfDirty() async {
     if (!_dirty || _answersById.isEmpty || _submitting) return;
+    if (_saveStatus == SaveStatus.saving) return; // one in flight at a time
     _dirty = false;
+    _saveStatus = SaveStatus.saving;
+    notifyListeners();
     try {
       await _answers.save(_attempt!.id, _answersById.values.toList());
+      _saveStatus = SaveStatus.saved;
+      _lastSavedAt = DateTime.now();
+      _saveError = null;
+      _saveFailures = 0;
     } catch (e) {
       AppLogger.warning('Autosave failed: $e');
       _dirty = true;
+      _saveStatus = SaveStatus.failed;
+      _saveFailures++;
+      _saveError = e is AppError
+          ? e.message
+          : 'Could not save your answers. We will keep retrying.';
     }
+    notifyListeners();
   }
 
   /// Flushes answers and submits. Returns the server result when the RPC
@@ -290,10 +351,21 @@ class AttemptController extends DisposableNotifier {
         try {
           await _answers.save(_attempt!.id, _answersById.values.toList());
           _dirty = false;
+          _saveStatus = SaveStatus.saved;
+          _lastSavedAt = DateTime.now();
+          _saveError = null;
+          _saveFailures = 0;
         } catch (e) {
           // On time-out the server still scores what it has; otherwise the
           // user should know their last answers may not have been saved.
-          if (!timedOut) rethrow;
+          _dirty = true;
+          _saveStatus = SaveStatus.failed;
+          _saveFailures++;
+          if (e is AppError) _saveError = e.message;
+          if (!timedOut) {
+            _startAutosave(); // keep retrying while the user stays
+            rethrow;
+          }
           AppLogger.warning('Final save failed before timed-out submit: $e');
         }
       }
@@ -303,7 +375,9 @@ class AttemptController extends DisposableNotifier {
         id: _attempt!.id,
         testId: _attempt!.testId,
         userId: _attempt!.userId,
-        status: timedOut ? AttemptStatus.autoSubmitted : AttemptStatus.submitted,
+        status: timedOut
+            ? AttemptStatus.autoSubmitted
+            : AttemptStatus.submitted,
         startedAt: _attempt!.startedAt,
         attemptNumber: _attempt!.attemptNumber,
         deadlineAt: _attempt!.deadlineAt,

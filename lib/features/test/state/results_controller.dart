@@ -37,12 +37,12 @@ class ResultsController extends DisposableNotifier {
     AnswerRepository? answers,
     AttemptRepository? attempts,
     Future<Map<String, String>> Function()? subjectNames,
-  })  : _results = results ?? const SupabaseResultRepository(),
-        _tests = tests ?? const SupabaseTestRepository(),
-        _questions = questions ?? const SupabaseQuestionRepository(),
-        _answers = answers ?? const SupabaseAnswerRepository(),
-        _attempts = attempts ?? const SupabaseAttemptRepository(),
-        _subjectNames = subjectNames ?? _loadSubjectNames;
+  }) : _results = results ?? const SupabaseResultRepository(),
+       _tests = tests ?? const SupabaseTestRepository(),
+       _questions = questions ?? const SupabaseQuestionRepository(),
+       _answers = answers ?? const SupabaseAnswerRepository(),
+       _attempts = attempts ?? const SupabaseAttemptRepository(),
+       _subjectNames = subjectNames ?? _loadSubjectNames;
 
   final String attemptId;
   final ResultRepository _results;
@@ -83,17 +83,20 @@ class ResultsController extends DisposableNotifier {
   bool get answersLoadFailed => _answersLoadFailed;
   String? get error => _error;
 
-  TestKind get kind => BackendMapping.fromBackend(_test?.testMode, _test?.settings);
+  TestKind get kind =>
+      BackendMapping.fromBackend(_test?.testMode, _test?.settings);
 
-  Result? get previousResult =>
-      _result == null ? null : ResultAnalyticsMapper.previous(_history, _result!.id);
+  Result? get previousResult => _result == null
+      ? null
+      : ResultAnalyticsMapper.previous(_history, _result!.id);
 
   Future<void> load() async {
     _loading = true;
     _error = null;
     notifyListeners();
     try {
-      _result = AttemptLaunchStore.takeResult(attemptId) ??
+      _result =
+          AttemptLaunchStore.takeResult(attemptId) ??
           await _results.byAttempt(attemptId);
       if (_result == null) {
         _error = 'Result not available yet. Please try again shortly.';
@@ -119,7 +122,10 @@ class ResultsController extends DisposableNotifier {
       _history = loads[1] as List<Result>;
       _myAttempts = loads[3] as List<Attempt>;
       final names = loads[2] as Map<String, String>;
-      _subjects = ResultAnalyticsMapper.subjects(r.subjectBreakdown, subjectNames: names);
+      _subjects = ResultAnalyticsMapper.subjects(
+        r.subjectBreakdown,
+        subjectNames: names,
+      );
       _topics = ResultAnalyticsMapper.topics(r.topicBreakdown);
     } on AppError catch (e) {
       _error = e.message;
@@ -142,7 +148,9 @@ class ResultsController extends DisposableNotifier {
         _answersById = {for (final a in answers) a.questionId: a};
         _answersLoadFailed = false;
       } on AppError catch (e) {
-        AppLogger.warning('Review: saved answers could not be loaded: ${e.message}');
+        AppLogger.warning(
+          'Review: saved answers could not be loaded: ${e.message}',
+        );
         _answersLoadFailed = true;
         _answersById = const {};
       }
@@ -170,8 +178,9 @@ class ResultsController extends DisposableNotifier {
     return null;
   }
 
-  AttemptHistoryEntry? get previousEntry =>
-      _result == null ? null : AttemptHistory.previousOf(attemptHistory, _result!.attemptId);
+  AttemptHistoryEntry? get previousEntry => _result == null
+      ? null
+      : AttemptHistory.previousOf(attemptHistory, _result!.attemptId);
 
   /// Current vs immediately previous attempt; null without a previous one.
   ResultDelta? get deltaFromPrevious {
@@ -225,7 +234,11 @@ class ResultsController extends DisposableNotifier {
       throw const DataError(message: 'Questions are not loaded yet.');
     }
     try {
-      return await TestPdf.questionPaper(test: t, kind: kind, questions: _questionsList);
+      return await TestPdf.questionPaper(
+        test: t,
+        kind: kind,
+        questions: _questionsList,
+      );
     } catch (e, st) {
       AppLogger.error('Question paper PDF failed: $e', stackTrace: st);
       throw const DataError(message: 'Could not generate the question paper.');
@@ -239,7 +252,9 @@ class ResultsController extends DisposableNotifier {
     if (r == null) throw const ValidationError(message: 'No result loaded.');
     if (_busy) throw const ValidationError(message: 'Please wait…');
     if (!canReattempt) {
-      throw const ValidationError(message: 'Re-attempt is not available for this test.');
+      throw const ValidationError(
+        message: 'Re-attempt is not available for this test.',
+      );
     }
     _busy = true;
     notifyListeners();

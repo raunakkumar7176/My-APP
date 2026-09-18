@@ -92,8 +92,9 @@ class TestCreationController extends DisposableNotifier {
     return counts;
   }
 
-  DistributionCheck? get distributionCheck =>
-      questionConfig.isSet ? questionConfig.check(actualDifficultyCounts) : null;
+  DistributionCheck? get distributionCheck => questionConfig.isSet
+      ? questionConfig.check(actualDifficultyCounts)
+      : null;
 
   final List<QuestionDraft> localQuestions = [];
   final List<Question> serverQuestions = [];
@@ -161,7 +162,8 @@ class TestCreationController extends DisposableNotifier {
   bool get canProceedFromConfiguration =>
       (!kind.requiresGroup || (groupId != null && groupId!.isNotEmpty)) &&
       questionConfig.isValid &&
-      (kind.maxQuestionTarget == null || questionConfig.total <= kind.maxQuestionTarget!);
+      (kind.maxQuestionTarget == null ||
+          questionConfig.total <= kind.maxQuestionTarget!);
   bool get hasAnyQuestion =>
       localQuestions.isNotEmpty || serverQuestions.isNotEmpty;
 
@@ -230,7 +232,10 @@ class TestCreationController extends DisposableNotifier {
     accessCode = t.accessCode;
     joinCode = t.joinCode;
     attemptSettings = AttemptSettings.fromSettings(t.settings);
-    lateJoin = LateJoinSettings.fromTest(allowLateJoin: t.allowLateJoin, settings: t.settings);
+    lateJoin = LateJoinSettings.fromTest(
+      allowLateJoin: t.allowLateJoin,
+      settings: t.settings,
+    );
     questionConfig = QuestionConfig.fromSettings(t.settings);
   }
 
@@ -279,7 +284,6 @@ class TestCreationController extends DisposableNotifier {
   });
 
   void setQuestionConfig(QuestionConfig v) => _set(() => questionConfig = v);
-
 
   void setConfiguration({
     required int? durationSec,

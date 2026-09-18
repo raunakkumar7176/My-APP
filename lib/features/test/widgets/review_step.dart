@@ -52,8 +52,9 @@ class ReviewStep extends StatelessWidget {
   final Future<int> Function() onApproveAll;
   final bool busy;
 
-  int get _pending =>
-      serverQuestions.where((q) => q.status != PublishReadiness.approvedStatus).length;
+  int get _pending => serverQuestions
+      .where((q) => q.status != PublishReadiness.approvedStatus)
+      .length;
 
   @override
   Widget build(BuildContext context) {
@@ -63,21 +64,39 @@ class ReviewStep extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Review Test',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleLarge
-                  ?.copyWith(fontWeight: FontWeight.w600)),
+          Text(
+            'Review Test',
+            style: Theme.of(context).textTheme.titleLarge
+                ?.copyWith(fontWeight: FontWeight.w600),
+          ),
           const SizedBox(height: 16),
           _card(context, 'Summary', [
             _row(context, 'Title', title.isEmpty ? '--' : title),
             _row(context, 'Test Type', kind.label),
             _row(context, 'Duration', TestFormatters.duration(durationSec)),
-            _row(context, 'Marks per question', marksPerQuestion?.toString() ?? '--'),
-            _row(context, 'Negative marks', negativeMarks?.toString() ?? 'None'),
-            if (startsAt != null) _row(context, 'Starts', TestFormatters.dateTime(startsAt)),
-            if (endsAt != null) _row(context, 'Ends (calculated)', TestFormatters.dateTime(endsAt)),
-            _row(context, 'Questions', '${serverQuestions.length + localQuestions.length}'),
+            _row(
+              context,
+              'Marks per question',
+              marksPerQuestion?.toString() ?? '--',
+            ),
+            _row(
+              context,
+              'Negative marks',
+              negativeMarks?.toString() ?? 'None',
+            ),
+            if (startsAt != null)
+              _row(context, 'Starts', TestFormatters.dateTime(startsAt)),
+            if (endsAt != null)
+              _row(
+                context,
+                'Ends (calculated)',
+                TestFormatters.dateTime(endsAt),
+              ),
+            _row(
+              context,
+              'Questions',
+              '${serverQuestions.length + localQuestions.length}',
+            ),
             _row(context, 'Syllabus nodes', '$syllabusCount'),
             for (final (label, value) in extraRows) _row(context, label, value),
           ]),
@@ -100,11 +119,11 @@ class ReviewStep extends StatelessWidget {
                         children: [
                           Text(item.label),
                           if (!item.isValid && item.reason != null)
-                            Text(item.reason!,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
-                                    ?.copyWith(color: AppColors.error)),
+                            Text(
+                              item.reason!,
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(color: AppColors.error),
+                            ),
                         ],
                       ),
                     ),
@@ -116,9 +135,7 @@ class ReviewStep extends StatelessWidget {
             _card(
               context,
               'Approval status',
-              [
-                for (final q in serverQuestions) _approvalTile(context, q),
-              ],
+              [for (final q in serverQuestions) _approvalTile(context, q)],
               trailing: _pending > 0
                   ? TextButton.icon(
                       onPressed: busy ? null : () => _approveAll(context),
@@ -141,8 +158,11 @@ class ReviewStep extends StatelessWidget {
                       ),
                       const SizedBox(width: 8),
                       Expanded(
-                        child: Text(d.questionText,
-                            maxLines: 2, overflow: TextOverflow.ellipsis),
+                        child: Text(
+                          d.questionText,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                     ],
                   ),
@@ -165,15 +185,20 @@ class ReviewStep extends StatelessWidget {
   Future<void> _approveAll(BuildContext context) async {
     final failed = await onApproveAll();
     if (!context.mounted) return;
-    _snack(context, failed == 0 ? 'All questions approved' : '$failed approval(s) failed',
-        error: failed > 0);
+    _snack(
+      context,
+      failed == 0 ? 'All questions approved' : '$failed approval(s) failed',
+      error: failed > 0,
+    );
   }
 
   void _snack(BuildContext context, String m, {bool error = false}) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(m),
-      backgroundColor: error ? AppColors.error : AppColors.success,
-    ));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(m),
+        backgroundColor: error ? AppColors.error : AppColors.success,
+      ),
+    );
   }
 
   Widget _approvalTile(BuildContext context, Question q) {
@@ -182,20 +207,28 @@ class ReviewStep extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
         children: [
-          Icon(approved ? Icons.check_circle : Icons.pending,
-              size: 18, color: approved ? AppColors.success : Colors.orange),
+          Icon(
+            approved ? Icons.check_circle : Icons.pending,
+            size: 18,
+            color: approved ? AppColors.success : Colors.orange,
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Q${q.ordinal ?? '?'}: ${q.question}',
-                    maxLines: 2, overflow: TextOverflow.ellipsis),
-                Text(approved ? 'Approved' : 'Pending Review',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: approved ? AppColors.success : Colors.orange,
-                          fontWeight: FontWeight.w500,
-                        )),
+                Text(
+                  'Q${q.ordinal ?? '?'}: ${q.question}',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  approved ? 'Approved' : 'Pending Review',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: approved ? AppColors.success : Colors.orange,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
               ],
             ),
           ),
@@ -209,8 +242,12 @@ class ReviewStep extends StatelessWidget {
     );
   }
 
-  Widget _card(BuildContext context, String title, List<Widget> children,
-      {Widget? trailing}) {
+  Widget _card(
+    BuildContext context,
+    String title,
+    List<Widget> children, {
+    Widget? trailing,
+  }) {
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
@@ -221,11 +258,11 @@ class ReviewStep extends StatelessWidget {
             Row(
               children: [
                 Expanded(
-                  child: Text(title,
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleSmall
-                          ?.copyWith(fontWeight: FontWeight.w600)),
+                  child: Text(
+                    title,
+                    style: Theme.of(context).textTheme.titleSmall
+                        ?.copyWith(fontWeight: FontWeight.w600),
+                  ),
                 ),
                 ?trailing,
               ],
@@ -246,12 +283,12 @@ class ReviewStep extends StatelessWidget {
         children: [
           Text(label, style: Theme.of(context).textTheme.bodyMedium),
           Flexible(
-            child: Text(value,
-                textAlign: TextAlign.end,
-                style: Theme.of(context)
-                    .textTheme
-                    .bodyMedium
-                    ?.copyWith(fontWeight: FontWeight.w500)),
+            child: Text(
+              value,
+              textAlign: TextAlign.end,
+              style: Theme.of(context).textTheme.bodyMedium
+                  ?.copyWith(fontWeight: FontWeight.w500),
+            ),
           ),
         ],
       ),

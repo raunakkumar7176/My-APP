@@ -17,7 +17,12 @@ import '../widgets/step_syllabus.dart';
 /// Five-step wizard over [TestCreationController]. The screen holds only
 /// the current step index; all data and persistence live in the controller.
 class TestCreationScreen extends StatefulWidget {
-  const TestCreationScreen({this.testId, this.controller, this.initialSource, super.key});
+  const TestCreationScreen({
+    this.testId,
+    this.controller,
+    this.initialSource,
+    super.key,
+  });
 
   /// Pre-selected question source (Home tiles); unavailable sources open the
   /// wizard on the truthful "Not configured" step.
@@ -47,14 +52,18 @@ class _TestCreationScreenState extends State<TestCreationScreen> {
   late final bool _owns;
   // A Home tile for an unavailable source lands directly on the source step.
   late int _step =
-      (widget.initialSource != null && !widget.initialSource!.isAvailable) ? 3 : 0;
+      (widget.initialSource != null && !widget.initialSource!.isAvailable)
+      ? 3
+      : 0;
   late QuestionSource _source = widget.initialSource ?? QuestionSource.manual;
 
   @override
   void initState() {
     super.initState();
     _owns = widget.controller == null;
-    _c = widget.controller ?? TestCreationController(editingTestId: widget.testId);
+    _c =
+        widget.controller ??
+        TestCreationController(editingTestId: widget.testId);
     _c.addListener(_onChanged);
     _c.loadGroups();
     if (widget.testId != null) _c.loadForEdit();
@@ -89,10 +98,12 @@ class _TestCreationScreenState extends State<TestCreationScreen> {
   }
 
   void _snack(String m, {bool error = false}) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(m),
-      backgroundColor: error ? AppColors.error : AppColors.success,
-    ));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(m),
+        backgroundColor: error ? AppColors.error : AppColors.success,
+      ),
+    );
   }
 
   Future<void> _saveDraft() async {
@@ -103,12 +114,22 @@ class _TestCreationScreenState extends State<TestCreationScreen> {
         context: context,
         barrierDismissible: false,
         builder: (ctx) => AlertDialog(
-          icon: const Icon(Icons.check_circle, color: AppColors.success, size: 48),
+          icon: const Icon(
+            Icons.check_circle,
+            color: AppColors.success,
+            size: 48,
+          ),
           title: const Text('Draft Saved'),
           content: const Text('Your test has been saved as a draft.'),
           actions: [
-            TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Back to Tests')),
-            FilledButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Continue Editing')),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Back to Tests'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Continue Editing'),
+            ),
           ],
         ),
       );
@@ -126,11 +147,18 @@ class _TestCreationScreenState extends State<TestCreationScreen> {
         context: context,
         barrierDismissible: false,
         builder: (ctx) => AlertDialog(
-          icon: const Icon(Icons.check_circle, color: AppColors.success, size: 48),
+          icon: const Icon(
+            Icons.check_circle,
+            color: AppColors.success,
+            size: 48,
+          ),
           title: const Text('Test Published'),
           content: const Text('Your test is now published and available.'),
           actions: [
-            FilledButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Back to Tests')),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Back to Tests'),
+            ),
           ],
         ),
       );
@@ -140,11 +168,18 @@ class _TestCreationScreenState extends State<TestCreationScreen> {
       showDialog<void>(
         context: context,
         builder: (ctx) => AlertDialog(
-          icon: const Icon(Icons.error_outline, color: AppColors.error, size: 48),
+          icon: const Icon(
+            Icons.error_outline,
+            color: AppColors.error,
+            size: 48,
+          ),
           title: const Text('Not ready to publish'),
           content: Text(e.message),
           actions: [
-            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('OK')),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('OK'),
+            ),
           ],
         ),
       );
@@ -153,11 +188,18 @@ class _TestCreationScreenState extends State<TestCreationScreen> {
       showDialog<void>(
         context: context,
         builder: (ctx) => AlertDialog(
-          icon: const Icon(Icons.error_outline, color: AppColors.error, size: 48),
+          icon: const Icon(
+            Icons.error_outline,
+            color: AppColors.error,
+            size: 48,
+          ),
           title: const Text('Publish Failed'),
           content: Text(e.message),
           actions: [
-            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('OK')),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('OK'),
+            ),
           ],
         ),
       );
@@ -181,11 +223,18 @@ class _TestCreationScreenState extends State<TestCreationScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(Icons.error_outline, size: 48, color: AppColors.error),
+                const Icon(
+                  Icons.error_outline,
+                  size: 48,
+                  color: AppColors.error,
+                ),
                 const SizedBox(height: 16),
                 Text(_c.loadError!, textAlign: TextAlign.center),
                 const SizedBox(height: 16),
-                ElevatedButton(onPressed: () => context.pop(), child: const Text('Go Back')),
+                ElevatedButton(
+                  onPressed: () => context.pop(),
+                  child: const Text('Go Back'),
+                ),
               ],
             ),
           ),
@@ -229,7 +278,8 @@ class _TestCreationScreenState extends State<TestCreationScreen> {
                 ),
               ),
             ),
-            if (i < TestCreationScreen.stepTitles.length - 1) const SizedBox(width: 4),
+            if (i < TestCreationScreen.stepTitles.length - 1)
+              const SizedBox(width: 4),
           ],
         ],
       ),
@@ -252,7 +302,9 @@ class _TestCreationScreenState extends State<TestCreationScreen> {
           durationSec: _c.durationSec,
           marksPerQuestion: _c.marksPerQuestion,
           negativeMarks: _c.negativeMarks,
-          testMode: _c.kind.requiresGroup ? 'group' : (_c.kind.supportsCodeEntry ? 'live' : 'self'),
+          testMode: _c.kind.requiresGroup
+              ? 'group'
+              : (_c.kind.supportsCodeEntry ? 'live' : 'self'),
           groupId: _c.groupId,
           startsAt: _c.startsAt,
           endsAt: _c.endsAt,
@@ -315,13 +367,19 @@ class _TestCreationScreenState extends State<TestCreationScreen> {
           extraRows: [
             if (_c.questionConfig.isSet)
               ('Difficulty target', _c.distributionCheck?.summary ?? ''),
-            ('Attempts', _c.attemptSettings.allowReattempt
-                ? 'Re-attempt allowed, max ${_c.attemptSettings.effectiveMax}'
-                : 'Single attempt'),
+            (
+              'Attempts',
+              _c.attemptSettings.allowReattempt
+                  ? 'Re-attempt allowed, max ${_c.attemptSettings.effectiveMax}'
+                  : 'Single attempt',
+            ),
             if (_c.kind.supportsLateJoin)
-              ('Late joining', _c.lateJoin.enabled
-                  ? 'Allowed for ${_c.lateJoin.minutes} min after start'
-                  : 'Not allowed'),
+              (
+                'Late joining',
+                _c.lateJoin.enabled
+                    ? 'Allowed for ${_c.lateJoin.minutes} min after start'
+                    : 'Not allowed',
+              ),
             ('Question source', _source.label),
           ],
           serverQuestions: _c.serverQuestions,
@@ -350,7 +408,9 @@ class _TestCreationScreenState extends State<TestCreationScreen> {
             const Spacer(),
             if (!last)
               FilledButton(
-                onPressed: busy || !_canProceed ? null : () => setState(() => _step++),
+                onPressed: busy || !_canProceed
+                    ? null
+                    : () => setState(() => _step++),
                 child: const Text('Next'),
               )
             else ...[

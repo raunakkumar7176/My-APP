@@ -9,6 +9,7 @@ import '../state/attempt_controller.dart';
 import '../widgets/answer_grid.dart';
 import '../widgets/countdown_timer.dart';
 import '../widgets/question_card.dart';
+import '../widgets/save_status_bar.dart';
 
 /// Taking screen by attempt id. No backend orchestration lives here: the
 /// controller loads (or server-resumes) the attempt, autosaves and submits;
@@ -100,6 +101,18 @@ class _TestTakingScreenState extends State<TestTakingScreen> {
               _row('Unanswered', '${total - answered}', color: AppColors.error),
             if (marked > 0)
               _row('Marked for review', '$marked', color: AppColors.warning),
+            if (_c.hasUnsavedAnswers) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Some answers are not saved yet. They will be sent with your '
+                'submission; if that fails you can retry without losing them.',
+                key: const Key('submit_unsaved_note'),
+                style: TextStyle(
+                  color: AppColors.warning,
+                  fontSize: Theme.of(ctx).textTheme.bodySmall?.fontSize,
+                ),
+              ),
+            ],
           ],
         ),
         actions: [
@@ -122,13 +135,19 @@ class _TestTakingScreenState extends State<TestTakingScreen> {
       context.go('/tests');
       return;
     }
+    final unsaved = _c.hasUnsavedAnswers;
     final choice = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Leave Test?'),
-        content: const Text(
-          'Your answers are saved automatically and you can resume this attempt '
-          'until its time limit ends. Submit now to get your result.',
+        content: Text(
+          unsaved
+              ? 'Some answers are not saved yet. "Save & Leave" sends them '
+                    'first and only leaves once they are safely stored. You can '
+                    'resume this attempt until its time limit ends.'
+              : 'Your answers are saved automatically and you can resume this '
+                    'attempt until its time limit ends. Submit now to get your result.',
+          key: Key(unsaved ? 'leave_unsaved_note' : 'leave_saved_note'),
         ),
         actions: [
           TextButton(
@@ -136,8 +155,9 @@ class _TestTakingScreenState extends State<TestTakingScreen> {
             child: const Text('Stay'),
           ),
           TextButton(
+            key: const Key('leave_action'),
             onPressed: () => Navigator.of(ctx).pop('leave'),
-            child: const Text('Leave'),
+            child: Text(unsaved ? 'Save & Leave' : 'Leave'),
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop('submit'),
@@ -152,8 +172,22 @@ class _TestTakingScreenState extends State<TestTakingScreen> {
         await _submit(timedOut: false);
         break;
       case 'leave':
-        await _c.autosaveIfDirty();
-        if (mounted) context.go('/tests');
+        // Only leave once the server has the latest answers; otherwise stay
+        // so nothing is lost (the timer keeps retrying, "Retry now" too).
+        final ok = await _c.retrySave();
+        if (!mounted) return;
+        if (ok) {
+          context.go('/tests');
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                _c.saveError ?? 'Could not save your answers. Check your connection and try again.',
+              ),
+              backgroundColor: AppColors.error,
+            ),
+          );
+        }
         break;
       default:
         break;
@@ -269,6 +303,13 @@ class _TestTakingScreenState extends State<TestTakingScreen> {
         ),
         body: Column(
           children: [
+            SaveStatusBar(
+              status: _c.saveStatus,
+              lastSavedAt: _c.lastSavedAt,
+              error: _c.saveError,
+              failures: _c.saveFailures,
+              onRetry: _c.retrySave,
+            ),
             if (_c.answersLoadFailed)
               MaterialBanner(
                 padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
@@ -278,7 +319,10 @@ class _TestTakingScreenState extends State<TestTakingScreen> {
                   'New answers are still saved and scored.',
                 ),
                 actions: [
-                  TextButton(onPressed: _c.reloadSavedAnswers, child: const Text('Retry')),
+                  TextButton(
+                    onPressed: _c.reloadSavedAnswers,
+                    child: const Text('Retry'),
+                  ),
                 ],
               ),
             Expanded(
@@ -349,6 +393,7 @@ class _TestTakingScreenState extends State<TestTakingScreen> {
             ),
             const SizedBox(width: 8),
             FilledButton(
+              key: const Key('submit_button'),
               onPressed: _c.isSubmitting ? null : _confirmSubmit,
               child: Text(_c.isSubmitting ? 'Submitting…' : 'Submit'),
             ),

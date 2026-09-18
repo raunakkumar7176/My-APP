@@ -19,46 +19,93 @@ void main() {
   final endsAt = DateTime.utc(2026, 9, 16, 18, 4);
   const minute = Duration(minutes: 1);
 
-  String? reason(TestStatus status, DateTime now) => TestLifecycle.startBlockReason(
-      status: status, startsAt: startsAt, endsAt: endsAt, now: now);
+  String? reason(TestStatus status, DateTime now) =>
+      TestLifecycle.startBlockReason(
+        status: status,
+        startsAt: startsAt,
+        endsAt: endsAt,
+        now: now,
+      );
 
   group('SchedulePhase boundaries (mirror _fn_start_attempt_core)', () {
     test('1 minute before starts_at -> notStarted', () {
-      expect(TestLifecycle.phase(startsAt: startsAt, endsAt: endsAt, now: startsAt.subtract(minute)),
-          SchedulePhase.notStarted);
+      expect(
+        TestLifecycle.phase(
+          startsAt: startsAt,
+          endsAt: endsAt,
+          now: startsAt.subtract(minute),
+        ),
+        SchedulePhase.notStarted,
+      );
     });
-    test('exactly at starts_at -> active (server: now() < starts_at blocks)', () {
-      expect(TestLifecycle.phase(startsAt: startsAt, endsAt: endsAt, now: startsAt),
-          SchedulePhase.active);
-    });
+    test(
+      'exactly at starts_at -> active (server: now() < starts_at blocks)',
+      () {
+        expect(
+          TestLifecycle.phase(
+            startsAt: startsAt,
+            endsAt: endsAt,
+            now: startsAt,
+          ),
+          SchedulePhase.active,
+        );
+      },
+    );
     test('1 minute after starts_at -> active', () {
-      expect(TestLifecycle.phase(startsAt: startsAt, endsAt: endsAt, now: startsAt.add(minute)),
-          SchedulePhase.active);
+      expect(
+        TestLifecycle.phase(
+          startsAt: startsAt,
+          endsAt: endsAt,
+          now: startsAt.add(minute),
+        ),
+        SchedulePhase.active,
+      );
     });
     test('exactly at ends_at -> ended (live R4_7_6: now() >= ends_at is TEST_ENDED)', () {
-      expect(TestLifecycle.phase(startsAt: startsAt, endsAt: endsAt, now: endsAt),
-          SchedulePhase.ended);
       expect(
-          TestLifecycle.phase(
-              startsAt: startsAt,
-              endsAt: endsAt,
-              now: endsAt.subtract(const Duration(seconds: 1))),
-          SchedulePhase.active);
+        TestLifecycle.phase(startsAt: startsAt, endsAt: endsAt, now: endsAt),
+        SchedulePhase.ended,
+      );
+      expect(
+        TestLifecycle.phase(
+          startsAt: startsAt,
+          endsAt: endsAt,
+          now: endsAt.subtract(const Duration(seconds: 1)),
+        ),
+        SchedulePhase.active,
+      );
     });
     test('1 minute after ends_at -> ended', () {
-      expect(TestLifecycle.phase(startsAt: startsAt, endsAt: endsAt, now: endsAt.add(minute)),
-          SchedulePhase.ended);
+      expect(
+        TestLifecycle.phase(
+          startsAt: startsAt,
+          endsAt: endsAt,
+          now: endsAt.add(minute),
+        ),
+        SchedulePhase.ended,
+      );
     });
     test('no window -> always active', () {
-      expect(TestLifecycle.phase(startsAt: null, endsAt: null, now: startsAt),
-          SchedulePhase.active);
+      expect(
+        TestLifecycle.phase(startsAt: null, endsAt: null, now: startsAt),
+        SchedulePhase.active,
+      );
     });
-    test('phase compares instants: a local-zone "now" gives the same answer', () {
-      final localNow = startsAt.add(minute).toLocal();
-      expect(localNow.isUtc, isFalse);
-      expect(TestLifecycle.phase(startsAt: startsAt, endsAt: endsAt, now: localNow),
-          SchedulePhase.active);
-    });
+    test(
+      'phase compares instants: a local-zone "now" gives the same answer',
+      () {
+        final localNow = startsAt.add(minute).toLocal();
+        expect(localNow.isUtc, isFalse);
+        expect(
+          TestLifecycle.phase(
+            startsAt: startsAt,
+            endsAt: endsAt,
+            now: localNow,
+          ),
+          SchedulePhase.active,
+        );
+      },
+    );
   });
 
   group('startBlockReason by status x window', () {
@@ -84,18 +131,34 @@ void main() {
       expect(reason(TestStatus.live, endsAt.add(minute)), 'Test ended.');
     });
     test('live + future start -> not started (server applies starts_at to every status)', () {
-      expect(reason(TestStatus.live, startsAt.subtract(minute)), startsWith('Test starts at'));
-    });
-    test('ends_at is a hard block regardless of allow_late_join (live R4_7_6)', () {
-      final t = Test(
-        id: 't', createdBy: 'u', title: 'x', status: TestStatus.published,
-        startsAt: startsAt, endsAt: endsAt, allowLateJoin: true,
-      );
       expect(
-          TestLifecycle.startBlockReason(
-              status: t.status, startsAt: t.startsAt, endsAt: t.endsAt, now: endsAt),
-          'Test ended.');
+        reason(TestStatus.live, startsAt.subtract(minute)),
+        startsWith('Test starts at'),
+      );
     });
+    test(
+      'ends_at is a hard block regardless of allow_late_join (live R4_7_6)',
+      () {
+        final t = Test(
+          id: 't',
+          createdBy: 'u',
+          title: 'x',
+          status: TestStatus.published,
+          startsAt: startsAt,
+          endsAt: endsAt,
+          allowLateJoin: true,
+        );
+        expect(
+          TestLifecycle.startBlockReason(
+            status: t.status,
+            startsAt: t.startsAt,
+            endsAt: t.endsAt,
+            now: endsAt,
+          ),
+          'Test ended.',
+        );
+      },
+    );
     test('deadline boundary is consistent: LEAST(now+duration, ends_at) expires at ends_at', () {
       // Server: deadline = LEAST(now() + duration_sec, ends_at).
       final now = endsAt.subtract(const Duration(minutes: 10));
@@ -106,11 +169,17 @@ void main() {
       // the same closed boundary as the ended phase.
       final remaining = deadline.difference(endsAt);
       expect(remaining <= Duration.zero, isTrue);
-      expect(TestLifecycle.phase(startsAt: startsAt, endsAt: endsAt, now: deadline),
-          SchedulePhase.ended);
+      expect(
+        TestLifecycle.phase(startsAt: startsAt, endsAt: endsAt, now: deadline),
+        SchedulePhase.ended,
+      );
     });
     test('terminal statuses stay blocked regardless of window', () {
-      for (final s in [TestStatus.completed, TestStatus.ended, TestStatus.evaluated]) {
+      for (final s in [
+        TestStatus.completed,
+        TestStatus.ended,
+        TestStatus.evaluated,
+      ]) {
         expect(reason(s, startsAt.add(minute)), 'This test has ended.');
       }
       expect(reason(TestStatus.draft, startsAt.add(minute)), contains('draft'));
@@ -120,7 +189,10 @@ void main() {
   group('timezone conversion', () {
     test('timestamptz with +00:00 parses to the same instant, exposed in local time', () {
       final t = Test.fromJson({
-        'id': 't', 'created_by': 'u', 'title': 'jai', 'status': 'published',
+        'id': 't',
+        'created_by': 'u',
+        'title': 'jai',
+        'status': 'published',
         'starts_at': '2026-09-16T17:04:00+00:00',
         'ends_at': '2026-09-16T18:04:00+00:00',
       });
@@ -129,10 +201,15 @@ void main() {
       expect(t.endsAt!.toUtc(), endsAt);
       // The formatter prints local wall-clock, i.e. what the user picked.
       final local = startsAt.toLocal();
-      expect(TestFormatters.dateTime(t.startsAt),
-          '${local.day}/${local.month}/${local.year} ${local.hour}:${local.minute.toString().padLeft(2, '0')}');
+      expect(
+        TestFormatters.dateTime(t.startsAt),
+        '${local.day}/${local.month}/${local.year} ${local.hour}:${local.minute.toString().padLeft(2, '0')}',
+      );
       // Same output whether given the UTC or local representation.
-      expect(TestFormatters.dateTime(startsAt), TestFormatters.dateTime(t.startsAt));
+      expect(
+        TestFormatters.dateTime(startsAt),
+        TestFormatters.dateTime(t.startsAt),
+      );
     });
 
     test('Z suffix and explicit offsets map to the same instant', () {
@@ -145,59 +222,91 @@ void main() {
     test('write payload carries an explicit UTC offset (never a naive local string)', () {
       final picked = DateTime(2026, 9, 16, 22, 34); // local picker value
       final input = TestWriteInput(
-        title: 'jai', testMode: 'self', settings: const {},
-        startsAt: picked, endsAt: picked.add(const Duration(hours: 1)),
+        title: 'jai',
+        testMode: 'self',
+        settings: const {},
+        startsAt: picked,
+        endsAt: picked.add(const Duration(hours: 1)),
       );
       final p = input.toCreateParams();
       final sent = p['p_starts_at'] as String;
       expect(sent, endsWith('Z'));
       expect(DateTime.parse(sent), picked.toUtc());
-      expect(Test(id: 't', createdBy: 'u', title: 'x', status: TestStatus.draft, startsAt: picked)
-          .toJson()['starts_at'], endsWith('Z'));
+      expect(
+        Test(
+          id: 't',
+          createdBy: 'u',
+          title: 'x',
+          status: TestStatus.draft,
+          startsAt: picked,
+        ).toJson()['starts_at'],
+        endsWith('Z'),
+      );
     });
 
     test('a naive local string sent to timestamptz would shift the instant (the old bug)', () {
       final picked = DateTime(2026, 9, 16, 22, 34);
       final naive = picked.toIso8601String(); // no offset
       final asServerWouldStore = DateTime.parse('${naive}Z'); // session tz UTC
-      expect(asServerWouldStore.difference(picked.toUtc()),
-          DateTime.now().timeZoneOffset, // = the shift users saw
-          skip: DateTime.now().timeZoneOffset == Duration.zero
-              ? 'host runs in UTC; shift is zero here'
-              : false);
+      expect(
+        asServerWouldStore.difference(picked.toUtc()),
+        DateTime.now().timeZoneOffset, // = the shift users saw
+        skip: DateTime.now().timeZoneOffset == Duration.zero
+            ? 'host runs in UTC; shift is zero here'
+            : false,
+      );
     });
   });
 
   group('TestDetailController', () {
-    Test jai({TestStatus status = TestStatus.published, String mode = 'self', String? join}) =>
-        Test(
-          id: 't-1', createdBy: 'u-1', title: 'jai', status: status, testMode: mode,
-          durationSec: 3600, startsAt: startsAt, endsAt: endsAt, accessCode: 'x', joinCode: join,
-        );
+    Test jai({
+      TestStatus status = TestStatus.published,
+      String mode = 'self',
+      String? join,
+    }) => Test(
+      id: 't-1',
+      createdBy: 'u-1',
+      title: 'jai',
+      status: status,
+      testMode: mode,
+      durationSec: 3600,
+      startsAt: startsAt,
+      endsAt: endsAt,
+      accessCode: 'x',
+      joinCode: join,
+    );
 
     TestDetailController make(Test t, DateTime now) => TestDetailController(
-          testId: 't-1',
-          tests: FakeTestRepository()..rows['t-1'] = t,
-          questions: FakeQuestionRepository(),
-          attempts: FakeAttemptRepository(),
-          results: FakeResultRepository(),
-          currentUserId: () => 'u-1',
-          clock: () => now,
-        );
+      testId: 't-1',
+      tests: FakeTestRepository()..rows['t-1'] = t,
+      questions: FakeQuestionRepository(),
+      attempts: FakeAttemptRepository(),
+      results: FakeResultRepository(),
+      currentUserId: () => 'u-1',
+      clock: () => now,
+    );
 
-    test('inside window: startable, phase active (screenshot scenario)', () async {
-      final c = make(jai(), startsAt.add(const Duration(minutes: 6)).toLocal());
-      await c.load();
-      expect(c.phase, SchedulePhase.active);
-      expect(c.startBlockReason(), isNull);
-    });
+    test(
+      'inside window: startable, phase active (screenshot scenario)',
+      () async {
+        final c = make(
+          jai(),
+          startsAt.add(const Duration(minutes: 6)).toLocal(),
+        );
+        await c.load();
+        expect(c.phase, SchedulePhase.active);
+        expect(c.startBlockReason(), isNull);
+      },
+    );
 
     test('before window: "Test starts at" with local formatting', () async {
       final c = make(jai(), startsAt.subtract(minute));
       await c.load();
       expect(c.phase, SchedulePhase.notStarted);
-      expect(c.startBlockReason(formatDateTime: TestFormatters.dateTime),
-          'Test starts at ${TestFormatters.dateTime(startsAt)}.');
+      expect(
+        c.startBlockReason(formatDateTime: TestFormatters.dateTime),
+        'Test starts at ${TestFormatters.dateTime(startsAt)}.',
+      );
     });
 
     test('after window: "Test ended."', () async {
@@ -207,35 +316,46 @@ void main() {
       expect(c.startBlockReason(), 'Test ended.');
     });
 
-    test('join code hidden for Self, shown for Challenge with Friends', () async {
-      final self = make(jai(join: 'ABCD'), startsAt);
-      await self.load();
-      expect(self.showsJoinCode, isFalse);
-      final live = make(jai(mode: 'live', join: 'ABCD'), startsAt);
-      await live.load();
-      expect(live.showsJoinCode, isTrue);
-    });
+    test(
+      'join code hidden for Self, shown for Challenge with Friends',
+      () async {
+        final self = make(jai(join: 'ABCD'), startsAt);
+        await self.load();
+        expect(self.showsJoinCode, isFalse);
+        final live = make(jai(mode: 'live', join: 'ABCD'), startsAt);
+        await live.load();
+        expect(live.showsJoinCode, isTrue);
+      },
+    );
 
-    test('existing in_progress attempt: server resume is passed through untouched', () async {
-      final attempts = FakeAttemptRepository()
-        ..next = Attempt(
-          id: 'a-old', testId: 't-1', userId: 'u-1', status: AttemptStatus.inProgress,
-          startedAt: startsAt, deadlineAt: endsAt, attemptNumber: 1,
+    test(
+      'existing in_progress attempt: server resume is passed through untouched',
+      () async {
+        final attempts = FakeAttemptRepository()
+          ..next = Attempt(
+            id: 'a-old',
+            testId: 't-1',
+            userId: 'u-1',
+            status: AttemptStatus.inProgress,
+            startedAt: startsAt,
+            deadlineAt: endsAt,
+            attemptNumber: 1,
+          );
+        final c = TestDetailController(
+          testId: 't-1',
+          tests: FakeTestRepository()..rows['t-1'] = jai(),
+          questions: FakeQuestionRepository(),
+          attempts: attempts,
+          results: FakeResultRepository(),
+          currentUserId: () => 'u-1',
+          clock: () => startsAt.add(minute),
         );
-      final c = TestDetailController(
-        testId: 't-1',
-        tests: FakeTestRepository()..rows['t-1'] = jai(),
-        questions: FakeQuestionRepository(),
-        attempts: attempts,
-        results: FakeResultRepository(),
-        currentUserId: () => 'u-1',
-        clock: () => startsAt.add(minute),
-      );
-      await c.load();
-      final launched = await c.start();
-      expect(attempts.calls, contains('start:t-1'));
-      expect(launched.started.attempt.id, 'a-old');
-      expect(launched.started.attempt.status, AttemptStatus.inProgress);
-    });
+        await c.load();
+        final launched = await c.start();
+        expect(attempts.calls, contains('start:t-1'));
+        expect(launched.started.attempt.id, 'a-old');
+        expect(launched.started.attempt.status, AttemptStatus.inProgress);
+      },
+    );
   });
 }

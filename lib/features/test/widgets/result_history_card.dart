@@ -20,8 +20,11 @@ class ResultHistoryCard extends StatelessWidget {
     }
 
     final sorted = List<Result>.from(results)
-      ..sort((a, b) =>
-          (b.computedAt ?? DateTime(0)).compareTo(a.computedAt ?? DateTime(0)));
+      ..sort(
+        (a, b) => (b.computedAt ?? DateTime(0)).compareTo(
+          a.computedAt ?? DateTime(0),
+        ),
+      );
 
     return Card(
       child: Padding(
@@ -31,16 +34,14 @@ class ResultHistoryCard extends StatelessWidget {
           children: [
             Text(
               'Result History',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
+              style: Theme.of(context).textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 4),
             Text(
               '${sorted.length} attempts for this test',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: AppColors.textSecondaryLight,
-                  ),
+              style: Theme.of(context).textTheme.bodySmall
+                  ?.copyWith(color: AppColors.textSecondaryLight),
             ),
             const SizedBox(height: 12),
             ...sorted.asMap().entries.map((entry) {
@@ -56,7 +57,11 @@ class ResultHistoryCard extends StatelessWidget {
   }
 
   Widget _buildHistoryRow(
-      BuildContext context, Result result, int index, bool isCurrent) {
+    BuildContext context,
+    Result result,
+    int index,
+    bool isCurrent,
+  ) {
     final percentage = result.percentage ?? 0;
     final isPassed = result.isPassed ?? false;
 
@@ -86,9 +91,9 @@ class ResultHistoryCard extends StatelessWidget {
               child: Text(
                 '#${index + 1}',
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: isPassed ? AppColors.success : AppColors.error,
-                      fontWeight: FontWeight.w700,
-                    ),
+                  color: isPassed ? AppColors.success : AppColors.error,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
           ),
@@ -99,16 +104,14 @@ class ResultHistoryCard extends StatelessWidget {
               children: [
                 Text(
                   'Attempt ${index + 1}',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w500,
-                      ),
+                  style: Theme.of(context).textTheme.bodyMedium
+                      ?.copyWith(fontWeight: FontWeight.w500),
                 ),
                 if (result.computedAt != null)
                   Text(
                     _formatDate(result.computedAt!),
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: AppColors.textSecondaryLight,
-                        ),
+                    style: Theme.of(context).textTheme.labelSmall
+                        ?.copyWith(color: AppColors.textSecondaryLight),
                   ),
               ],
             ),
@@ -116,9 +119,9 @@ class ResultHistoryCard extends StatelessWidget {
           Text(
             '${percentage.toStringAsFixed(1)}%',
             style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  color: isPassed ? AppColors.success : AppColors.error,
-                  fontWeight: FontWeight.w700,
-                ),
+              color: isPassed ? AppColors.success : AppColors.error,
+              fontWeight: FontWeight.w700,
+            ),
           ),
           if (isCurrent) ...[
             const SizedBox(width: 8),
@@ -131,9 +134,9 @@ class ResultHistoryCard extends StatelessWidget {
               child: Text(
                 'Current',
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: AppColors.primaryLight,
-                      fontWeight: FontWeight.w600,
-                    ),
+                  color: AppColors.primaryLight,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ],

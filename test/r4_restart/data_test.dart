@@ -13,28 +13,34 @@ import 'package:my_praperation/features/test/domain/test_kind.dart';
 
 void main() {
   group('TestWriteInput params', () {
-    test('create: Practice sends test_mode=self + settings.test_kind; omits nulls',
-        () {
-      final b = BackendMapping.toBackend(TestKind.practice);
-      final p = TestWriteInput(
-        title: 'T',
-        testMode: b.mode.dbValue,
-        settings: BackendMapping.settingsFor(TestKind.practice, null),
-        durationSec: 10800,
-      ).toCreateParams();
-      expect(p['p_test_mode'], 'self');
-      expect(p['p_settings'], {'test_kind': 'practice'});
-      expect(p['p_creation_method'], 'manual');
-      expect(p.containsKey('p_starts_at'), isFalse);
-      expect(p.containsKey('p_group_id'), isFalse);
-    });
+    test(
+      'create: Practice sends test_mode=self + settings.test_kind; omits nulls',
+      () {
+        final b = BackendMapping.toBackend(TestKind.practice);
+        final p = TestWriteInput(
+          title: 'T',
+          testMode: b.mode.dbValue,
+          settings: BackendMapping.settingsFor(TestKind.practice, null),
+          durationSec: 10800,
+        ).toCreateParams();
+        expect(p['p_test_mode'], 'self');
+        expect(p['p_settings'], {'test_kind': 'practice'});
+        expect(p['p_creation_method'], 'manual');
+        expect(p.containsKey('p_starts_at'), isFalse);
+        expect(p.containsKey('p_group_id'), isFalse);
+      },
+    );
 
-    test('create: Challenge with Friends sends live and no settings; Group sends group',
-        () {
+    test('create: Challenge with Friends sends live and no settings; Group sends group', () {
       final live = TestWriteInput(
         title: 'T',
-        testMode: BackendMapping.toBackend(TestKind.challengeWithFriends).mode.dbValue,
-        settings: BackendMapping.settingsFor(TestKind.challengeWithFriends, null),
+        testMode: BackendMapping.toBackend(TestKind.challengeWithFriends)
+            .mode
+            .dbValue,
+        settings: BackendMapping.settingsFor(
+          TestKind.challengeWithFriends,
+          null,
+        ),
         accessCode: 'ABC',
       ).toCreateParams();
       expect(live['p_test_mode'], 'live');
@@ -105,7 +111,7 @@ void main() {
           'started_at': '2026-09-16T10:00:00Z',
           'deadline_at': null,
           'attempt_number': 1,
-        }
+        },
       ]);
       expect(r.attempt.id, 'a-2');
       expect(r.attempt.userId, 'u-1');
@@ -114,42 +120,83 @@ void main() {
     });
 
     test('rejects unusable shapes instead of fabricating an attempt', () {
-      expect(() => SupabaseAttemptRepository.parseStarted('a-3'),
-          throwsA(isA<DataError>()));
-      expect(() => SupabaseAttemptRepository.parseStarted({'attempt_id': 'a-3'}),
-          throwsA(isA<DataError>()));
-      expect(() => SupabaseAttemptRepository.parseStarted(null),
-          throwsA(isA<DataError>()));
+      expect(
+        () => SupabaseAttemptRepository.parseStarted('a-3'),
+        throwsA(isA<DataError>()),
+      );
+      expect(
+        () => SupabaseAttemptRepository.parseStarted({'attempt_id': 'a-3'}),
+        throwsA(isA<DataError>()),
+      );
+      expect(
+        () => SupabaseAttemptRepository.parseStarted(null),
+        throwsA(isA<DataError>()),
+      );
     });
   });
 
-  group('Submit response parsing (rpc_submit_attempt return shape NOT VERIFIED)', () {
-    test('a results row is recognised and parsed', () {
-      final r = SupabaseAttemptRepository.resultFromSubmitResponse({
-        'id': 'r-1', 'attempt_id': 'a-1', 'test_id': 't-1', 'user_id': 'u-1',
-        'score': 3, 'max_score': 5, 'correct_count': 3,
-      }, attemptId: 'a-1');
-      expect(r?.id, 'r-1');
-      expect(r?.score, 3);
-    });
+  group(
+    'Submit response parsing (rpc_submit_attempt return shape NOT VERIFIED)',
+    () {
+      test('a results row is recognised and parsed', () {
+        final r = SupabaseAttemptRepository.resultFromSubmitResponse({
+          'id': 'r-1',
+          'attempt_id': 'a-1',
+          'test_id': 't-1',
+          'user_id': 'u-1',
+          'score': 3,
+          'max_score': 5,
+          'correct_count': 3,
+        }, attemptId: 'a-1');
+        expect(r?.id, 'r-1');
+        expect(r?.score, 3);
+      });
 
-    test('an attempts row, a message, or null yields null (not an error)', () {
-      expect(SupabaseAttemptRepository.resultFromSubmitResponse({
-        'id': 'a-1', 'attempt_id': 'a-1', 'status': 'submitted',
-      }, attemptId: 'a-1'), isNull);
-      expect(SupabaseAttemptRepository.resultFromSubmitResponse(
-          {'message': 'ok'}, attemptId: 'a-1'), isNull);
-      expect(SupabaseAttemptRepository.resultFromSubmitResponse(null, attemptId: 'a-1'), isNull);
-      expect(SupabaseAttemptRepository.resultFromSubmitResponse(
-          [{'attempt_id': 'other', 'score': 1}], attemptId: 'a-1'), isNull);
-    });
-  });
+      test(
+        'an attempts row, a message, or null yields null (not an error)',
+        () {
+          expect(
+            SupabaseAttemptRepository.resultFromSubmitResponse({
+              'id': 'a-1',
+              'attempt_id': 'a-1',
+              'status': 'submitted',
+            }, attemptId: 'a-1'),
+            isNull,
+          );
+          expect(
+            SupabaseAttemptRepository.resultFromSubmitResponse({
+              'message': 'ok',
+            }, attemptId: 'a-1'),
+            isNull,
+          );
+          expect(
+            SupabaseAttemptRepository.resultFromSubmitResponse(
+              null,
+              attemptId: 'a-1',
+            ),
+            isNull,
+          );
+          expect(
+            SupabaseAttemptRepository.resultFromSubmitResponse([
+              {'attempt_id': 'other', 'score': 1},
+            ], attemptId: 'a-1'),
+            isNull,
+          );
+        },
+      );
+    },
+  );
 
   group('Safe-question options carry their server index', () {
     test('Question.fromJson assigns index = position in the options array', () {
       final q = Question.fromJson({
-        'id': 'q-1', 'test_id': 't-1', 'question': 'Q', 'difficulty': 'easy',
-        'marks': 1, 'status': 'approved', 'question_type': 'mcq',
+        'id': 'q-1',
+        'test_id': 't-1',
+        'question': 'Q',
+        'difficulty': 'easy',
+        'marks': 1,
+        'status': 'approved',
+        'question_type': 'mcq',
         'options': [
           {'id': '', 'text': 'A'},
           {'id': '', 'text': 'B'},
@@ -158,7 +205,11 @@ void main() {
       });
       expect(q.options!.map((o) => o.index), [0, 1, 2]);
       expect(q.options![2].text, 'C', reason: 'bare strings tolerated');
-      expect(q.options![0].id, '', reason: 'ids may be empty; index is the identity');
+      expect(
+        q.options![0].id,
+        '',
+        reason: 'ids may be empty; index is the identity',
+      );
     });
   });
 }

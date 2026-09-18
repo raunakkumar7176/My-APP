@@ -47,11 +47,13 @@ class QuestionReviewCard extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             if (question.hasOptions)
-              ...question.options!.map((opt) => _buildOption(
-                    context,
-                    option: opt,
-                    isSelected: selectedIndex == opt.index,
-                  )),
+              ...question.options!.map(
+                (opt) => _buildOption(
+                  context,
+                  option: opt,
+                  isSelected: selectedIndex == opt.index,
+                ),
+              ),
             // Typed-answer questions have no storage on the live backend.
             if (!question.hasOptions) _buildUnanswered(context),
             if (question.explanation != null &&
@@ -105,9 +107,9 @@ class QuestionReviewCard extends StatelessWidget {
           child: Text(
             'Q $questionNumber / $totalQuestions',
             style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  color: AppColors.primaryLight,
-                  fontWeight: FontWeight.w600,
-                ),
+              color: AppColors.primaryLight,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ),
         const SizedBox(width: 8),
@@ -119,9 +121,8 @@ class QuestionReviewCard extends StatelessWidget {
           ),
           child: Text(
             '${question.marks} mark${question.marks != 1 ? 's' : ''}',
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: AppColors.success,
-                ),
+            style: Theme.of(context).textTheme.labelSmall
+                ?.copyWith(color: AppColors.success),
           ),
         ),
         const SizedBox(width: 8),
@@ -138,10 +139,8 @@ class QuestionReviewCard extends StatelessWidget {
               const SizedBox(width: 4),
               Text(
                 statusText,
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: statusColor,
-                      fontWeight: FontWeight.w600,
-                    ),
+                style: Theme.of(context).textTheme.labelSmall
+                    ?.copyWith(color: statusColor, fontWeight: FontWeight.w600),
               ),
             ],
           ),
@@ -179,9 +178,7 @@ class QuestionReviewCard extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: color,
-            ),
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(color: color),
       ),
     );
   }
@@ -216,10 +213,10 @@ class QuestionReviewCard extends StatelessWidget {
               child: Text(
                 option.text,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: isSelected
-                          ? AppColors.primaryLight
-                          : AppColors.textPrimaryLight,
-                    ),
+                  color: isSelected
+                      ? AppColors.primaryLight
+                      : AppColors.textPrimaryLight,
+                ),
               ),
             ),
           ],
@@ -239,9 +236,9 @@ class QuestionReviewCard extends StatelessWidget {
       child: Text(
         'Not answered',
         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: AppColors.textSecondaryLight,
-              fontStyle: FontStyle.italic,
-            ),
+          color: AppColors.textSecondaryLight,
+          fontStyle: FontStyle.italic,
+        ),
       ),
     );
   }
@@ -260,15 +257,18 @@ class QuestionReviewCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.lightbulb_outline,
-                  size: 16, color: AppColors.success),
+              const Icon(
+                Icons.lightbulb_outline,
+                size: 16,
+                color: AppColors.success,
+              ),
               const SizedBox(width: 6),
               Text(
                 'Explanation',
                 style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      color: AppColors.success,
-                      fontWeight: FontWeight.w600,
-                    ),
+                  color: AppColors.success,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ],
           ),
@@ -285,15 +285,18 @@ class QuestionReviewCard extends StatelessWidget {
   Widget _buildNoExplanation(BuildContext context) {
     return Row(
       children: [
-        const Icon(Icons.info_outline,
-            size: 14, color: AppColors.textSecondaryLight),
+        const Icon(
+          Icons.info_outline,
+          size: 14,
+          color: AppColors.textSecondaryLight,
+        ),
         const SizedBox(width: 6),
         Text(
           'Explanation not available',
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: AppColors.textSecondaryLight,
-                fontStyle: FontStyle.italic,
-              ),
+            color: AppColors.textSecondaryLight,
+            fontStyle: FontStyle.italic,
+          ),
         ),
       ],
     );

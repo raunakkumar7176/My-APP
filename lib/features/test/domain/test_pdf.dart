@@ -18,7 +18,10 @@ import 'test_kind.dart';
 /// Nothing is derived beyond formatting: no rank/percentile/cutoff/labels.
 abstract final class TestPdf {
   static const _base = pw.TextStyle(fontSize: 11);
-  static const _bold = pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold);
+  static const _bold = pw.TextStyle(
+    fontSize: 11,
+    fontWeight: pw.FontWeight.bold,
+  );
   static const _h1 = pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold);
   static const _h2 = pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold);
 
@@ -39,39 +42,50 @@ abstract final class TestPdf {
         if (q.subjectId != null) subjectNames[q.subjectId!] ?? q.subjectId!,
     };
 
-    doc.addPage(pw.MultiPage(
-      pageFormat: PdfPageFormat.a4,
-      margin: const pw.EdgeInsets.all(32),
-      footer: (ctx) => pw.Align(
-        alignment: pw.Alignment.centerRight,
-        child: pw.Text('Page ${ctx.pageNumber} / ${ctx.pagesCount}',
-            style: const pw.TextStyle(fontSize: 9)),
-      ),
-      build: (ctx) => [
-        pw.Text(test.title, style: _h1),
-        pw.SizedBox(height: 6),
-        _kv('Test type', kind.label),
-        _kv('Duration', _duration(test.durationSec)),
-        _kv('Total questions', '${questions.length}'),
-        if (test.marksPerQuestion != null) _kv('Marks per question', '${test.marksPerQuestion}'),
-        if (test.negativeMarks != null && test.negativeMarks! > 0)
-          _kv('Negative marks', '${test.negativeMarks}'),
-        if (subjects.isNotEmpty) _kv('Subjects', subjects.join(', ')),
-        if (generatedFor != null) _kv('Generated for', generatedFor),
-        if (test.instructions != null && test.instructions!.trim().isNotEmpty) ...[
-          pw.SizedBox(height: 10),
-          pw.Text('Instructions', style: _h2),
-          pw.Text(test.instructions!.trim(), style: _base),
+    doc.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(32),
+        footer: (ctx) => pw.Align(
+          alignment: pw.Alignment.centerRight,
+          child: pw.Text(
+            'Page ${ctx.pageNumber} / ${ctx.pagesCount}',
+            style: const pw.TextStyle(fontSize: 9),
+          ),
+        ),
+        build: (ctx) => [
+          pw.Text(test.title, style: _h1),
+          pw.SizedBox(height: 6),
+          _kv('Test type', kind.label),
+          _kv('Duration', _duration(test.durationSec)),
+          _kv('Total questions', '${questions.length}'),
+          if (test.marksPerQuestion != null)
+            _kv('Marks per question', '${test.marksPerQuestion}'),
+          if (test.negativeMarks != null && test.negativeMarks! > 0)
+            _kv('Negative marks', '${test.negativeMarks}'),
+          if (subjects.isNotEmpty) _kv('Subjects', subjects.join(', ')),
+          if (generatedFor != null) _kv('Generated for', generatedFor),
+          if (test.instructions != null &&
+              test.instructions!.trim().isNotEmpty) ...[
+            pw.SizedBox(height: 10),
+            pw.Text('Instructions', style: _h2),
+            pw.Text(test.instructions!.trim(), style: _base),
+          ],
+          pw.SizedBox(height: 14),
+          pw.Divider(),
+          for (var i = 0; i < questions.length; i++)
+            _question(i + 1, questions[i], subjectNames),
         ],
-        pw.SizedBox(height: 14),
-        pw.Divider(),
-        for (var i = 0; i < questions.length; i++) _question(i + 1, questions[i], subjectNames),
-      ],
-    ));
+      ),
+    );
     return doc.save();
   }
 
-  static pw.Widget _question(int n, Question q, Map<String, String> subjectNames) {
+  static pw.Widget _question(
+    int n,
+    Question q,
+    Map<String, String> subjectNames,
+  ) {
     final meta = <String>[
       if (q.subjectId != null) subjectNames[q.subjectId!] ?? '',
       q.difficulty.name,
@@ -84,12 +98,18 @@ abstract final class TestPdf {
         crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
           pw.Text('Q$n. ${q.question}', style: _bold),
-          pw.Text(meta, style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey700)),
+          pw.Text(
+            meta,
+            style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey700),
+          ),
           pw.SizedBox(height: 4),
           for (var i = 0; i < options.length; i++)
             pw.Padding(
               padding: const pw.EdgeInsets.only(left: 12, top: 2),
-              child: pw.Text('${String.fromCharCode(65 + i)}. ${options[i].text}', style: _base),
+              child: pw.Text(
+                '${String.fromCharCode(65 + i)}. ${options[i].text}',
+                style: _base,
+              ),
             ),
         ],
       ),
@@ -110,99 +130,146 @@ abstract final class TestPdf {
     int? previousAttemptNumber,
     List<AttemptHistoryEntry> history = const [],
   }) async {
-    final doc = pw.Document(title: 'Result — ${test?.title ?? 'Test'}', author: 'My Preparation');
-    String n(num? v) => v == null ? '--' : (v % 1 == 0 ? v.toInt().toString() : v.toStringAsFixed(1));
+    final doc = pw.Document(
+      title: 'Result — ${test?.title ?? 'Test'}',
+      author: 'My Preparation',
+    );
+    String n(num? v) => v == null
+        ? '--'
+        : (v % 1 == 0 ? v.toInt().toString() : v.toStringAsFixed(1));
     String signed(num? v) => v == null ? '--' : (v > 0 ? '+${n(v)}' : n(v));
 
-    doc.addPage(pw.MultiPage(
-      pageFormat: PdfPageFormat.a4,
-      margin: const pw.EdgeInsets.all(32),
-      footer: (ctx) => pw.Align(
-        alignment: pw.Alignment.centerRight,
-        child: pw.Text('Page ${ctx.pageNumber} / ${ctx.pagesCount}',
-            style: const pw.TextStyle(fontSize: 9)),
-      ),
-      build: (ctx) => [
-        pw.Text('Result Report', style: _h1),
-        pw.SizedBox(height: 6),
-        _kv('Student', studentName),
-        _kv('Test', test?.title ?? '--'),
-        _kv('Test type', kind.label),
-        if (attemptNumber != null) _kv('Attempt', '$attemptNumber'),
-        if (submittedAt != null) _kv('Submitted', _dateTime(submittedAt)),
-        pw.SizedBox(height: 12),
-        pw.Text('Score', style: _h2),
-        _kv('Score', '${n(result.score)} / ${n(result.maxScore)}'),
-        _kv('Percentage', result.percentage == null ? '--' : '${n(result.percentage)}%'),
-        _kv('Accuracy', result.accuracy == null ? '--' : '${n(result.accuracy)}%'),
-        _kv('Correct', '${result.correctCount ?? '--'}'),
-        _kv('Wrong', '${result.wrongCount ?? '--'}'),
-        _kv('Unanswered', '${result.unansweredCount ?? '--'}'),
-        if (result.rank != null) _kv('Rank', '#${result.rank}'),
-        if (subjects.isNotEmpty) ...[
-          pw.SizedBox(height: 12),
-          pw.Text('Subject breakdown', style: _h2),
-          _table(['Subject', 'Attempted', 'Correct', 'Wrong', 'Unanswered'], [
-            for (final s in subjects)
-              [s.subjectName, '${s.attempted}', '${s.correct}', '${s.wrong}', '${s.unanswered}'],
-          ]),
-        ],
-        if (topics.isNotEmpty) ...[
-          pw.SizedBox(height: 12),
-          pw.Text('Topic breakdown', style: _h2),
-          _table(['Topic', 'Attempted', 'Correct', 'Wrong', 'Unanswered'], [
-            for (final t in topics)
-              [t.topicName, '${t.attempted}', '${t.correct}', '${t.wrong}', '${t.unanswered}'],
-          ]),
-        ],
-        if (deltaFromPrevious != null && !deltaFromPrevious.isEmpty) ...[
-          pw.SizedBox(height: 12),
-          pw.Text(
-            previousAttemptNumber == null
-                ? 'Compared with previous attempt'
-                : 'Compared with attempt $previousAttemptNumber',
-            style: _h2,
+    doc.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(32),
+        footer: (ctx) => pw.Align(
+          alignment: pw.Alignment.centerRight,
+          child: pw.Text(
+            'Page ${ctx.pageNumber} / ${ctx.pagesCount}',
+            style: const pw.TextStyle(fontSize: 9),
           ),
-          if (deltaFromPrevious.score != null) _kv('Marks', signed(deltaFromPrevious.score)),
-          if (deltaFromPrevious.percentage != null)
-            _kv('Percentage', '${signed(deltaFromPrevious.percentage)} pts'),
-          if (deltaFromPrevious.accuracy != null)
-            _kv('Accuracy', '${signed(deltaFromPrevious.accuracy)} pts'),
-          if (deltaFromPrevious.correct != null) _kv('Correct', signed(deltaFromPrevious.correct)),
-          if (deltaFromPrevious.wrong != null) _kv('Wrong', signed(deltaFromPrevious.wrong)),
-          if (deltaFromPrevious.unanswered != null)
-            _kv('Unanswered', signed(deltaFromPrevious.unanswered)),
-        ],
-        if (history.length > 1) ...[
+        ),
+        build: (ctx) => [
+          pw.Text('Result Report', style: _h1),
+          pw.SizedBox(height: 6),
+          _kv('Student', studentName),
+          _kv('Test', test?.title ?? '--'),
+          _kv('Test type', kind.label),
+          if (attemptNumber != null) _kv('Attempt', '$attemptNumber'),
+          if (submittedAt != null) _kv('Submitted', _dateTime(submittedAt)),
           pw.SizedBox(height: 12),
-          pw.Text('Attempt history', style: _h2),
-          _table(['Attempt', 'Score', 'Percentage', 'Accuracy', 'Completed'], [
-            for (final e in history)
+          pw.Text('Score', style: _h2),
+          _kv('Score', '${n(result.score)} / ${n(result.maxScore)}'),
+          _kv(
+            'Percentage',
+            result.percentage == null ? '--' : '${n(result.percentage)}%',
+          ),
+          _kv(
+            'Accuracy',
+            result.accuracy == null ? '--' : '${n(result.accuracy)}%',
+          ),
+          _kv('Correct', '${result.correctCount ?? '--'}'),
+          _kv('Wrong', '${result.wrongCount ?? '--'}'),
+          _kv('Unanswered', '${result.unansweredCount ?? '--'}'),
+          if (result.rank != null) _kv('Rank', '#${result.rank}'),
+          if (subjects.isNotEmpty) ...[
+            pw.SizedBox(height: 12),
+            pw.Text('Subject breakdown', style: _h2),
+            _table(
+              ['Subject', 'Attempted', 'Correct', 'Wrong', 'Unanswered'],
               [
-                e.attemptNumber == null ? '--' : '${e.attemptNumber}',
-                '${n(e.result.score)} / ${n(e.result.maxScore)}',
-                e.result.percentage == null ? '--' : '${n(e.result.percentage)}%',
-                e.result.accuracy == null ? '--' : '${n(e.result.accuracy)}%',
-                e.completedAt == null ? '--' : _dateTime(e.completedAt!),
+                for (final s in subjects)
+                  [
+                    s.subjectName,
+                    '${s.attempted}',
+                    '${s.correct}',
+                    '${s.wrong}',
+                    '${s.unanswered}',
+                  ],
               ],
-          ]),
-        ],
-        pw.SizedBox(height: 16),
-        pw.Text('Scores are computed on the server from the stored answers. '
+            ),
+          ],
+          if (topics.isNotEmpty) ...[
+            pw.SizedBox(height: 12),
+            pw.Text('Topic breakdown', style: _h2),
+            _table(
+              ['Topic', 'Attempted', 'Correct', 'Wrong', 'Unanswered'],
+              [
+                for (final t in topics)
+                  [
+                    t.topicName,
+                    '${t.attempted}',
+                    '${t.correct}',
+                    '${t.wrong}',
+                    '${t.unanswered}',
+                  ],
+              ],
+            ),
+          ],
+          if (deltaFromPrevious != null && !deltaFromPrevious.isEmpty) ...[
+            pw.SizedBox(height: 12),
+            pw.Text(
+              previousAttemptNumber == null
+                  ? 'Compared with previous attempt'
+                  : 'Compared with attempt $previousAttemptNumber',
+              style: _h2,
+            ),
+            if (deltaFromPrevious.score != null)
+              _kv('Marks', signed(deltaFromPrevious.score)),
+            if (deltaFromPrevious.percentage != null)
+              _kv('Percentage', '${signed(deltaFromPrevious.percentage)} pts'),
+            if (deltaFromPrevious.accuracy != null)
+              _kv('Accuracy', '${signed(deltaFromPrevious.accuracy)} pts'),
+            if (deltaFromPrevious.correct != null)
+              _kv('Correct', signed(deltaFromPrevious.correct)),
+            if (deltaFromPrevious.wrong != null)
+              _kv('Wrong', signed(deltaFromPrevious.wrong)),
+            if (deltaFromPrevious.unanswered != null)
+              _kv('Unanswered', signed(deltaFromPrevious.unanswered)),
+          ],
+          if (history.length > 1) ...[
+            pw.SizedBox(height: 12),
+            pw.Text('Attempt history', style: _h2),
+            _table(
+              ['Attempt', 'Score', 'Percentage', 'Accuracy', 'Completed'],
+              [
+                for (final e in history)
+                  [
+                    e.attemptNumber == null ? '--' : '${e.attemptNumber}',
+                    '${n(e.result.score)} / ${n(e.result.maxScore)}',
+                    e.result.percentage == null
+                        ? '--'
+                        : '${n(e.result.percentage)}%',
+                    e.result.accuracy == null
+                        ? '--'
+                        : '${n(e.result.accuracy)}%',
+                    e.completedAt == null ? '--' : _dateTime(e.completedAt!),
+                  ],
+              ],
+            ),
+          ],
+          pw.SizedBox(height: 16),
+          pw.Text(
+            'Scores are computed on the server from the stored answers. '
             'No rank, percentile or readiness figures are estimated.',
-            style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700)),
-      ],
-    ));
+            style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
+          ),
+        ],
+      ),
+    );
     return doc.save();
   }
 
   static pw.Widget _kv(String k, String v) => pw.Padding(
-        padding: const pw.EdgeInsets.only(top: 2),
-        child: pw.Row(children: [
-          pw.SizedBox(width: 130, child: pw.Text(k, style: _bold)),
-          pw.Expanded(child: pw.Text(v, style: _base)),
-        ]),
-      );
+    padding: const pw.EdgeInsets.only(top: 2),
+    child: pw.Row(
+      children: [
+        pw.SizedBox(width: 130, child: pw.Text(k, style: _bold)),
+        pw.Expanded(child: pw.Text(v, style: _base)),
+      ],
+    ),
+  );
 
   static pw.Widget _table(List<String> header, List<List<String>> rows) =>
       pw.TableHelper.fromTextArray(

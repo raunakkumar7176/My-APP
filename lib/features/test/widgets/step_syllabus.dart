@@ -42,21 +42,23 @@ class _StepSyllabusState extends State<StepSyllabus> {
       _error = null;
     });
 
-    SubjectService.loadSubjects().then((subjects) {
-      if (mounted) {
-        setState(() {
-          _subjects = subjects;
-          _isLoadingSubjects = false;
+    SubjectService.loadSubjects()
+        .then((subjects) {
+          if (mounted) {
+            setState(() {
+              _subjects = subjects;
+              _isLoadingSubjects = false;
+            });
+          }
+        })
+        .catchError((e) {
+          if (mounted) {
+            setState(() {
+              _error = e.toString().replaceFirst('AppError: ', '');
+              _isLoadingSubjects = false;
+            });
+          }
         });
-      }
-    }).catchError((e) {
-      if (mounted) {
-        setState(() {
-          _error = e.toString().replaceFirst('AppError: ', '');
-          _isLoadingSubjects = false;
-        });
-      }
-    });
   }
 
   void _loadNodesForSubject(Subject subject) {
@@ -66,21 +68,23 @@ class _StepSyllabusState extends State<StepSyllabus> {
       _allNodes = [];
     });
 
-    SyllabusService.loadNodesForSubject(subject.id).then((nodes) {
-      if (mounted) {
-        setState(() {
-          _allNodes = nodes;
-          _isLoadingNodes = false;
+    SyllabusService.loadNodesForSubject(subject.id)
+        .then((nodes) {
+          if (mounted) {
+            setState(() {
+              _allNodes = nodes;
+              _isLoadingNodes = false;
+            });
+          }
+        })
+        .catchError((e) {
+          if (mounted) {
+            setState(() {
+              _error = e.toString().replaceFirst('AppError: ', '');
+              _isLoadingNodes = false;
+            });
+          }
         });
-      }
-    }).catchError((e) {
-      if (mounted) {
-        setState(() {
-          _error = e.toString().replaceFirst('AppError: ', '');
-          _isLoadingNodes = false;
-        });
-      }
-    });
   }
 
   void _toggleNode(String nodeId) {
@@ -116,36 +120,32 @@ class _StepSyllabusState extends State<StepSyllabus> {
             children: [
               Text(
                 'Syllabus',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
+                style: Theme.of(context).textTheme.titleLarge
+                    ?.copyWith(fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 8),
               Text(
                 'Select syllabus topics covered by this test.',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onSurface
-                          .withValues(alpha: 0.6),
-                    ),
+                  color: Theme.of(context).colorScheme.onSurface
+                      .withValues(alpha: 0.6),
+                ),
               ),
-              if (widget.selectedNodeIds.isNotEmpty || widget.serverSelectedNodeIds.isNotEmpty) ...[
+              if (widget.selectedNodeIds.isNotEmpty ||
+                  widget.serverSelectedNodeIds.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 Text(
                   '${widget.serverSelectedNodeIds.length + widget.selectedNodeIds.length} topic(s) selected',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: AppColors.primaryLight,
-                        fontWeight: FontWeight.w500,
-                      ),
+                    color: AppColors.primaryLight,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ],
             ],
           ),
         ),
-        Expanded(
-          child: _buildBody(),
-        ),
+        Expanded(child: _buildBody()),
       ],
     );
   }
@@ -171,10 +171,10 @@ class _StepSyllabusState extends State<StepSyllabus> {
           child: _selectedSubject == null
               ? _buildEmpty('Select a subject to view syllabus')
               : _isLoadingNodes
-                  ? const Center(child: CircularProgressIndicator())
-                  : _allNodes.isEmpty
-                      ? _buildEmpty('No syllabus available for this subject')
-                      : _buildNodeTree(),
+              ? const Center(child: CircularProgressIndicator())
+              : _allNodes.isEmpty
+              ? _buildEmpty('No syllabus available for this subject')
+              : _buildNodeTree(),
         ),
       ],
     );
@@ -191,9 +191,8 @@ class _StepSyllabusState extends State<StepSyllabus> {
             const SizedBox(height: 12),
             Text(
               _error!,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: AppColors.error,
-                  ),
+              style: Theme.of(context).textTheme.bodyMedium
+                  ?.copyWith(color: AppColors.error),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
@@ -217,9 +216,7 @@ class _StepSyllabusState extends State<StepSyllabus> {
             Icon(
               Icons.topic_outlined,
               size: 48,
-              color: Theme.of(context)
-                  .colorScheme
-                  .onSurface
+              color: Theme.of(context).colorScheme.onSurface
                   .withValues(alpha: 0.3),
             ),
             const SizedBox(height: 12),
@@ -290,44 +287,39 @@ class _StepSyllabusState extends State<StepSyllabus> {
             child: Text(
               node.name,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    fontWeight:
-                        hasChildren ? FontWeight.w600 : FontWeight.w400,
-                    color: isServerSelected
-                        ? Theme.of(context)
-                            .colorScheme
-                            .onSurface
-                            .withValues(alpha: 0.5)
-                        : null,
-                  ),
+                fontWeight: hasChildren ? FontWeight.w600 : FontWeight.w400,
+                color: isServerSelected
+                    ? Theme.of(context).colorScheme.onSurface
+                          .withValues(alpha: 0.5)
+                    : null,
+              ),
             ),
           ),
           subtitle: node.classLevel != null
               ? Padding(
                   padding: EdgeInsets.only(left: depth * 16.0),
                   child: Text(
-                    isServerSelected ? '${node.classLevel} (existing)' : node.classLevel!,
+                    isServerSelected
+                        ? '${node.classLevel} (existing)'
+                        : node.classLevel!,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onSurface
-                              .withValues(alpha: 0.6),
-                        ),
+                      color: Theme.of(context).colorScheme.onSurface
+                          .withValues(alpha: 0.6),
+                    ),
                   ),
                 )
               : isServerSelected
-                  ? Padding(
-                      padding: EdgeInsets.only(left: depth * 16.0),
-                      child: Text(
-                        '(existing)',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurface
-                                  .withValues(alpha: 0.6),
-                            ),
-                      ),
-                    )
-                  : null,
+              ? Padding(
+                  padding: EdgeInsets.only(left: depth * 16.0),
+                  child: Text(
+                    '(existing)',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurface
+                          .withValues(alpha: 0.6),
+                    ),
+                  ),
+                )
+              : null,
           dense: true,
           controlAffinity: ListTileControlAffinity.leading,
         ),

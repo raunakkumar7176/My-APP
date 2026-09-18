@@ -71,7 +71,8 @@ class _TestResultScreenState extends State<TestResultScreen> {
     } on AppError catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message), backgroundColor: AppColors.error));
+        SnackBar(content: Text(e.message), backgroundColor: AppColors.error),
+      );
     } finally {
       if (mounted) setState(() => _pdfBusy = false);
     }
@@ -85,7 +86,8 @@ class _TestResultScreenState extends State<TestResultScreen> {
     } on AppError catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message), backgroundColor: AppColors.error));
+        SnackBar(content: Text(e.message), backgroundColor: AppColors.error),
+      );
     }
   }
 
@@ -107,12 +109,22 @@ class _TestResultScreenState extends State<TestResultScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(Icons.hourglass_top, size: 48, color: AppColors.warning),
+                const Icon(
+                  Icons.hourglass_top,
+                  size: 48,
+                  color: AppColors.warning,
+                ),
                 const SizedBox(height: 12),
-                Text(_c.error ?? 'Result not available.', textAlign: TextAlign.center),
+                Text(
+                  _c.error ?? 'Result not available.',
+                  textAlign: TextAlign.center,
+                ),
                 const SizedBox(height: 12),
                 FilledButton(onPressed: _c.load, child: const Text('Retry')),
-                TextButton(onPressed: () => context.go('/tests'), child: const Text('Back to Tests')),
+                TextButton(
+                  onPressed: () => context.go('/tests'),
+                  child: const Text('Back to Tests'),
+                ),
               ],
             ),
           ),
@@ -140,26 +152,34 @@ class _TestResultScreenState extends State<TestResultScreen> {
               padding: const EdgeInsets.all(20),
               child: Column(
                 children: [
-                  Text(_c.kind.label, style: Theme.of(context).textTheme.labelMedium),
+                  Text(
+                    _c.kind.label,
+                    style: Theme.of(context).textTheme.labelMedium,
+                  ),
                   const SizedBox(height: 8),
                   Text(
                     pct == null ? '--' : '${pct.toStringAsFixed(1)}%',
                     style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                          fontWeight: FontWeight.w700,
-                          color: passed == null
-                              ? null
-                              : (passed ? AppColors.success : AppColors.error),
-                        ),
+                      fontWeight: FontWeight.w700,
+                      color: passed == null
+                          ? null
+                          : (passed ? AppColors.success : AppColors.error),
+                    ),
                   ),
                   if (r.score != null || r.maxScore != null)
-                    Text('Score ${_num(r.score)} / ${_num(r.maxScore)}',
-                        style: Theme.of(context).textTheme.titleMedium),
+                    Text(
+                      'Score ${_num(r.score)} / ${_num(r.maxScore)}',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
                   if (passed != null) ...[
                     const SizedBox(height: 4),
-                    Text(passed ? 'Passed' : 'Not passed',
-                        style: TextStyle(
-                            color: passed ? AppColors.success : AppColors.error,
-                            fontWeight: FontWeight.w600)),
+                    Text(
+                      passed ? 'Passed' : 'Not passed',
+                      style: TextStyle(
+                        color: passed ? AppColors.success : AppColors.error,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ],
                   if (r.rank != null) ...[
                     const SizedBox(height: 4),
@@ -185,8 +205,10 @@ class _TestResultScreenState extends State<TestResultScreen> {
               child: ListTile(
                 leading: const Icon(Icons.track_changes),
                 title: const Text('Accuracy'),
-                trailing: Text('${r.accuracy!.toStringAsFixed(1)}%',
-                    style: const TextStyle(fontWeight: FontWeight.w600)),
+                trailing: Text(
+                  '${r.accuracy!.toStringAsFixed(1)}%',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
               ),
             ),
           ],
@@ -221,7 +243,8 @@ class _TestResultScreenState extends State<TestResultScreen> {
           ],
           const SizedBox(height: 20),
           FilledButton.icon(
-            onPressed: () => context.push('/attempts/${widget.attemptId}/review'),
+            onPressed: () =>
+                context.push('/attempts/${widget.attemptId}/review'),
             icon: const Icon(Icons.fact_check_outlined),
             label: const Text('Review Answers'),
           ),
@@ -230,7 +253,11 @@ class _TestResultScreenState extends State<TestResultScreen> {
             key: const Key('download_result_pdf'),
             onPressed: _pdfBusy ? null : _downloadResultPdf,
             icon: _pdfBusy
-                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
                 : const Icon(Icons.picture_as_pdf_outlined),
             label: Text(_pdfBusy ? 'Preparing PDF…' : 'Download Result PDF'),
           ),
@@ -243,7 +270,8 @@ class _TestResultScreenState extends State<TestResultScreen> {
               label: Text(_c.isBusy ? 'Starting…' : 'Re-attempt'),
             ),
             const SizedBox(height: 8),
-          ] else if (_c.attemptState != null && _c.attemptState!.hasAnyAttempt) ...[
+          ] else if (_c.attemptState != null &&
+              _c.attemptState!.hasAnyAttempt) ...[
             Text(
               _c.attemptState!.settings.allowReattempt
                   ? '${_c.attemptState!.usageLabel} · Re-attempt limit reached'
@@ -269,11 +297,11 @@ class _TestResultScreenState extends State<TestResultScreen> {
           padding: const EdgeInsets.symmetric(vertical: 12),
           child: Column(
             children: [
-              Text('${value ?? '--'}',
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleLarge
-                      ?.copyWith(color: color, fontWeight: FontWeight.w700)),
+              Text(
+                '${value ?? '--'}',
+                style: Theme.of(context).textTheme.titleLarge
+                    ?.copyWith(color: color, fontWeight: FontWeight.w700),
+              ),
               Text(label, style: Theme.of(context).textTheme.bodySmall),
             ],
           ),
@@ -287,10 +315,13 @@ class _TestResultScreenState extends State<TestResultScreen> {
     return r.score! / r.maxScore! * 100;
   }
 
-  static String _num(double? v) => v == null ? '--' : (v % 1 == 0 ? v.toInt().toString() : v.toStringAsFixed(1));
+  static String _num(double? v) => v == null
+      ? '--'
+      : (v % 1 == 0 ? v.toInt().toString() : v.toStringAsFixed(1));
 
   static String _delta(double? current, double? previous) {
-    if (current == null || previous == null) return 'Previous attempt available';
+    if (current == null || previous == null)
+      return 'Previous attempt available';
     final d = current - previous;
     if (d.abs() < 0.05) return 'Same as your previous attempt';
     return d > 0
@@ -301,8 +332,9 @@ class _TestResultScreenState extends State<TestResultScreen> {
 
 // ── attempt history widgets (stored fields only; no derived analytics) ──
 
-String _fmtNum(double? v) =>
-    v == null ? '--' : (v % 1 == 0 ? v.toInt().toString() : v.toStringAsFixed(1));
+String _fmtNum(double? v) => v == null
+    ? '--'
+    : (v % 1 == 0 ? v.toInt().toString() : v.toStringAsFixed(1));
 
 String _signed(num v, {String suffix = ''}) {
   final s = v is int ? '$v' : _fmtNum(v.toDouble());
@@ -331,13 +363,18 @@ class _ComparisonCard extends StatelessWidget {
     final d = delta;
     final rows = <(String, String)>[
       if (d?.score != null) ('Marks', _signed(d!.score!)),
-      if (d?.percentage != null) ('Percentage', _signed(d!.percentage!, suffix: ' pts')),
-      if (d?.accuracy != null) ('Accuracy', _signed(d!.accuracy!, suffix: ' pts')),
+      if (d?.percentage != null)
+        ('Percentage', _signed(d!.percentage!, suffix: ' pts')),
+      if (d?.accuracy != null)
+        ('Accuracy', _signed(d!.accuracy!, suffix: ' pts')),
       if (d?.correct != null) ('Correct', _signed(d!.correct!)),
       if (d?.wrong != null) ('Wrong', _signed(d!.wrong!)),
       if (d?.unanswered != null) ('Unanswered', _signed(d!.unanswered!)),
       if (d?.time != null)
-        ('Time', '${d!.time!.isNegative ? '-' : '+'}${_fmtDuration(d.time!.abs())}'),
+        (
+          'Time',
+          '${d!.time!.isNegative ? '-' : '+'}${_fmtDuration(d.time!.abs())}',
+        ),
     ];
     return Card(
       child: Padding(
@@ -345,18 +382,20 @@ class _ComparisonCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(children: [
-              const Icon(Icons.compare_arrows),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  previousNumber == null
-                      ? 'Compared with previous attempt'
-                      : 'Compared with attempt $previousNumber',
-                  style: const TextStyle(fontWeight: FontWeight.w600),
+            Row(
+              children: [
+                const Icon(Icons.compare_arrows),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    previousNumber == null
+                        ? 'Compared with previous attempt'
+                        : 'Compared with attempt $previousNumber',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
                 ),
-              ),
-            ]),
+              ],
+            ),
             const SizedBox(height: 4),
             Text(headline),
             for (final (label, value) in rows)
@@ -411,8 +450,9 @@ class _AttemptSummaryCard extends StatelessWidget {
               leading: const Icon(Icons.emoji_events_outlined),
               title: const Text('Best Attempt'),
               subtitle: Text(_line(best!)),
-              trailing:
-                  best!.result.attemptId == currentAttemptId ? const Text('Viewing') : null,
+              trailing: best!.result.attemptId == currentAttemptId
+                  ? const Text('Viewing')
+                  : null,
             ),
         ],
       ),
@@ -421,7 +461,10 @@ class _AttemptSummaryCard extends StatelessWidget {
 }
 
 class _AttemptHistoryCard extends StatelessWidget {
-  const _AttemptHistoryCard({required this.entries, required this.currentAttemptId});
+  const _AttemptHistoryCard({
+    required this.entries,
+    required this.currentAttemptId,
+  });
 
   final List<AttemptHistoryEntry> entries;
   final String currentAttemptId;
@@ -434,7 +477,10 @@ class _AttemptHistoryCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Attempt History', style: TextStyle(fontWeight: FontWeight.w600)),
+            const Text(
+              'Attempt History',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
             const SizedBox(height: 8),
             for (final e in entries.reversed)
               Padding(
@@ -442,7 +488,9 @@ class _AttemptHistoryCard extends StatelessWidget {
                 child: InkWell(
                   onTap: e.result.attemptId == currentAttemptId
                       ? null
-                      : () => context.push('/attempts/${e.result.attemptId}/result'),
+                      : () => context.push(
+                          '/attempts/${e.result.attemptId}/result',
+                        ),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -454,8 +502,10 @@ class _AttemptHistoryCard extends StatelessWidget {
                               e.attemptNumber == null
                                   ? 'Attempt'
                                   : 'Attempt ${e.attemptNumber}'
-                                      '${e.result.attemptId == currentAttemptId ? ' (current)' : ''}',
-                              style: const TextStyle(fontWeight: FontWeight.w500),
+                                        '${e.result.attemptId == currentAttemptId ? ' (current)' : ''}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w500,
+                              ),
                             ),
                             Text(
                               '${_fmtNum(e.result.score)} / ${_fmtNum(e.result.maxScore)}'
@@ -472,8 +522,10 @@ class _AttemptHistoryCard extends StatelessWidget {
                         ),
                       ),
                       if (e.completedAt != null)
-                        Text(TestFormatters.dateTime(e.completedAt),
-                            style: Theme.of(context).textTheme.bodySmall),
+                        Text(
+                          TestFormatters.dateTime(e.completedAt),
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
                     ],
                   ),
                 ),

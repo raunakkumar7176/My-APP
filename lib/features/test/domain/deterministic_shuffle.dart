@@ -24,6 +24,8 @@ abstract final class DeterministicShuffle {
   static List<Question> questions(List<Question> questions, String seed) =>
       List<Question>.from(questions)..shuffle(Random(fnv1aHash(seed)));
 
-  static List<QuestionOption> options(List<QuestionOption> options, String seed) =>
-      List<QuestionOption>.from(options)..shuffle(Random(fnv1aHash(seed)));
+  static List<QuestionOption> options(
+    List<QuestionOption> options,
+    String seed,
+  ) => List<QuestionOption>.from(options)..shuffle(Random(fnv1aHash(seed)));
 }

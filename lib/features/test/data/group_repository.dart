@@ -22,19 +22,19 @@ class SupabaseGroupRepository implements GroupRepository {
       AppLogger.rpcShape('rpc_get_user_groups', response);
       if (response == null) return const [];
       final list = response is List ? response : [response];
-      return [
-        for (final r in list) Group.fromJson(r as Map<String, dynamic>),
-      ];
+      return [for (final r in list) Group.fromJson(r as Map<String, dynamic>)];
     } on PostgrestException catch (e) {
       AppLogger.error('GroupRepository PostgrestException: ${e.message}');
       throw DataError(
-          message: TestErrors.map(e.message, context: TestErrorContext.load));
+        message: TestErrors.map(e.message, context: TestErrorContext.load),
+      );
     } on AppError {
       rethrow;
     } catch (e, st) {
       AppLogger.error('GroupRepository unexpected: $e', stackTrace: st);
       throw DataError(
-          message: TestErrors.map(e.toString(), context: TestErrorContext.load));
+        message: TestErrors.map(e.toString(), context: TestErrorContext.load),
+      );
     }
   }
 }

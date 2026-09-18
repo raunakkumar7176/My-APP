@@ -39,11 +39,14 @@ class SupabaseAttemptRepository implements AttemptRepository {
   @override
   Future<StartedAttempt> start(String testId, {bool reattempt = false}) =>
       _guard(() async {
-        final response = await _client.rpc('rpc_start_attempt', params: {
-          'p_test': testId,
-          // Live: rpc_start_attempt(p_test uuid, p_reattempt boolean DEFAULT false).
-          if (reattempt) 'p_reattempt': true,
-        });
+        final response = await _client.rpc(
+          'rpc_start_attempt',
+          params: {
+            'p_test': testId,
+            // Live: rpc_start_attempt(p_test uuid, p_reattempt boolean DEFAULT false).
+            if (reattempt) 'p_reattempt': true,
+          },
+        );
         AppLogger.rpcShape('rpc_start_attempt', response);
         return parseStarted(response);
       }, TestErrorContext.start);
@@ -55,10 +58,10 @@ class SupabaseAttemptRepository implements AttemptRepository {
         if (trimmed.isEmpty) {
           throw const ValidationError(message: 'Enter a test code.');
         }
-        final response = await _client.rpc('rpc_start_attempt_by_code', params: {
-          'p_code': trimmed,
-          if (reattempt) 'p_reattempt': true,
-        });
+        final response = await _client.rpc(
+          'rpc_start_attempt_by_code',
+          params: {'p_code': trimmed, if (reattempt) 'p_reattempt': true},
+        );
         AppLogger.rpcShape('rpc_start_attempt_by_code', response);
         return parseStarted(response);
       }, TestErrorContext.start);
@@ -69,28 +72,31 @@ class SupabaseAttemptRepository implements AttemptRepository {
 
   @override
   Future<List<Attempt>> mine(String testId) => _guard(() async {
-        final uid = _client.auth.currentUser?.id;
-        if (uid == null) {
-          throw const AuthError(message: 'You must be logged in.');
-        }
-        final rows = await _client
-            .from('attempts')
-            .select(attemptColumns)
-            .eq('test_id', testId)
-            .eq('user_id', uid)
-            .order('attempt_number', ascending: true);
-        return [
-          for (final r in rows as List) Attempt.fromJson(r as Map<String, dynamic>),
-        ];
-      }, TestErrorContext.load);
+    final uid = _client.auth.currentUser?.id;
+    if (uid == null) {
+      throw const AuthError(message: 'You must be logged in.');
+    }
+    final rows = await _client
+        .from('attempts')
+        .select(attemptColumns)
+        .eq('test_id', testId)
+        .eq('user_id', uid)
+        .order('attempt_number', ascending: true);
+    return [
+      for (final r in rows as List) Attempt.fromJson(r as Map<String, dynamic>),
+    ];
+  }, TestErrorContext.load);
 
   @override
   Future<Result?> submit(String attemptId, {required bool timedOut}) =>
       _guard(() async {
-        final response = await _client.rpc('rpc_submit_attempt', params: {
-          'p_attempt': attemptId,
-          'p_auto': timedOut, // live: rpc_submit_attempt(p_attempt uuid, p_auto boolean)
-        });
+        final response = await _client.rpc(
+          'rpc_submit_attempt',
+          params: {
+            'p_attempt': attemptId,
+            'p_auto': timedOut, // live: rpc_submit_attempt(p_attempt uuid, p_auto boolean)
+          },
+        );
         AppLogger.rpcShape('rpc_submit_attempt', response);
         return resultFromSubmitResponse(response, attemptId: attemptId);
       }, TestErrorContext.submit);
@@ -98,12 +104,17 @@ class SupabaseAttemptRepository implements AttemptRepository {
   /// A `results` row is recognised by its `attempt_id` + a score-like key;
   /// an `attempts` row, a status message or null yield null (not an error —
   /// the submission itself succeeded).
-  static Result? resultFromSubmitResponse(dynamic response, {required String attemptId}) {
-    final data =
-        response is List && response.isNotEmpty ? response.first : response;
+  static Result? resultFromSubmitResponse(
+    dynamic response, {
+    required String attemptId,
+  }) {
+    final data = response is List && response.isNotEmpty
+        ? response.first
+        : response;
     if (data is! Map) return null;
     final json = Map<String, dynamic>.from(data);
-    final looksLikeResult = json['attempt_id'] == attemptId &&
+    final looksLikeResult =
+        json['attempt_id'] == attemptId &&
         (json.containsKey('score') ||
             json.containsKey('marks_obtained') ||
             json.containsKey('correct_count') ||
@@ -125,13 +136,16 @@ class SupabaseAttemptRepository implements AttemptRepository {
   /// Anything without a usable attempt id + test id is rejected — never
   /// fabricated.
   static StartedAttempt parseStarted(dynamic response) {
-    final data =
-        response is List && response.isNotEmpty ? response.first : response;
+    final data = response is List && response.isNotEmpty
+        ? response.first
+        : response;
     if (data is! Map) {
       throw const DataError(message: 'Unexpected response from server.');
     }
     final json = Map<String, dynamic>.from(data);
-    final title = json['test_title'] is String ? json['test_title'] as String : null;
+    final title = json['test_title'] is String
+        ? json['test_title'] as String
+        : null;
 
     final Attempt attempt;
     if (json['attempt_id'] is String) {
@@ -158,7 +172,8 @@ class SupabaseAttemptRepository implements AttemptRepository {
     if (attempt.testId.isEmpty) {
       AppLogger.error('Start RPC response had no test_id');
       throw const DataError(
-          message: 'The attempt could not be linked to a test. Please try again.');
+        message: 'The attempt could not be linked to a test. Please try again.',
+      );
     }
     return (attempt: attempt, testTitle: title);
   }
@@ -181,7 +196,9 @@ class SupabaseAttemptRepository implements AttemptRepository {
   }
 
   static Future<T> _guard<T>(
-      Future<T> Function() body, TestErrorContext context) async {
+    Future<T> Function() body,
+    TestErrorContext context,
+  ) async {
     try {
       return await body();
     } on PostgrestException catch (e) {

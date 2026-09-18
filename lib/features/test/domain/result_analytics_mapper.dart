@@ -40,7 +40,11 @@ abstract final class ResultAnalyticsMapper {
   /// (history is the current user's results, newest first).
   static Result? previous(List<Result> history, String currentResultId) {
     final sorted = List<Result>.from(history)
-      ..sort((a, b) => (b.computedAt ?? DateTime(0)).compareTo(a.computedAt ?? DateTime(0)));
+      ..sort(
+        (a, b) => (b.computedAt ?? DateTime(0)).compareTo(
+          a.computedAt ?? DateTime(0),
+        ),
+      );
     final i = sorted.indexWhere((r) => r.id == currentResultId);
     if (i < 0 || i >= sorted.length - 1) return null;
     return sorted[i + 1];

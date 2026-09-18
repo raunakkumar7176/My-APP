@@ -16,7 +16,8 @@ final class AttemptSettings {
   final int maxAttempts;
 
   /// The limit the server enforces.
-  int get effectiveMax => allowReattempt ? (maxAttempts < 1 ? 1 : maxAttempts) : 1;
+  int get effectiveMax =>
+      allowReattempt ? (maxAttempts < 1 ? 1 : maxAttempts) : 1;
 
   static AttemptSettings fromSettings(Map<String, dynamic>? settings) {
     if (settings == null) return defaults;
@@ -31,12 +32,13 @@ final class AttemptSettings {
   /// Merges into [existing] without dropping keys the client does not own
   /// (e.g. `test_kind`).
   Map<String, dynamic> applyTo(Map<String, dynamic>? existing) => {
-        ...?existing,
-        allowKey: allowReattempt,
-        maxKey: effectiveMax,
-      };
+    ...?existing,
+    allowKey: allowReattempt,
+    maxKey: effectiveMax,
+  };
 
-  AttemptSettings copyWith({bool? allowReattempt, int? maxAttempts}) => AttemptSettings(
+  AttemptSettings copyWith({bool? allowReattempt, int? maxAttempts}) =>
+      AttemptSettings(
         allowReattempt: allowReattempt ?? this.allowReattempt,
         maxAttempts: maxAttempts ?? this.maxAttempts,
       );
@@ -72,10 +74,7 @@ enum AttemptCta {
 /// `count(*)` of the user's attempts and raises REATTEMPT_LIMIT_REACHED /
 /// ATTEMPT_ALREADY_COMPLETED.
 final class AttemptPolicyState {
-  const AttemptPolicyState({
-    required this.settings,
-    required this.attempts,
-  });
+  const AttemptPolicyState({required this.settings, required this.attempts});
 
   final AttemptSettings settings;
 
@@ -94,9 +93,9 @@ final class AttemptPolicyState {
 
   /// Terminal attempts (submitted / auto_submitted / scored), newest first.
   List<Attempt> get completed => [
-        for (final a in attempts)
-          if (a.status != AttemptStatus.inProgress) a,
-      ]..sort((x, y) => y.attemptNumber.compareTo(x.attemptNumber));
+    for (final a in attempts)
+      if (a.status != AttemptStatus.inProgress) a,
+  ]..sort((x, y) => y.attemptNumber.compareTo(x.attemptNumber));
 
   Attempt? get latestCompleted => completed.isEmpty ? null : completed.first;
 
@@ -104,7 +103,10 @@ final class AttemptPolicyState {
 
   /// True only when the server would accept `p_reattempt = true`.
   bool get canReattempt =>
-      inProgress == null && hasAnyAttempt && settings.allowReattempt && used < max;
+      inProgress == null &&
+      hasAnyAttempt &&
+      settings.allowReattempt &&
+      used < max;
 
   AttemptCta get cta {
     if (inProgress != null) return AttemptCta.continueTest;
