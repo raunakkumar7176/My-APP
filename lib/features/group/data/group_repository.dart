@@ -192,6 +192,13 @@ abstract interface class GroupRepository {
   /// never cached beyond that sheet.
   Future<ProfileMatch?> findProfileByStudentCode(String code);
 
+  /// `fn_withdraw_join_request(p_request_id)` — deletes the caller's own
+  /// pending join request. The server verifies: caller owns the request
+  /// (`user_id = auth.uid()`), the request is `pending`, and deletes exactly
+  /// that row. Touches no other table. Raises [DataError] on any failure
+  /// (not found, not owner, not pending, auth).
+  Future<void> withdrawJoinRequest(String requestId);
+
   /// Inserts one pending `group_invitations` row `{group_id, invitee_id}`;
   /// `inviter_id` is the authenticated user (the live INSERT policy requires
   /// `inviter_id = auth.uid() AND MANAGE_MEMBERS`). Touches no other table.
@@ -647,6 +654,15 @@ class SupabaseGroupRepository implements GroupRepository {
       'invitee_id': inviteeId,
     });
   });
+
+  @override
+  Future<void> withdrawJoinRequest(String requestId) =>
+      _guard(GroupErrorContext.joinRequest, () async {
+        await _client.rpc(
+          'fn_withdraw_join_request',
+          params: {'p_request_id': requestId},
+        );
+      });
 
   static Future<T> _guard<T>(
     GroupErrorContext context,

@@ -730,6 +730,8 @@ class _FailingRepository implements GroupRepository {
     required String inviteeId,
   }) async {}
   @override
+  Future<void> withdrawJoinRequest(String requestId) async {}
+  @override
   Future<GroupPermissions> permissionsFor(
     String groupId, {
     List<GroupPermission> of = GroupPermission.live,

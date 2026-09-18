@@ -22,6 +22,7 @@ class GroupListController extends DisposableNotifier {
   bool _invitationsLoading = false;
   String? _invitationsError;
   String? _actingInvitationId;
+  String? _actingWithdrawId;
   final Set<String> _pendingCodes = {};
   bool _loading = false;
   bool _loadedOnce = false;
@@ -49,6 +50,9 @@ class GroupListController extends DisposableNotifier {
   /// The invitation an accept/decline is currently running for (single-flight).
   String? get actingInvitationId => _actingInvitationId;
 
+  /// The join request a withdraw is currently running for (single-flight).
+  String? get actingWithdrawId => _actingWithdrawId;
+
   /// Invite codes that produced a pending request in this session, so the
   /// join sheet does not offer a misleading second submission. The server
   /// upsert is idempotent anyway; this only avoids a pointless round trip.
@@ -71,14 +75,7 @@ class GroupListController extends DisposableNotifier {
     try {
       _groups = await _repo.myGroups();
       await _loadInvitations();
-      // Pending requests are informational: their failure must not hide the
-      // groups list.
-      try {
-        _pendingRequests = await _repo.myPendingJoinRequests();
-      } catch (e) {
-        AppLogger.warning('Pending join requests unavailable: $e');
-        _pendingRequests = const [];
-      }
+      await _loadPendingRequests();
     } on AppError catch (e) {
       _error = e.message;
     } catch (e, st) {
@@ -88,6 +85,17 @@ class GroupListController extends DisposableNotifier {
     _loading = false;
     _loadedOnce = true;
     notifyListeners();
+  }
+
+  /// Reads the caller's own pending join requests; a failure is kept
+  /// separately so the groups list still renders.
+  Future<void> _loadPendingRequests() async {
+    try {
+      _pendingRequests = await _repo.myPendingJoinRequests();
+    } catch (e) {
+      AppLogger.warning('Pending join requests unavailable: $e');
+      _pendingRequests = const [];
+    }
   }
 
   Future<void> refresh() => load();
@@ -170,6 +178,47 @@ class GroupListController extends DisposableNotifier {
       return null;
     } finally {
       _actingInvitationId = null;
+      notifyListeners();
+    }
+  }
+
+  /// Withdraws the caller's own pending join request via
+  /// `fn_withdraw_join_request`. Touches only `group_join_requests`.
+  /// Single-flight; re-reads pending requests after success or failure.
+  Future<bool> withdrawJoinRequest(GroupJoinRequest request) async {
+    if (_busy || _actingWithdrawId != null || _actingInvitationId != null) {
+      return false;
+    }
+    if (!request.isPending) {
+      _error = 'Only a pending request can be withdrawn.';
+      notifyListeners();
+      return false;
+    }
+    _actingWithdrawId = request.id;
+    _error = null;
+    notifyListeners();
+    try {
+      await _repo.withdrawJoinRequest(request.id);
+      // The request carries no invite code, so the session guard cannot be
+      // narrowed to one code; clear it so the user can re-apply with any
+      // code (the server upsert is idempotent regardless).
+      _pendingCodes.clear();
+      await _loadPendingRequests();
+      return true;
+    } on AppError catch (e) {
+      _error = e.message;
+      await _loadPendingRequests();
+      return false;
+    } catch (e, st) {
+      AppLogger.error('Withdraw join request failed: $e', stackTrace: st);
+      _error = GroupErrors.map(
+        e.toString(),
+        context: GroupErrorContext.joinRequest,
+      );
+      await _loadPendingRequests();
+      return false;
+    } finally {
+      _actingWithdrawId = null;
       notifyListeners();
     }
   }

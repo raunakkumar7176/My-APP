@@ -478,6 +478,49 @@ class InMemoryGroupRepository implements GroupRepository {
     return _request(key, 'pending').id;
   }
 
+  /// Live `fn_withdraw_join_request(p_request_id)`: loads the row by id,
+  /// verifies user_id = currentUser and status = 'pending', deletes the row.
+  /// Raises JOIN_REQUEST_NOT_FOUND on any failure (not found, not owner,
+  /// not pending). Only the request id is received.
+  @override
+  Future<void> withdrawJoinRequest(String requestId) async {
+    calls.add('withdraw:$requestId');
+    _maybeFail();
+    final key = _requestIds.entries
+        .where((e) => e.value == requestId)
+        .map((e) => e.key)
+        .firstOrNull;
+    final status = key == null ? null : requestStatus[key];
+    if (key == null || status == null) {
+      throw DataError(
+        message: GroupErrors.map(
+          'JOIN_REQUEST_NOT_FOUND',
+          context: GroupErrorContext.joinRequest,
+        ),
+      );
+    }
+    final parts = key.split(':');
+    final userId = parts[1];
+    if (userId != currentUser) {
+      throw DataError(
+        message: GroupErrors.map(
+          'JOIN_REQUEST_NOT_FOUND',
+          context: GroupErrorContext.joinRequest,
+        ),
+      );
+    }
+    if (status != 'pending') {
+      throw DataError(
+        message: GroupErrors.map(
+          'JOIN_REQUEST_NOT_FOUND',
+          context: GroupErrorContext.joinRequest,
+        ),
+      );
+    }
+    requestStatus.remove(key);
+    _requestIds.remove(key);
+  }
+
   /// Invitations as live rows.
   final List<GroupInvitation> invitations = [];
   final List<String> invitationReads = [];

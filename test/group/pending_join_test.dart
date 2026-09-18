@@ -6,6 +6,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:my_praperation/core/errors/app_error.dart';
 import 'package:my_praperation/core/models/group.dart';
 import 'package:my_praperation/core/models/group_join_request.dart';
 import 'package:my_praperation/features/group/data/group_repository.dart';
@@ -347,6 +348,245 @@ void main() {
       c.dispose();
     });
   });
+
+  // ── G5.7 — Withdraw own pending join request ──
+  group('Withdraw join request', () {
+    test('A: own pending request can be withdrawn', () async {
+      final repo = _repo();
+      final c = GroupListController(repository: repo);
+      await c.load();
+      await c.joinByCode('LOCK0001');
+      expect(c.hasPendingRequests, isTrue);
+      final request = c.pendingRequests.single;
+      expect(request.isPending, isTrue);
+      expect(await c.withdrawJoinRequest(request), isTrue);
+      expect(c.hasPendingRequests, isFalse);
+      expect(repo.calls, contains('withdraw:${request.id}'));
+      // Server row is gone.
+      expect(repo.requestStatus.containsKey('g-locked:u-me'), isFalse);
+    });
+
+    test('B: another user\'s request cannot be withdrawn', () async {
+      final repo = _repo();
+      repo.requestStatus['g-locked:u-other'] = 'pending';
+      final otherId = repo.seedJoinRequest(
+        groupId: 'g-locked',
+        userId: 'u-other',
+      );
+      final c = GroupListController(repository: repo);
+      await c.load();
+      final other = GroupJoinRequest(
+        id: otherId,
+        groupId: 'g-locked',
+        userId: 'u-other',
+        status: 'pending',
+        createdAt: DateTime(2026, 9, 10),
+      );
+      expect(await c.withdrawJoinRequest(other), isFalse);
+      expect(c.error, isNotNull);
+      // Server row untouched.
+      expect(repo.requestStatus['g-locked:u-other'], 'pending');
+    });
+
+    test('C: approved request cannot be withdrawn', () async {
+      final repo = _repo();
+      repo.requestStatus['g-locked:u-me'] = 'approved';
+      final c = GroupListController(repository: repo);
+      await c.load();
+      expect(c.hasPendingRequests, isFalse);
+      final approved = GroupJoinRequest(
+        id: 'r-approved',
+        groupId: 'g-locked',
+        userId: 'u-me',
+        status: 'approved',
+        createdAt: DateTime(2026, 9, 10),
+      );
+      expect(await c.withdrawJoinRequest(approved), isFalse);
+      expect(c.error, contains('pending'));
+    });
+
+    test('D: declined request cannot be withdrawn', () async {
+      final repo = _repo();
+      repo.requestStatus['g-locked:u-me'] = 'declined';
+      final c = GroupListController(repository: repo);
+      await c.load();
+      expect(c.hasPendingRequests, isFalse);
+      final declined = GroupJoinRequest(
+        id: 'r-declined',
+        groupId: 'g-locked',
+        userId: 'u-me',
+        status: 'declined',
+        createdAt: DateTime(2026, 9, 10),
+      );
+      expect(await c.withdrawJoinRequest(declined), isFalse);
+      expect(c.error, contains('pending'));
+    });
+
+    test(
+      'E: cross-group forged request id cannot affect another request',
+      () async {
+        final repo = _repo();
+        // u-me has a pending request for g-locked.
+        repo.seedJoinRequest(groupId: 'g-locked', userId: 'u-me');
+        final c = GroupListController(repository: repo);
+        await c.load();
+        expect(c.hasPendingRequests, isTrue);
+        // Try to withdraw with a forged id that doesn't exist.
+        final forged = GroupJoinRequest(
+          id: 'forged-id',
+          groupId: 'g-locked',
+          userId: 'u-me',
+          status: 'pending',
+          createdAt: DateTime(2026, 9, 10),
+        );
+        expect(await c.withdrawJoinRequest(forged), isFalse);
+        expect(c.error, isNotNull);
+        // Original request still exists.
+        expect(c.hasPendingRequests, isTrue);
+      },
+    );
+
+    test('F: successful withdrawal refreshes state', () async {
+      final repo = _repo();
+      final c = GroupListController(repository: repo);
+      await c.load();
+      await c.joinByCode('LOCK0001');
+      expect(c.hasPendingRequests, isTrue);
+      final request = c.pendingRequests.single;
+      expect(await c.withdrawJoinRequest(request), isTrue);
+      expect(c.hasPendingRequests, isFalse);
+      expect(c.error, isNull);
+    });
+
+    test(
+      'F2: failed withdrawal keeps the pending state; retry works',
+      () async {
+        final repo = _repo();
+        final c = GroupListController(repository: repo);
+        await c.load();
+        await c.joinByCode('LOCK0001');
+        final request = c.pendingRequests.single;
+        repo.failNextWith = const DataError(message: 'Network error.');
+        expect(await c.withdrawJoinRequest(request), isFalse);
+        expect(c.error, 'Network error.');
+        expect(c.hasPendingRequests, isTrue, reason: 're-read: still pending');
+        expect(repo.requestStatus['g-locked:u-me'], 'pending');
+        expect(await c.withdrawJoinRequest(request), isTrue, reason: 'retry');
+        expect(c.hasPendingRequests, isFalse);
+      },
+    );
+
+    test('F3: after withdrawal the same code can be applied again', () async {
+      final repo = _repo();
+      final c = GroupListController(repository: repo);
+      await c.load();
+      await c.joinByCode('LOCK0001');
+      expect(c.isCodePending('LOCK0001'), isTrue);
+      await c.withdrawJoinRequest(c.pendingRequests.single);
+      expect(c.isCodePending('LOCK0001'), isFalse);
+      expect(await c.joinByCode('LOCK0001'), isA<JoinRequestFiled>());
+      expect(c.hasPendingRequests, isTrue);
+    });
+
+    test('G: single-flight protection', () async {
+      final repo = _SlowWithdrawRepository()
+        ..seed(
+          id: 'g-locked',
+          name: 'Locked',
+          ownerId: 'u-o2',
+          privacy: 'restricted',
+          inviteCode: 'LOCK0001',
+        );
+      final c = GroupListController(repository: repo);
+      await c.load();
+      await c.joinByCode('LOCK0001');
+      expect(c.hasPendingRequests, isTrue);
+      final request = c.pendingRequests.single;
+      final a = c.withdrawJoinRequest(request);
+      final b = c.withdrawJoinRequest(request);
+      expect(await b, isFalse, reason: 'second call blocked by single-flight');
+      expect(await a, isTrue);
+      expect(
+        repo.calls.where((x) => x.startsWith('withdraw')).length,
+        1,
+        reason: 'only one server call',
+      );
+    });
+
+    testWidgets('H: confirmation required — UI shows dialog', (tester) async {
+      tester.view.physicalSize = const Size(800, 2200);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final repo = _repo();
+      final c = GroupListController(repository: repo);
+      await c.load();
+      await c.joinByCode('LOCK0001');
+      await tester.pumpWidget(
+        MaterialApp(home: GroupListScreen(controller: c)),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(Key('withdraw_request_${c.pendingRequests.single.id}')),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byKey(Key('withdraw_request_${c.pendingRequests.single.id}')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('confirm_withdraw')), findsOneWidget);
+      expect(c.hasPendingRequests, isTrue, reason: 'not withdrawn yet');
+      await tester.tap(find.byKey(const Key('confirm_withdraw')));
+      await tester.pumpAndSettle();
+      expect(c.hasPendingRequests, isFalse);
+      expect(find.text('Join request withdrawn.'), findsOneWidget);
+    });
+
+    test('I: permission/auth failure handled', () async {
+      final repo = _repo();
+      final c = GroupListController(repository: repo);
+      await c.load();
+      await c.joinByCode('LOCK0001');
+      expect(c.hasPendingRequests, isTrue);
+      final request = c.pendingRequests.single;
+      repo.failNextWith = const DataError(message: 'NOT_AUTHORIZED');
+      expect(await c.withdrawJoinRequest(request), isFalse);
+      expect(c.error, isNotNull);
+      // Pending state re-read from server.
+      expect(c.hasPendingRequests, isTrue);
+    });
+
+    test('J: operation never touches group_members', () async {
+      final repo = _repo();
+      final c = GroupListController(repository: repo);
+      await c.load();
+      await c.joinByCode('LOCK0001');
+      final membersBefore = Map.of(repo.groups['g-locked']!.roles);
+      final request = c.pendingRequests.single;
+      await c.withdrawJoinRequest(request);
+      expect(repo.groups['g-locked']!.roles, membersBefore);
+      expect(repo.calls.where((x) => x.startsWith('remove')), isEmpty);
+    });
+
+    test('K: operation never touches group_invitations', () async {
+      final repo = _repo();
+      repo.seedInvitation(
+        id: 'i-test',
+        groupId: 'g-locked',
+        inviterId: 'u-o2',
+        inviteeId: 'u-me',
+      );
+      final c = GroupListController(repository: repo);
+      await c.load();
+      await c.joinByCode('LOCK0001');
+      final request = c.pendingRequests.single;
+      await c.withdrawJoinRequest(request);
+      expect(repo.invitations.any((i) => i.id == 'i-test'), isTrue);
+      expect(
+        repo.calls.where((x) => x.startsWith('cancelInvitation')),
+        isEmpty,
+      );
+    });
+  });
 }
 
 class _FailingPendingRepository extends InMemoryGroupRepository {
@@ -362,4 +602,13 @@ class _NoRowsPendingRepository extends InMemoryGroupRepository {
   _NoRowsPendingRepository() : super(currentUser: 'u-me');
   @override
   Future<List<GroupJoinRequest>> myPendingJoinRequests() async => const [];
+}
+
+class _SlowWithdrawRepository extends InMemoryGroupRepository {
+  _SlowWithdrawRepository() : super(currentUser: 'u-me');
+  @override
+  Future<void> withdrawJoinRequest(String requestId) async {
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    return super.withdrawJoinRequest(requestId);
+  }
 }

@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/theme/app_colors.dart';
 import '../../../core/models/group.dart';
+import '../../../core/models/group_join_request.dart';
 import '../domain/group_role.dart';
 import '../state/group_list_controller.dart';
 import '../widgets/group_avatar.dart';
@@ -188,18 +189,87 @@ class _GroupListScreenState extends State<GroupListScreen> {
   /// is not membership, and a restricted group is not even readable yet.
   Widget _pendingBanner() {
     if (!_c.hasPendingRequests) return const SizedBox.shrink();
-    final n = _c.pendingRequests.length;
     return Card(
       key: const Key('pending_requests_banner'),
       margin: const EdgeInsets.only(bottom: 12),
-      child: ListTile(
-        leading: const Icon(Icons.hourglass_top_outlined),
-        title: Text(
-          n == 1 ? '1 join request pending' : '$n join requests pending',
-        ),
-        subtitle: const Text('Waiting for a group manager to approve.'),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: const Icon(Icons.hourglass_top_outlined),
+            title: Text(
+              _c.pendingRequests.length == 1
+                  ? '1 join request pending'
+                  : '${_c.pendingRequests.length} join requests pending',
+            ),
+            subtitle: const Text('Waiting for a group manager to approve.'),
+          ),
+          for (final r in _c.pendingRequests)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Row(
+                children: [
+                  const Icon(Icons.forum_outlined, size: 20),
+                  const SizedBox(width: 12),
+                  const Expanded(child: Text('Join request')),
+                  TextButton(
+                    key: Key('withdraw_request_${r.id}'),
+                    onPressed: _c.actingWithdrawId == r.id || _c.isBusy
+                        ? null
+                        : () => _confirmWithdraw(r),
+                    child: _c.actingWithdrawId == r.id
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('Withdraw'),
+                  ),
+                ],
+              ),
+            ),
+        ],
       ),
     );
+  }
+
+  Future<void> _confirmWithdraw(GroupJoinRequest request) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Withdraw request?'),
+        content: const Text(
+          'This will cancel your join request. You can submit a new request '
+          'later if the group allows it.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const Key('confirm_withdraw'),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Withdraw'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final ok = await _c.withdrawJoinRequest(request);
+    if (!mounted) return;
+    if (ok) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Join request withdrawn.')));
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_c.error ?? 'Could not withdraw the request.'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
   }
 }
 

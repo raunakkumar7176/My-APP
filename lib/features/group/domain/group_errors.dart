@@ -41,6 +41,11 @@ class GroupErrors {
       // removed, or inaccessible — the server does not say which.
       return 'This invitation is no longer available.';
     }
+    if (lower.contains('join_request_not_found')) {
+      // fn_withdraw_join_request: not the owner, not pending,
+      // removed, or inaccessible — the server does not say which.
+      return 'This join request is no longer available.';
+    }
     if (lower.contains('invalid_invite_code')) {
       return 'That invite code does not match any group. Check it and try again.';
     }
