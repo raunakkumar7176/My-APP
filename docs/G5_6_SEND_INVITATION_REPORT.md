@@ -1,7 +1,8 @@
 # G5.6 — Send Invitation: Implementation Report
 
-**Status: FLUTTER IMPLEMENTED — BLOCKED ON ONE BACKEND RESOLVER (proposed, NOT executed).**
-**G5.6 is NOT COMPLETE until `rpc_find_profile_by_student_code` is verified/applied live and the live lookup is observed.**
+**Status: CLOSED / COMPLETE (2026-09-18).**
+
+Live closure evidence (owner-run): `rpc_find_profile_by_student_code(text)` exists with `RETURNS TABLE(id uuid, full_name text, avatar_url text, student_code text)`, SECURITY DEFINER, `search_path = ''`, STABLE, grants `authenticated:EXECUTE` + owner only (no anon), `student_code_unique = true`; Chrome verification: valid code → one match with exactly the four fields, invalid code → no match, invitation UI functional, no security issue observed; `flutter analyze` / `flutter test` / debug APK pass.
 
 ## Live backend audit (Phase 0)
 Evidence = the migration set that built the live database (`My-Prepration/supabase/migrations`, [LEGACY-SQL]) plus prior live verifications; the read-only confirmation is `migrations/G5_6_VERIFY.sql` (one SELECT, nothing writes).
@@ -49,13 +50,13 @@ Group Hub → Invite member (manager only) → sheet → Student code → **Sear
 - The match is held only by the sheet's controller and nulled on dispose; nothing logged beyond the response shape.
 
 ## Tests
-677 passing (660 → 677). A manager sees Invite · B member never looks up · C trimmed/upper-cased · D/Q only identity fields · E not found · F/G/H send with session inviter and current group · I single-flight · J hub outgoing refreshed · K pending handled + UNIQUE · L member handled · M declined explicit · N expired explicit, no logic invented · O/P forged group / non-manager refused by INSERT policy · R/S no members / requests touched · T G5.1–G5.5 green (677 total).
+677 tests passing in the full suite (173 of them under `test/group/`). A manager sees Invite · B member never looks up · C trimmed/upper-cased · D/Q only identity fields · E not found · F/G/H send with session inviter and current group · I single-flight · J hub outgoing refreshed · K pending handled + UNIQUE · L member handled · M declined explicit · N expired explicit, no logic invented · O/P forged group / non-manager refused by INSERT policy · R/S no members / requests touched · T G5.1–G5.5 green.
 
 ## Validation
 `flutter analyze`: 0 errors / 0 warnings · `flutter test`: 677 passed · APK: built · `lib/features/test/` and the G3 engine: untouched.
 
 ## Known limitations / blocker
-- **Blocker:** the resolver does not exist live. Until `G5_6_VERIFY.sql` confirms uniqueness/no-resolver and the proposed function is applied, `findProfileByStudentCode` will fail live with a "function does not exist" error (mapped to the generic invitation message). Everything else in the flow is live-supported today.
+- Resolver applied live (see status); the previous blocker is resolved.
 - If the verify grid shows `student_code` is **not** unique, do not apply the resolver; report back and the phase stops there (no Flutter uniqueness rule will be invented).
 - No live send executed for verification (permanent write).
 - Not implemented by design: email/SMS/phone/link/new-user invitations, expiry, notifications, G5.7, G5.8.
