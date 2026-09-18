@@ -32,6 +32,14 @@ class JoinRequestFiled extends JoinOutcome {
   const JoinRequestFiled();
 }
 
+/// Marker text for the non-atomic re-invite failing after its first step:
+/// the declined row is gone and no new invitation exists. Kept as a constant
+/// so the controller and tests recognise it without a new error type
+/// (`AppError` is sealed).
+const reinviteIncompletePrefix =
+    'The previous declined invitation was removed but the new invitation '
+    'could not be sent';
+
 /// The single group data source for the whole app (the R4 test feature reads
 /// `myGroups()` through this same interface). Every method maps to a live
 /// object; nothing here assumes a column or function that does not exist.
@@ -156,6 +164,26 @@ abstract interface class GroupRepository {
 
   /// `fn_decline_group_invitation(p_invite_id)` — same guard; `INVITE_NOT_FOUND`.
   Future<void> declineInvitation(String invitationId);
+
+  /// Outgoing / managed invitations of one group (exact `group_id`, all
+  /// statuses). The live SELECT policy (invitee ∨ inviter ∨ member) decides
+  /// visibility; the client calls this only for MANAGE_MEMBERS holders and
+  /// never across groups. No invitee profile is embedded (not readable for a
+  /// non-member; no lookup exists).
+  Future<List<GroupInvitation>> groupInvitations(String groupId);
+
+  /// Deletes exactly one invitation row by id under the live DELETE policy
+  /// (`inviter_id = uid OR MANAGE_MEMBERS`). Throws when no row was deleted
+  /// (not permitted, or already gone) — a 0-row delete is never a success.
+  Future<void> cancelInvitation(String invitationId);
+
+  /// Re-invites after a decline. `UNIQUE(group_id, invitee_id)` forces two
+  /// steps: DELETE the declined row (DELETE policy), then INSERT a new pending
+  /// row with the caller as inviter (INSERT policy `inviter_id = uid AND
+  /// MANAGE_MEMBERS`). Not atomic: if the INSERT fails after the DELETE
+  /// succeeded, a [DataError] starting with [reinviteIncompletePrefix] is thrown so the caller can say
+  /// exactly that — the declined record is gone and no new invitation exists.
+  Future<void> reinvite(GroupInvitation declined);
 }
 
 class SupabaseGroupRepository implements GroupRepository {
@@ -513,6 +541,66 @@ class SupabaseGroupRepository implements GroupRepository {
           params: {'p_request_id': requestId, 'p_approve': approve},
         );
       });
+
+  @override
+  Future<List<GroupInvitation>> groupInvitations(String groupId) =>
+      _guard(GroupErrorContext.invitation, () async {
+        final rows = await _client
+            .from('group_invitations')
+            .select(_invitationColumns)
+            .eq('group_id', groupId)
+            .order('created_at', ascending: false);
+        return [
+          for (final r in rows as List)
+            GroupInvitation.fromJson(r as Map<String, dynamic>),
+        ];
+      });
+
+  @override
+  Future<void> cancelInvitation(String invitationId) =>
+      _guard(GroupErrorContext.invitation, () async {
+        final deleted = await _client
+            .from('group_invitations')
+            .delete()
+            .eq('id', invitationId)
+            .select('id');
+        if ((deleted as List).isEmpty) {
+          throw const DataError(
+            message:
+                'This invitation could not be cancelled. It may already be '
+                'gone, or you do not have permission for it.',
+          );
+        }
+      });
+
+  @override
+  Future<void> reinvite(GroupInvitation declined) async {
+    final uid = _uid;
+    if (uid == null) throw const AuthError(message: 'Please sign in again.');
+    if (declined.status != GroupInvitation.statusDeclined) {
+      throw const ValidationError(
+        message: 'Only a declined invitation can be sent again.',
+      );
+    }
+    // Step 1 — remove the declined row (UNIQUE would block the new one).
+    await cancelInvitation(declined.id);
+    // Step 2 — new pending row; the caller is the inviter.
+    try {
+      await _guard(GroupErrorContext.invitation, () async {
+        await _client.from('group_invitations').insert({
+          'group_id': declined.groupId,
+          'inviter_id': uid,
+          'invitee_id': declined.inviteeId,
+        });
+      });
+    } on AppError catch (e) {
+      throw DataError(
+        message:
+            '$reinviteIncompletePrefix (${e.message}). Nothing is pending for '
+            'this person — use Re-invite again once the problem is resolved.',
+      );
+    }
+  }
 
   static Future<T> _guard<T>(
     GroupErrorContext context,

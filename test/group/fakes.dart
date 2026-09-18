@@ -565,4 +565,96 @@ class InMemoryGroupRepository implements GroupRepository {
     }
     _setInvitationStatus(invitationId, 'declined');
   }
+
+  /// Live SELECT policy: invitee OR inviter OR fn_is_member.
+  @override
+  Future<List<GroupInvitation>> groupInvitations(String groupId) async {
+    invitationReads.add('group:$groupId');
+    final member = groups[groupId]?.roles.containsKey(currentUser) ?? false;
+    return [
+      for (final i in invitations)
+        if (i.groupId == groupId &&
+            (member ||
+                i.inviteeId == currentUser ||
+                i.inviterId == currentUser))
+          i,
+    ];
+  }
+
+  /// Live DELETE policy: inviter_id = uid OR MANAGE_MEMBERS on the row's
+  /// group. A non-matching row deletes 0 rows → the repository throws.
+  @override
+  Future<void> cancelInvitation(String invitationId) async {
+    calls.add('cancelInvitation:$invitationId');
+    _maybeFail();
+    final idx = invitations.indexWhere((i) => i.id == invitationId);
+    final i = idx < 0 ? null : invitations[idx];
+    final allowed =
+        i != null &&
+        (i.inviterId == currentUser ||
+            hasPermission(i.groupId, GroupPermission.manageMembers));
+    if (!allowed) {
+      throw const DataError(
+        message:
+            'This invitation could not be cancelled. It may already be gone, '
+            'or you do not have permission for it.',
+      );
+    }
+    invitations.removeAt(idx);
+  }
+
+  /// Thrown by the INSERT step of [reinvite] only (to exercise the explicit
+  /// two-step failure).
+  Object? failInsertWith;
+  int _inviteSeq = 100;
+
+  /// Live INSERT policy: inviter_id = uid AND MANAGE_MEMBERS;
+  /// UNIQUE(group_id, invitee_id).
+  Future<void> _insertInvitation(String groupId, String inviteeId) async {
+    calls.add('insertInvitation:$groupId:$inviteeId');
+    final f = failInsertWith;
+    if (f != null) {
+      failInsertWith = null;
+      throw f;
+    }
+    if (!hasPermission(groupId, GroupPermission.manageMembers)) {
+      throw _notAuthorized(GroupErrorContext.invitation);
+    }
+    if (invitations.any(
+      (i) => i.groupId == groupId && i.inviteeId == inviteeId,
+    )) {
+      throw const DataError(
+        message: 'duplicate key value violates unique constraint',
+      );
+    }
+    invitations.add(
+      GroupInvitation(
+        id: 'i-${++_inviteSeq}',
+        groupId: groupId,
+        inviterId: currentUser,
+        inviteeId: inviteeId,
+        status: 'pending',
+        createdAt: DateTime(2026, 9, 13),
+      ),
+    );
+  }
+
+  @override
+  Future<void> reinvite(GroupInvitation declined) async {
+    if (declined.status != 'declined') {
+      throw const ValidationError(
+        message: 'Only a declined invitation can be sent again.',
+      );
+    }
+    await cancelInvitation(declined.id);
+    try {
+      await _insertInvitation(declined.groupId, declined.inviteeId);
+    } on AppError catch (e) {
+      throw DataError(
+        message:
+            '$reinviteIncompletePrefix (${e.message}). Nothing is pending for '
+            'this person — use Re-invite again once the problem is resolved.',
+      );
+    }
+  }
 }

@@ -6,6 +6,7 @@ import '../state/group_hub_controller.dart';
 import '../widgets/group_avatar.dart';
 import '../widgets/join_request_queue.dart';
 import '../widgets/member_tile.dart';
+import '../widgets/outgoing_invitations_section.dart';
 
 /// One group's hub: profile header, roster, and the G1 membership actions.
 /// Later phases (announcements, chat, group tests, leaderboard) attach here;
@@ -198,6 +199,8 @@ class _GroupHubScreenState extends State<GroupHubScreen> {
             const SizedBox(height: 24),
             if (_c.canManageMembers) ...[
               JoinRequestQueue(controller: _c),
+              const SizedBox(height: 24),
+              OutgoingInvitationsSection(controller: _c),
               const SizedBox(height: 24),
             ],
             Row(

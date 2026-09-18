@@ -1,6 +1,7 @@
 import '../../../core/errors/app_error.dart';
 import '../../../core/logging/app_logger.dart';
 import '../../../core/models/group.dart';
+import '../../../core/models/group_invitation.dart';
 import '../../../core/models/group_join_request.dart';
 import '../../../core/models/group_member.dart';
 import '../../../core/services/auth_service.dart';
@@ -43,6 +44,27 @@ class GroupHubController extends DisposableNotifier {
   bool _joinRequestsLoading = false;
   String? _joinRequestsError;
   String? _actingRequestId;
+
+  // ── outgoing / managed invitations (G5.5) ──
+  List<GroupInvitation> _outgoingInvitations = const [];
+  bool _outgoingLoading = false;
+  String? _outgoingError;
+  String? _actingInvitationId;
+
+  /// Invitations of this group, all statuses, loaded only when the
+  /// server-reported MANAGE_MEMBERS is true. Kept separate from the incoming
+  /// (invitee) list and from join requests — different lifecycle entities.
+  List<GroupInvitation> get outgoingInvitations => _outgoingInvitations;
+  bool get outgoingLoading => _outgoingLoading;
+  String? get outgoingError => _outgoingError;
+  String? get actingInvitationId => _actingInvitationId;
+
+  /// Re-invite is offered only for a `declined` row whose invitee is not
+  /// already in the roster. Pending/accepted/expired rows are never re-sent.
+  bool canReinvite(GroupInvitation inv) =>
+      canManageMembers &&
+      inv.status == GroupInvitation.statusDeclined &&
+      !_members.any((m) => m.userId == inv.inviteeId);
 
   /// Pending requests for this group. Loaded only when the server-reported
   /// MANAGE_MEMBERS is true; otherwise never queried. A requester is not a
@@ -192,9 +214,12 @@ class GroupHubController extends DisposableNotifier {
         // Manager queue: loaded only when the server says MANAGE_MEMBERS.
         if (_permissions.canManageMembers) {
           await _loadJoinRequests();
+          await _loadOutgoingInvitations();
         } else {
           _joinRequests = const [];
           _joinRequestsError = null;
+          _outgoingInvitations = const [];
+          _outgoingError = null;
         }
       }
     } on AppError catch (e) {
@@ -225,6 +250,94 @@ class GroupHubController extends DisposableNotifier {
       );
     }
     _joinRequestsLoading = false;
+  }
+
+  Future<void> _loadOutgoingInvitations() async {
+    _outgoingLoading = true;
+    _outgoingError = null;
+    try {
+      _outgoingInvitations = await _repo.groupInvitations(groupId);
+    } on AppError catch (e) {
+      _outgoingError = e.message;
+    } catch (e, st) {
+      AppLogger.error('Outgoing invitations load failed: $e', stackTrace: st);
+      _outgoingError = GroupErrors.map(
+        e.toString(),
+        context: GroupErrorContext.invitation,
+      );
+    }
+    _outgoingLoading = false;
+  }
+
+  Future<void> retryOutgoingInvitations() async {
+    if (!canManageMembers || _outgoingLoading) return;
+    notifyListeners();
+    await _loadOutgoingInvitations();
+    notifyListeners();
+  }
+
+  /// Cancels a pending invitation (exact-row DELETE under the live policy).
+  /// The list is re-read from the server afterwards, success or failure.
+  Future<bool> cancelInvitation(GroupInvitation inv) async {
+    if (!inv.isPending) {
+      _error = 'Only a pending invitation can be cancelled.';
+      notifyListeners();
+      return false;
+    }
+    return _actOnInvitation(inv, () => _repo.cancelInvitation(inv.id));
+  }
+
+  /// Re-invites a declined invitee: DELETE the declined row, INSERT a new
+  /// pending one (two steps; the repository reports an incomplete second step
+  /// explicitly). Never offered for pending / accepted / expired rows or for
+  /// someone who is already a member.
+  Future<bool> reinvite(GroupInvitation inv) async {
+    if (!canReinvite(inv)) {
+      _error = inv.status == GroupInvitation.statusDeclined
+          ? 'This person is already a member.'
+          : 'Only a declined invitation can be sent again.';
+      notifyListeners();
+      return false;
+    }
+    return _actOnInvitation(inv, () => _repo.reinvite(inv));
+  }
+
+  Future<bool> _actOnInvitation(
+    GroupInvitation inv,
+    Future<void> Function() body,
+  ) async {
+    if (!canManageMembers) {
+      _error = GroupErrors.map(
+        'NOT_AUTHORIZED',
+        context: GroupErrorContext.invitation,
+      );
+      notifyListeners();
+      return false;
+    }
+    if (_actingInvitationId == inv.id || _busy) return false;
+    _actingInvitationId = inv.id;
+    _error = null;
+    notifyListeners();
+    try {
+      await body();
+      await _loadOutgoingInvitations();
+      return true;
+    } on AppError catch (e) {
+      _error = e.message;
+      await _loadOutgoingInvitations(); // server truth, never a guess
+      return false;
+    } catch (e, st) {
+      AppLogger.error('Invitation action failed: $e', stackTrace: st);
+      _error = GroupErrors.map(
+        e.toString(),
+        context: GroupErrorContext.invitation,
+      );
+      await _loadOutgoingInvitations();
+      return false;
+    } finally {
+      _actingInvitationId = null;
+      notifyListeners();
+    }
   }
 
   Future<void> retryJoinRequests() async {

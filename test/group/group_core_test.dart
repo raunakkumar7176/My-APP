@@ -715,6 +715,13 @@ class _FailingRepository implements GroupRepository {
   @override
   Future<void> declineInvitation(String invitationId) async {}
   @override
+  Future<List<GroupInvitation>> groupInvitations(String groupId) async =>
+      const [];
+  @override
+  Future<void> cancelInvitation(String invitationId) async {}
+  @override
+  Future<void> reinvite(GroupInvitation declined) async {}
+  @override
   Future<GroupPermissions> permissionsFor(
     String groupId, {
     List<GroupPermission> of = GroupPermission.live,
