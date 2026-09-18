@@ -5,6 +5,7 @@ import '../../../core/constants/theme/app_colors.dart';
 import '../../../core/models/group_member.dart';
 import '../domain/group_role.dart';
 import '../state/group_hub_controller.dart';
+import '../widgets/group_avatar.dart';
 
 /// One group's hub: profile header, roster, and the G1 membership actions.
 /// Later phases (announcements, chat, group tests, leaderboard) attach here;
@@ -50,6 +51,13 @@ class _GroupHubScreenState extends State<GroupHubScreen> {
         backgroundColor: error ? AppColors.error : null,
       ),
     );
+  }
+
+  Future<void> _openSettings() async {
+    await context.push('/groups/${widget.groupId}/settings');
+    // Name / description / privacy / logo may have changed: reload, never
+    // show a stale header.
+    if (mounted) await _c.refresh();
   }
 
   Future<void> _leave() async {
@@ -153,6 +161,13 @@ class _GroupHubScreenState extends State<GroupHubScreen> {
       appBar: AppBar(
         title: Text(group.name),
         actions: [
+          if (_c.canEditBasics)
+            IconButton(
+              key: const Key('group_settings_action'),
+              tooltip: 'Group settings',
+              icon: const Icon(Icons.settings_outlined),
+              onPressed: _openSettings,
+            ),
           PopupMenuButton<String>(
             key: const Key('group_menu'),
             onSelected: (value) {
@@ -175,14 +190,10 @@ class _GroupHubScreenState extends State<GroupHubScreen> {
           children: [
             Row(
               children: [
-                CircleAvatar(
+                GroupAvatar(
+                  name: group.name,
+                  logoUrl: group.logoUrl,
                   radius: 28,
-                  child: Text(
-                    group.name.trim().isEmpty
-                        ? '?'
-                        : group.name.trim()[0].toUpperCase(),
-                    style: const TextStyle(fontSize: 22),
-                  ),
                 ),
                 const SizedBox(width: 16),
                 Expanded(

@@ -681,7 +681,12 @@ class _FailingRepository implements GroupRepository {
     required String groupId,
     required String name,
     required String description,
+    String? privacy,
   }) async {}
+  @override
+  Future<bool> canEditSettings(String groupId) async => false;
+  @override
+  Future<void> clearLogo(String groupId) async {}
 }
 
 /// Create takes a turn to complete, so the busy guard can be observed.

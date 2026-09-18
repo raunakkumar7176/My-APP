@@ -5,6 +5,7 @@ import '../../../core/constants/theme/app_colors.dart';
 import '../../../core/models/group.dart';
 import '../domain/group_role.dart';
 import '../state/group_list_controller.dart';
+import '../widgets/group_avatar.dart';
 import '../widgets/join_group_sheet.dart';
 
 /// Group Hub entry: the groups the caller owns or belongs to.
@@ -173,14 +174,7 @@ class _GroupCard extends StatelessWidget {
       child: ListTile(
         key: Key('group_card_${group.id}'),
         onTap: onOpen,
-        // Logo upload is a later phase; the initial stands in for it.
-        leading: CircleAvatar(
-          child: Text(
-            group.name.trim().isEmpty
-                ? '?'
-                : group.name.trim()[0].toUpperCase(),
-          ),
-        ),
+        leading: GroupAvatar(name: group.name, logoUrl: group.logoUrl),
         title: Text(group.name, maxLines: 2, overflow: TextOverflow.ellipsis),
         subtitle: Text(
           '${group.memberCount} ${group.memberCount == 1 ? 'member' : 'members'} · ${role.label}',

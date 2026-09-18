@@ -10,6 +10,7 @@ import '../features/auth/splash_screen.dart';
 import '../features/group/screens/group_create_screen.dart';
 import '../features/group/screens/group_hub_screen.dart';
 import '../features/group/screens/group_list_screen.dart';
+import '../features/group/screens/group_settings_screen.dart';
 import '../features/home/home_screen.dart';
 import '../features/profile/profile_screen.dart';
 import '../features/study/material_detail_screen.dart';
@@ -159,6 +160,15 @@ final class AppRouter {
             name: 'group-hub',
             builder: (context, state) =>
                 GroupHubScreen(groupId: state.pathParameters['groupId']!),
+            routes: [
+              GoRoute(
+                path: 'settings',
+                name: 'group-settings',
+                builder: (context, state) => GroupSettingsScreen(
+                  groupId: state.pathParameters['groupId']!,
+                ),
+              ),
+            ],
           ),
         ],
       ),

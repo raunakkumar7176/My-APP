@@ -35,6 +35,7 @@ class GroupHubController extends DisposableNotifier {
   bool _accessDenied = false;
   bool _leftGroup = false;
   bool _canManageMembers = false;
+  bool _canEditSettings = false;
   String? _error;
 
   Group? get group => _group;
@@ -63,9 +64,11 @@ class GroupHubController extends DisposableNotifier {
   /// from the role string. Used only to decide whether to offer the action.
   bool get canManageMembers => _canManageMembers;
 
-  /// The live `groups` UPDATE policy is `GROUP_SETTINGS` or owner, and
-  /// `GROUP_SETTINGS` is seeded for no role, so this mirrors it as owner-only.
-  bool get canEditBasics => isOwner;
+  /// Server-confirmed `GROUP_SETTINGS` via `fn_has_permission`, which itself
+  /// returns true for the owner — exactly the live `groups` UPDATE policy
+  /// (`GROUP_SETTINGS` OR owner). Owner is also accepted locally so a failed
+  /// probe never hides the owner's own settings; the server still decides.
+  bool get canEditBasics => _canEditSettings || isOwner;
 
   /// The owner has no way out today: the live `self leave group` policy would
   /// happily delete the owner's membership row and orphan the group, and no
@@ -95,6 +98,7 @@ class GroupHubController extends DisposableNotifier {
         _accessDenied = false;
         _members = await _repo.members(groupId);
         _canManageMembers = await _repo.canManageMembers(groupId);
+        _canEditSettings = await _repo.canEditSettings(groupId);
       }
     } on AppError catch (e) {
       _error = e.message;
@@ -150,11 +154,13 @@ class GroupHubController extends DisposableNotifier {
     return ok;
   }
 
-  /// Updates name / description. Server policy decides; a refusal surfaces as
-  /// a permission message.
+  /// Updates name / description / privacy. Server policy decides; a refusal
+  /// surfaces as a permission message. Privacy is validated against the live
+  /// CHECK values before anything is sent.
   Future<bool> updateBasics({
     required String name,
     String description = '',
+    GroupPrivacy? privacy,
   }) async {
     final invalid = GroupErrors.validateName(name);
     if (invalid != null) {
@@ -168,7 +174,19 @@ class GroupHubController extends DisposableNotifier {
         groupId: groupId,
         name: name,
         description: description,
+        privacy: privacy?.db,
       ),
+    );
+    if (ok) await load();
+    return ok;
+  }
+
+  /// Removes the group logo (`logo_url = NULL`). Upload/replace wait on a
+  /// group-scoped storage policy that does not exist live yet.
+  Future<bool> clearLogo() async {
+    final ok = await _run(
+      GroupErrorContext.update,
+      () => _repo.clearLogo(groupId),
     );
     if (ok) await load();
     return ok;

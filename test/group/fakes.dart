@@ -6,7 +6,10 @@
 //                            for restricted, idempotent for an existing member
 //   * group_members RLS    → self-delete (leave) always; deleting someone else
 //                            needs MANAGE_MEMBERS
-//   * groups UPDATE RLS    → GROUP_SETTINGS or owner (only owner in practice)
+//   * groups UPDATE RLS    → GROUP_SETTINGS or owner; GROUP_SETTINGS is seeded
+//                            for no role, so [settingsGrant] models an explicit
+//                            role_permissions row
+//   * groups.privacy CHECK → public | private | restricted
 
 import 'package:my_praperation/core/errors/app_error.dart';
 import 'package:my_praperation/core/models/group.dart';
@@ -22,14 +25,16 @@ class FakeGroup {
     this.description = '',
     this.privacy = 'public',
     this.inviteCode = 'CODE1234',
+    this.logoUrl,
   });
 
   final String id;
   String name;
   String description;
   final String ownerId;
-  final String privacy;
+  String privacy;
   final String inviteCode;
+  String? logoUrl;
   final Map<String, String> roles = {}; // userId -> group_role
   DateTime createdAt = DateTime(2026, 9, 1);
 }
@@ -46,12 +51,16 @@ class InMemoryGroupRepository implements GroupRepository {
   /// Thrown by the next mutating call, to exercise the error paths.
   Object? failNextWith;
 
+  /// `'<groupId>:<userId>'` pairs holding GROUP_SETTINGS (see header).
+  final Set<String> settingsGrant = {};
+
   FakeGroup seed({
     String? id,
     String name = 'Physics Group',
     String ownerId = 'u-owner',
     String privacy = 'public',
     String inviteCode = 'CODE1234',
+    String? logoUrl,
     Map<String, String> members = const {},
   }) {
     final g = FakeGroup(
@@ -60,6 +69,7 @@ class InMemoryGroupRepository implements GroupRepository {
       ownerId: ownerId,
       privacy: privacy,
       inviteCode: inviteCode,
+      logoUrl: logoUrl,
     );
     g.roles[ownerId] = 'owner';
     g.roles.addAll(members);
@@ -75,12 +85,16 @@ class InMemoryGroupRepository implements GroupRepository {
     }
   }
 
+  DataError _notAuthorized(GroupErrorContext ctx) =>
+      DataError(message: GroupErrors.map('NOT_AUTHORIZED', context: ctx));
+
   Group _toGroup(FakeGroup g, {bool withProfile = false}) => Group(
     id: g.id,
     name: g.name,
     ownerId: g.ownerId,
     createdAt: g.createdAt,
     memberCount: g.roles.length,
+    logoUrl: g.logoUrl,
     userRole: g.roles[currentUser] ?? 'member',
     description: withProfile ? g.description : null,
     privacy: withProfile ? g.privacy : null,
@@ -163,13 +177,14 @@ class InMemoryGroupRepository implements GroupRepository {
     _maybeFail();
     final code = inviteCode.trim().toUpperCase();
     final g = groups.values.where((x) => x.inviteCode == code).firstOrNull;
-    if (g == null)
+    if (g == null) {
       throw DataError(
         message: GroupErrors.map(
           'INVALID_INVITE_CODE',
           context: GroupErrorContext.join,
         ),
       );
+    }
     if (g.roles.containsKey(currentUser)) {
       return JoinedGroup(g.id, alreadyMember: true);
     }
@@ -196,27 +211,12 @@ class InMemoryGroupRepository implements GroupRepository {
     calls.add('remove:$groupId:$userId');
     _maybeFail();
     final g = groups[groupId];
-    if (g == null)
-      throw DataError(
-        message: GroupErrors.map(
-          'NOT_AUTHORIZED',
-          context: GroupErrorContext.removeMember,
-        ),
-      );
-    if (userId == currentUser)
-      throw DataError(
-        message: GroupErrors.map(
-          'NOT_AUTHORIZED',
-          context: GroupErrorContext.removeMember,
-        ),
-      );
+    if (g == null) throw _notAuthorized(GroupErrorContext.removeMember);
+    if (userId == currentUser) {
+      throw _notAuthorized(GroupErrorContext.removeMember);
+    }
     if (!await canManageMembers(groupId)) {
-      throw DataError(
-        message: GroupErrors.map(
-          'NOT_AUTHORIZED',
-          context: GroupErrorContext.removeMember,
-        ),
-      );
+      throw _notAuthorized(GroupErrorContext.removeMember);
     }
     g.roles.remove(userId);
   }
@@ -231,23 +231,46 @@ class InMemoryGroupRepository implements GroupRepository {
   }
 
   @override
+  Future<bool> canEditSettings(String groupId) async {
+    final g = groups[groupId];
+    if (g == null) return false;
+    // fn_has_permission: owner → true; else a role_permissions row.
+    final role = g.roles[currentUser];
+    return role == 'owner' || settingsGrant.contains('$groupId:$currentUser');
+  }
+
+  @override
   Future<void> updateBasics({
     required String groupId,
     required String name,
     required String description,
+    String? privacy,
   }) async {
     calls.add('updateBasics:$groupId');
     _maybeFail();
     final g = groups[groupId];
-    if (g == null || g.roles[currentUser] != 'owner') {
-      throw DataError(
-        message: GroupErrors.map(
-          'NOT_AUTHORIZED',
-          context: GroupErrorContext.removeMember,
-        ),
+    if (g == null || !await canEditSettings(groupId)) {
+      throw _notAuthorized(GroupErrorContext.update);
+    }
+    if (privacy != null &&
+        !const ['public', 'private', 'restricted'].contains(privacy)) {
+      throw const DataError(
+        message: 'violates check constraint "groups_privacy_check"',
       );
     }
     g.name = name.trim();
     g.description = description.trim();
+    if (privacy != null) g.privacy = privacy;
+  }
+
+  @override
+  Future<void> clearLogo(String groupId) async {
+    calls.add('clearLogo:$groupId');
+    _maybeFail();
+    final g = groups[groupId];
+    if (g == null || !await canEditSettings(groupId)) {
+      throw _notAuthorized(GroupErrorContext.update);
+    }
+    g.logoUrl = null;
   }
 }

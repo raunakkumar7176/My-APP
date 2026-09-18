@@ -66,13 +66,24 @@ abstract interface class GroupRepository {
   /// whether to offer the action.
   Future<bool> canManageMembers(String groupId);
 
-  /// Updates `groups.name` / `groups.description`. The live UPDATE policy
+  /// `fn_has_permission(group, uid, 'GROUP_SETTINGS')`. The function itself
+  /// returns true for the owner, so this mirrors the live `groups` UPDATE
+  /// policy (`GROUP_SETTINGS` OR owner) without a client-side role guess.
+  Future<bool> canEditSettings(String groupId);
+
+  /// Updates `groups.name` / `groups.description` and, when given, `privacy`
+  /// (live CHECK: public | private | restricted). The live UPDATE policy
   /// requires `GROUP_SETTINGS` or the owner role.
   Future<void> updateBasics({
     required String groupId,
     required String name,
     required String description,
+    String? privacy,
   });
+
+  /// Sets `groups.logo_url` to NULL. Same UPDATE policy. The storage object
+  /// (if any) is not touched: no group-scoped storage policy exists live.
+  Future<void> clearLogo(String groupId);
 }
 
 class SupabaseGroupRepository implements GroupRepository {
@@ -221,13 +232,21 @@ class SupabaseGroupRepository implements GroupRepository {
   });
 
   @override
-  Future<bool> canManageMembers(String groupId) async {
+  Future<bool> canManageMembers(String groupId) =>
+      _hasPermission(groupId, 'MANAGE_MEMBERS');
+
+  @override
+  Future<bool> canEditSettings(String groupId) =>
+      _hasPermission(groupId, 'GROUP_SETTINGS');
+
+  /// `fn_has_permission(p_group, p_user, p_perm)` — live-verified signature.
+  Future<bool> _hasPermission(String groupId, String permission) async {
     final uid = _uid;
     if (uid == null) return false;
     try {
       final response = await _client.rpc(
         'fn_has_permission',
-        params: {'p_group': groupId, 'p_user': uid, 'p_perm': 'MANAGE_MEMBERS'},
+        params: {'p_group': groupId, 'p_user': uid, 'p_perm': permission},
       );
       return response == true;
     } catch (e) {
@@ -243,12 +262,25 @@ class SupabaseGroupRepository implements GroupRepository {
     required String groupId,
     required String name,
     required String description,
+    String? privacy,
   }) => _guard(GroupErrorContext.update, () async {
     await _client
         .from('groups')
-        .update({'name': name.trim(), 'description': description.trim()})
+        .update({
+          'name': name.trim(),
+          'description': description.trim(),
+          if (privacy != null) 'privacy': privacy,
+        })
         .eq('id', groupId);
   });
+
+  @override
+  Future<void> clearLogo(String groupId) => _guard(
+    GroupErrorContext.update,
+    () async {
+      await _client.from('groups').update({'logo_url': null}).eq('id', groupId);
+    },
+  );
 
   static Future<T> _guard<T>(
     GroupErrorContext context,
