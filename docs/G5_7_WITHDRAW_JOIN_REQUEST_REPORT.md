@@ -1,6 +1,6 @@
 # G5.7 — Withdraw Join Request: Implementation Report
 
-**Status: READY FOR CLAUDE VERIFICATION.**
+**Status: BLOCKED — live RPC verification pending.**
 **Flutter complete; backend RPC `fn_withdraw_join_request` is PROPOSED (migration drafted, NOT executed). G5.7 cannot close until it is reviewed, applied live and the postflight matches.**
 
 ## Live backend audit (Phase 0)
@@ -115,3 +115,42 @@ Group List Screen
 ## Final status
 
 READY FOR CLAUDE VERIFICATION — apply `migrations/G5_7_fn_withdraw_join_request.sql` only after review; until then the Withdraw action fails live with the mapped generic message and nothing else in G5.2 changes.
+
+## Claude verification (2026-09-18, commit a4e4cae)
+
+**Code audit — PASS.** `withdrawJoinRequest` calls `fn_withdraw_join_request(p_request_id)` only; the three `.delete()` calls in the repository are the G1 leave/remove (`group_members`) and G5.5 cancel (`group_invitations`) paths, none on `group_join_requests`. Controller: pending-only guard, single-flight (`_actingWithdrawId`, plus `_busy` / invitation action lock), server re-read after success **and** failure, `_pendingCodes.clear()` on success, `DisposableNotifier` drops late notifications. Screen: per-request Withdraw disabled while acting/busy, confirmation dialog (`confirm_withdraw`), success/error snackbar. `JOIN_REQUEST_NOT_FOUND` → one generic message. No `group_members` / `group_invitations` mutation in the withdraw path.
+
+**Migration review — PASS (unchanged since a4e4cae).** `fn_withdraw_join_request(p_request_id uuid) RETURNS uuid`, plpgsql, SECURITY DEFINER, `SET search_path TO ''`; `AUTH_REQUIRED` on null uid; `SELECT … FOR UPDATE` by exact id; `JOIN_REQUEST_NOT_FOUND` for missing / not owner / not pending (one non-leaking code); `DELETE … WHERE id = p_request_id`; returns `group_id`; `REVOKE ALL FROM PUBLIC, anon`; `GRANT EXECUTE TO authenticated`; read-only postflight last. No policy, table, trigger or enum statements (the only keyword hit is a comment line).
+
+**Regression — PASS.** `flutter analyze` 0/0 · `flutter test` 690 passed (G5.1–G5.6, G3, R4 suites green) · debug APK built · no diff since a4e4cae.
+
+**Live application / functional test — NOT PERFORMED.** This environment has no way to execute SQL against the live project (established since G0; every migration has been applied by the owner in the SQL Editor). The RPC therefore remains UNAPPLIED and the phase is BLOCKED.
+
+### To close (owner, SQL Editor)
+1. Paste the entire `migrations/G5_7_fn_withdraw_join_request.sql` and Run. Expected postflight row: `signature = fn_withdraw_join_request(uuid)`, `returns = uuid`, `definer = true`, `config = {search_path=}`, `vol = v`, `grants` containing `authenticated:EXECUTE` and no `anon`.
+2. Read-only functional check as an authenticated identity, in ONE transaction that is rolled back (no live row is changed). Replace `<UID_A>` with your own `auth.users.id`, `<GROUP_A>` with a restricted group id you do NOT belong to, `<UID_B>` with another existing user id, `<GROUP_B>` another group id:
+```sql
+BEGIN;
+SELECT set_config('request.jwt.claims', '{"sub":"<UID_A>","role":"authenticated"}', true);
+SET LOCAL ROLE authenticated;
+-- controlled rows (rolled back below)
+INSERT INTO public.group_join_requests (group_id, user_id, status) VALUES ('<GROUP_A>', '<UID_A>', 'pending');
+RESET ROLE;
+INSERT INTO public.group_join_requests (group_id, user_id, status) VALUES ('<GROUP_B>', '<UID_A>', 'approved');
+INSERT INTO public.group_join_requests (group_id, user_id, status) VALUES ('<GROUP_A>', '<UID_B>', 'pending');
+SET LOCAL ROLE authenticated;
+SELECT 'A_own_pending' AS test,
+       public.fn_withdraw_join_request((SELECT id FROM public.group_join_requests WHERE group_id='<GROUP_A>' AND user_id='<UID_A>'))::text AS result;
+SELECT 'C_row_gone', count(*)::text FROM public.group_join_requests WHERE group_id='<GROUP_A>' AND user_id='<UID_A>';
+SELECT 'D_approved_rejected', (SELECT 'no exception' ) WHERE false; -- placeholder, see next lines
+ROLLBACK;
+```
+   Because a raised exception aborts the transaction, run D/E/F/G as separate single statements after the block above, each expected to fail with `JOIN_REQUEST_NOT_FOUND` (nothing is deleted on failure):
+```sql
+-- D approved (own)            : SELECT public.fn_withdraw_join_request('<ID_OF_APPROVED_ROW>');
+-- E declined (own)            : SELECT public.fn_withdraw_join_request('<ID_OF_DECLINED_ROW>');
+-- F another user's pending    : SELECT public.fn_withdraw_join_request('<ID_OF_UID_B_ROW>');
+-- G random / cross-group uuid : SELECT public.fn_withdraw_join_request(gen_random_uuid());
+```
+   H/I: `SELECT count(*) FROM public.group_members` and `FROM public.group_invitations` before and after must be equal. J: re-running A on a withdrawn id must fail with `JOIN_REQUEST_NOT_FOUND`.
+3. Paste the postflight row and the A/C counts + the D–G error texts back; the phase then gets its second verification and closure.
