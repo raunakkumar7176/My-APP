@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/errors/app_error.dart';
 import '../../../core/logging/app_logger.dart';
 import '../../../core/models/group.dart';
+import '../../../core/models/group_join_request.dart';
 import '../../../core/models/group_member.dart';
 import '../../../core/services/auth_service.dart';
 import '../../../core/services/supabase_service.dart';
@@ -117,6 +118,16 @@ abstract interface class GroupRepository {
   /// new code (GROUP_SETTINGS or owner; `NOT_AUTHORIZED` otherwise). Nothing
   /// is generated client-side.
   Future<String> rotateInviteCode(String groupId);
+
+  /// The caller's own join request for [groupId], or null. Exact group id +
+  /// the caller's own user id; the live SELECT policy (`user_id = uid` OR
+  /// MANAGE_MEMBERS) is the boundary — no other user's row is ever asked for.
+  Future<GroupJoinRequest?> myJoinRequest(String groupId);
+
+  /// The caller's own **pending** requests across groups (own rows only —
+  /// `fn_join_group` returns NULL for a restricted group without telling the
+  /// client which group it was, so this is how the pending state is found).
+  Future<List<GroupJoinRequest>> myPendingJoinRequests();
 }
 
 class SupabaseGroupRepository implements GroupRepository {
@@ -372,6 +383,44 @@ class SupabaseGroupRepository implements GroupRepository {
         }
         return code;
       });
+
+  static const _joinRequestColumns =
+      'id, group_id, user_id, status, created_at';
+
+  @override
+  Future<GroupJoinRequest?> myJoinRequest(String groupId) => _guard(
+    GroupErrorContext.join,
+    () async {
+      final uid = _uid;
+      if (uid == null) throw const AuthError(message: 'Please sign in again.');
+      final row = await _client
+          .from('group_join_requests')
+          .select(_joinRequestColumns)
+          .eq('group_id', groupId)
+          .eq('user_id', uid)
+          .maybeSingle(); // UNIQUE(group_id, user_id)
+      return row == null ? null : GroupJoinRequest.fromJson(row);
+    },
+  );
+
+  @override
+  Future<List<GroupJoinRequest>> myPendingJoinRequests() => _guard(
+    GroupErrorContext.join,
+    () async {
+      final uid = _uid;
+      if (uid == null) throw const AuthError(message: 'Please sign in again.');
+      final rows = await _client
+          .from('group_join_requests')
+          .select(_joinRequestColumns)
+          .eq('user_id', uid)
+          .eq('status', GroupJoinRequest.statusPending)
+          .order('created_at', ascending: false);
+      return [
+        for (final r in rows as List)
+          GroupJoinRequest.fromJson(r as Map<String, dynamic>),
+      ];
+    },
+  );
 
   static Future<T> _guard<T>(
     GroupErrorContext context,

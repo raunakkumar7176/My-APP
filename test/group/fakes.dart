@@ -13,6 +13,7 @@
 
 import 'package:my_praperation/core/errors/app_error.dart';
 import 'package:my_praperation/core/models/group.dart';
+import 'package:my_praperation/core/models/group_join_request.dart';
 import 'package:my_praperation/core/models/group_member.dart';
 import 'package:my_praperation/features/group/data/group_repository.dart';
 import 'package:my_praperation/features/group/domain/group_errors.dart';
@@ -199,6 +200,7 @@ class InMemoryGroupRepository implements GroupRepository {
     }
     if (g.privacy == 'restricted') {
       joinRequests.add('${g.id}:$currentUser');
+      requestStatus['${g.id}:$currentUser'] = 'pending'; // upsert → pending
       return const JoinRequestFiled();
     }
     g.roles[currentUser] = 'member';
@@ -378,5 +380,45 @@ class InMemoryGroupRepository implements GroupRepository {
     final g = groups[groupId]!;
     g.inviteCode = 'ROT${rotations.toString().padLeft(5, '0')}';
     return g.inviteCode;
+  }
+
+  /// Join requests as live rows: `'<groupId>:<userId>' -> status`. The
+  /// `joinRequests` list (G1) keeps recording filings for older tests.
+  final Map<String, String> requestStatus = {};
+  int _requestSeq = 0;
+  final Map<String, String> _requestIds = {};
+
+  /// Broad reads the client must never make (tracked to prove it).
+  final List<String> requestReads = [];
+
+  GroupJoinRequest _request(String key, String status) {
+    final parts = key.split(':');
+    final id = _requestIds.putIfAbsent(key, () => 'r-${++_requestSeq}');
+    return GroupJoinRequest(
+      id: id,
+      groupId: parts[0],
+      userId: parts[1],
+      status: status,
+      createdAt: DateTime(2026, 9, 10),
+    );
+  }
+
+  /// Live SELECT policy: own rows (or MANAGE_MEMBERS, not used here).
+  @override
+  Future<GroupJoinRequest?> myJoinRequest(String groupId) async {
+    requestReads.add('mine:$groupId');
+    final key = '$groupId:$currentUser';
+    final status = requestStatus[key];
+    return status == null ? null : _request(key, status);
+  }
+
+  @override
+  Future<List<GroupJoinRequest>> myPendingJoinRequests() async {
+    requestReads.add('mine:pending');
+    return [
+      for (final e in requestStatus.entries)
+        if (e.key.endsWith(':$currentUser') && e.value == 'pending')
+          _request(e.key, e.value),
+    ];
   }
 }

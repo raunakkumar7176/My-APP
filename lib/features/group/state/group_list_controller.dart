@@ -1,6 +1,7 @@
 import '../../../core/errors/app_error.dart';
 import '../../../core/logging/app_logger.dart';
 import '../../../core/models/group.dart';
+import '../../../core/models/group_join_request.dart';
 import '../../test/state/disposable_notifier.dart';
 import '../data/group_repository.dart';
 import '../domain/group_errors.dart';
@@ -15,12 +16,27 @@ class GroupListController extends DisposableNotifier {
   final GroupRepository _repo;
 
   List<Group> _groups = const [];
+  List<GroupJoinRequest> _pendingRequests = const [];
+  final Set<String> _pendingCodes = {};
   bool _loading = false;
   bool _loadedOnce = false;
   bool _busy = false;
   String? _error;
 
   List<Group> get groups => _groups;
+
+  /// The caller's own pending join requests (own rows only, one query, no
+  /// per-group reads). A pending request is **not** membership: nothing here
+  /// opens a hub. Restricted groups are not readable to a non-member, so a
+  /// request cannot be labelled with the group name; it is shown as a count.
+  List<GroupJoinRequest> get pendingRequests => _pendingRequests;
+  bool get hasPendingRequests => _pendingRequests.isNotEmpty;
+
+  /// Invite codes that produced a pending request in this session, so the
+  /// join sheet does not offer a misleading second submission. The server
+  /// upsert is idempotent anyway; this only avoids a pointless round trip.
+  bool isCodePending(String code) =>
+      _pendingCodes.contains(GroupErrors.normalizeInviteCode(code));
   bool get isLoading => _loading;
   bool get hasLoaded => _loadedOnce;
 
@@ -37,6 +53,14 @@ class GroupListController extends DisposableNotifier {
     notifyListeners();
     try {
       _groups = await _repo.myGroups();
+      // Pending requests are informational: their failure must not hide the
+      // groups list.
+      try {
+        _pendingRequests = await _repo.myPendingJoinRequests();
+      } catch (e) {
+        AppLogger.warning('Pending join requests unavailable: $e');
+        _pendingRequests = const [];
+      }
     } on AppError catch (e) {
       _error = e.message;
     } catch (e, st) {
@@ -76,6 +100,9 @@ class GroupListController extends DisposableNotifier {
   }
 
   /// Joins by invite code. Returns the outcome, or null on failure.
+  /// `JoinedGroup` ⇒ membership exists (server said so). `JoinRequestFiled`
+  /// ⇒ `fn_join_group` returned NULL (restricted group): the pending list is
+  /// re-read from the server and the code is remembered as pending.
   Future<JoinOutcome?> joinByCode(String code) async {
     final invalid = GroupErrors.validateInviteCode(code);
     if (invalid != null) {
@@ -83,8 +110,16 @@ class GroupListController extends DisposableNotifier {
       notifyListeners();
       return null;
     }
+    if (isCodePending(code)) {
+      _error = 'Your join request for this code is already pending approval.';
+      notifyListeners();
+      return null;
+    }
     return _run(() async {
       final outcome = await _repo.joinByCode(code);
+      if (outcome is JoinRequestFiled) {
+        _pendingCodes.add(GroupErrors.normalizeInviteCode(code));
+      }
       await load();
       return outcome;
     });

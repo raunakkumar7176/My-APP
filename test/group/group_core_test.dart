@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:my_praperation/core/errors/app_error.dart';
 import 'package:my_praperation/core/models/group.dart';
+import 'package:my_praperation/core/models/group_join_request.dart';
 import 'package:my_praperation/core/models/group_member.dart';
 import 'package:my_praperation/features/group/data/group_repository.dart';
 import 'package:my_praperation/features/group/domain/group_errors.dart';
@@ -694,6 +695,10 @@ class _FailingRepository implements GroupRepository {
   @override
   Future<String> rotateInviteCode(String groupId) async =>
       throw const DataError(message: 'nope');
+  @override
+  Future<GroupJoinRequest?> myJoinRequest(String groupId) async => null;
+  @override
+  Future<List<GroupJoinRequest>> myPendingJoinRequests() async => const [];
   @override
   Future<GroupPermissions> permissionsFor(
     String groupId, {

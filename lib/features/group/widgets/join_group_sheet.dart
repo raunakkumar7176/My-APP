@@ -66,10 +66,16 @@ class _JoinGroupSheetState extends State<JoinGroupSheet> {
       case JoinedGroup(:final groupId):
         Navigator.of(context).pop(groupId);
       case JoinRequestFiled():
+        // NULL from fn_join_group = restricted group, request upserted. The
+        // controller re-read the caller's own pending rows from the server;
+        // whether or not a row came back, this is a pending state, never
+        // membership, and never opens the hub.
         setState(() {
-          _info =
-              'Request sent. A group manager has to approve it before you '
-              'can open this group.';
+          _info = widget.controller.hasPendingRequests
+              ? 'Join request pending. A group manager has to approve it '
+                    'before you can open this group.'
+              : 'Request sent. A group manager has to approve it before you '
+                    'can open this group.';
         });
     }
   }
@@ -84,6 +90,16 @@ class _JoinGroupSheetState extends State<JoinGroupSheet> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text('Join a group', style: Theme.of(context).textTheme.titleMedium),
+          if (c.hasPendingRequests) ...[
+            const SizedBox(height: 8),
+            Text(
+              c.pendingRequests.length == 1
+                  ? 'You have 1 join request awaiting approval.'
+                  : 'You have ${c.pendingRequests.length} join requests awaiting approval.',
+              key: const Key('join_pending_banner'),
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
           const SizedBox(height: 12),
           TextField(
             key: const Key('invite_code_field'),

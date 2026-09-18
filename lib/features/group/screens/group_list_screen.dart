@@ -120,6 +120,7 @@ class _GroupListScreenState extends State<GroupListScreen> {
       child: _c.groups.isEmpty
           ? ListView(
               children: [
+                _pendingBanner(),
                 Padding(
                   padding: const EdgeInsets.all(48),
                   child: Column(
@@ -147,15 +148,38 @@ class _GroupListScreenState extends State<GroupListScreen> {
             )
           : ListView.builder(
               padding: const EdgeInsets.all(16),
-              itemCount: _c.groups.length,
-              itemBuilder: (_, i) => _GroupCard(
-                group: _c.groups[i],
-                onOpen: () async {
-                  await context.push('/groups/${_c.groups[i].id}');
-                  if (mounted) await _c.refresh();
-                },
-              ),
+              itemCount: _c.groups.length + 1,
+              itemBuilder: (_, i) {
+                if (i == 0) return _pendingBanner();
+                final g = _c.groups[i - 1];
+                return _GroupCard(
+                  group: g,
+                  onOpen: () async {
+                    await context.push('/groups/${g.id}');
+                    if (mounted) await _c.refresh();
+                  },
+                );
+              },
             ),
+    );
+  }
+
+  /// Compact pending-join state from the caller's own request rows (one
+  /// query, no per-group reads). It never links to a hub: a pending request
+  /// is not membership, and a restricted group is not even readable yet.
+  Widget _pendingBanner() {
+    if (!_c.hasPendingRequests) return const SizedBox.shrink();
+    final n = _c.pendingRequests.length;
+    return Card(
+      key: const Key('pending_requests_banner'),
+      margin: const EdgeInsets.only(bottom: 12),
+      child: ListTile(
+        leading: const Icon(Icons.hourglass_top_outlined),
+        title: Text(
+          n == 1 ? '1 join request pending' : '$n join requests pending',
+        ),
+        subtitle: const Text('Waiting for a group manager to approve.'),
+      ),
     );
   }
 }
