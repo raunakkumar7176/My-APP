@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/errors/app_error.dart';
 import '../../../core/logging/app_logger.dart';
 import '../../../core/models/group.dart';
+import '../../../core/models/group_invitation.dart';
 import '../../../core/models/group_join_request.dart';
 import '../../../core/models/group_member.dart';
 import '../../../core/services/auth_service.dart';
@@ -128,6 +129,20 @@ abstract interface class GroupRepository {
   /// `fn_join_group` returns NULL for a restricted group without telling the
   /// client which group it was, so this is how the pending state is found).
   Future<List<GroupJoinRequest>> myPendingJoinRequests();
+
+  /// The caller's own **pending incoming** invitations (`invitee_id = uid`).
+  /// One query, the five live columns, nothing about the group or inviter:
+  /// a non-member cannot read a private/restricted group's row, so nothing
+  /// is embedded that RLS would withhold.
+  Future<List<GroupInvitation>> myInvitations();
+
+  /// `fn_accept_group_invitation(p_invite_id)` — the server checks the caller
+  /// is the invitee and the row is pending, inserts the membership itself,
+  /// and raises `INVITE_NOT_FOUND` otherwise. No client-side table write.
+  Future<void> acceptInvitation(String invitationId);
+
+  /// `fn_decline_group_invitation(p_invite_id)` — same guard; `INVITE_NOT_FOUND`.
+  Future<void> declineInvitation(String invitationId);
 }
 
 class SupabaseGroupRepository implements GroupRepository {
@@ -421,6 +436,46 @@ class SupabaseGroupRepository implements GroupRepository {
       ];
     },
   );
+
+  static const _invitationColumns =
+      'id, group_id, inviter_id, invitee_id, status, created_at';
+
+  @override
+  Future<List<GroupInvitation>> myInvitations() => _guard(
+    GroupErrorContext.invitation,
+    () async {
+      final uid = _uid;
+      if (uid == null) throw const AuthError(message: 'Please sign in again.');
+      final rows = await _client
+          .from('group_invitations')
+          .select(_invitationColumns)
+          .eq('invitee_id', uid)
+          .eq('status', GroupInvitation.statusPending)
+          .order('created_at', ascending: false);
+      return [
+        for (final r in rows as List)
+          GroupInvitation.fromJson(r as Map<String, dynamic>),
+      ];
+    },
+  );
+
+  @override
+  Future<void> acceptInvitation(String invitationId) =>
+      _guard(GroupErrorContext.invitation, () async {
+        await _client.rpc(
+          'fn_accept_group_invitation',
+          params: {'p_invite_id': invitationId},
+        );
+      });
+
+  @override
+  Future<void> declineInvitation(String invitationId) =>
+      _guard(GroupErrorContext.invitation, () async {
+        await _client.rpc(
+          'fn_decline_group_invitation',
+          params: {'p_invite_id': invitationId},
+        );
+      });
 
   static Future<T> _guard<T>(
     GroupErrorContext context,

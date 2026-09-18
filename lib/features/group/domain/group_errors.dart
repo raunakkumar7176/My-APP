@@ -17,6 +17,7 @@ enum GroupErrorContext {
   update,
   changeRole,
   inviteCode,
+  invitation,
 }
 
 class GroupErrors {
@@ -33,6 +34,11 @@ class GroupErrors {
         lower.contains('jwt') ||
         lower.contains('not authenticated')) {
       return 'Please sign in again to continue.';
+    }
+    if (lower.contains('invite_not_found')) {
+      // fn_accept/decline_group_invitation: not the invitee, not pending,
+      // removed, or inaccessible — the server does not say which.
+      return 'This invitation is no longer available.';
     }
     if (lower.contains('invalid_invite_code')) {
       return 'That invite code does not match any group. Check it and try again.';
@@ -102,6 +108,8 @@ class GroupErrors {
         return 'Could not change that role. Please try again.';
       case GroupErrorContext.inviteCode:
         return 'Could not load the invite code. Please try again.';
+      case GroupErrorContext.invitation:
+        return 'Could not update the invitation. Please try again.';
     }
   }
 

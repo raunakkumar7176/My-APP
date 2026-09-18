@@ -6,6 +6,7 @@ import '../../../core/models/group.dart';
 import '../domain/group_role.dart';
 import '../state/group_list_controller.dart';
 import '../widgets/group_avatar.dart';
+import '../widgets/incoming_invitations_section.dart';
 import '../widgets/join_group_sheet.dart';
 
 /// Group Hub entry: the groups the caller owns or belongs to.
@@ -120,6 +121,7 @@ class _GroupListScreenState extends State<GroupListScreen> {
       child: _c.groups.isEmpty
           ? ListView(
               children: [
+                _invitations(),
                 _pendingBanner(),
                 Padding(
                   padding: const EdgeInsets.all(48),
@@ -148,10 +150,11 @@ class _GroupListScreenState extends State<GroupListScreen> {
             )
           : ListView.builder(
               padding: const EdgeInsets.all(16),
-              itemCount: _c.groups.length + 1,
+              itemCount: _c.groups.length + 2,
               itemBuilder: (_, i) {
-                if (i == 0) return _pendingBanner();
-                final g = _c.groups[i - 1];
+                if (i == 0) return _invitations();
+                if (i == 1) return _pendingBanner();
+                final g = _c.groups[i - 2];
                 return _GroupCard(
                   group: g,
                   onOpen: () async {
@@ -161,6 +164,22 @@ class _GroupListScreenState extends State<GroupListScreen> {
                 );
               },
             ),
+    );
+  }
+
+  /// Incoming invitations (own rows, one query). On a server-confirmed
+  /// accept the hub is opened by the group id that now appears in the
+  /// refreshed membership list — never by the invitation alone.
+  Widget _invitations() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: IncomingInvitationsSection(
+        controller: _c,
+        onAccepted: (groupId) async {
+          await context.push('/groups/$groupId');
+          if (mounted) await _c.refresh();
+        },
+      ),
     );
   }
 

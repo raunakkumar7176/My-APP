@@ -13,6 +13,7 @@
 
 import 'package:my_praperation/core/errors/app_error.dart';
 import 'package:my_praperation/core/models/group.dart';
+import 'package:my_praperation/core/models/group_invitation.dart';
 import 'package:my_praperation/core/models/group_join_request.dart';
 import 'package:my_praperation/core/models/group_member.dart';
 import 'package:my_praperation/features/group/data/group_repository.dart';
@@ -420,5 +421,94 @@ class InMemoryGroupRepository implements GroupRepository {
         if (e.key.endsWith(':$currentUser') && e.value == 'pending')
           _request(e.key, e.value),
     ];
+  }
+
+  /// Invitations as live rows.
+  final List<GroupInvitation> invitations = [];
+  final List<String> invitationReads = [];
+
+  GroupInvitation seedInvitation({
+    required String id,
+    required String groupId,
+    String inviterId = 'u-owner',
+    String? inviteeId,
+    String status = 'pending',
+  }) {
+    final inv = GroupInvitation(
+      id: id,
+      groupId: groupId,
+      inviterId: inviterId,
+      inviteeId: inviteeId ?? currentUser,
+      status: status,
+      createdAt: DateTime(2026, 9, 12, 9, 30),
+    );
+    invitations.add(inv);
+    return inv;
+  }
+
+  /// Live SELECT policy: invitee OR inviter OR member. The client only ever
+  /// asks for its own invitee rows, pending.
+  @override
+  Future<List<GroupInvitation>> myInvitations() async {
+    invitationReads.add('mine:pending');
+    return [
+      for (final i in invitations)
+        if (i.inviteeId == currentUser && i.isPending) i,
+    ];
+  }
+
+  GroupInvitation? _pendingMine(String id) {
+    for (final i in invitations) {
+      if (i.id == id && i.inviteeId == currentUser && i.isPending) return i;
+    }
+    return null;
+  }
+
+  void _setInvitationStatus(String id, String status) {
+    final idx = invitations.indexWhere((i) => i.id == id);
+    final i = invitations[idx];
+    invitations[idx] = GroupInvitation(
+      id: i.id,
+      groupId: i.groupId,
+      inviterId: i.inviterId,
+      inviteeId: i.inviteeId,
+      status: status,
+      createdAt: i.createdAt,
+    );
+  }
+
+  /// Live `fn_accept_group_invitation`: invitee + pending else
+  /// INVITE_NOT_FOUND; membership inserted ON CONFLICT DO NOTHING; group_id
+  /// taken from the row.
+  @override
+  Future<void> acceptInvitation(String invitationId) async {
+    calls.add('acceptInvitation:$invitationId');
+    _maybeFail();
+    final inv = _pendingMine(invitationId);
+    if (inv == null) {
+      throw DataError(
+        message: GroupErrors.map(
+          'INVITE_NOT_FOUND',
+          context: GroupErrorContext.invitation,
+        ),
+      );
+    }
+    groups[inv.groupId]?.roles.putIfAbsent(currentUser, () => 'member');
+    _setInvitationStatus(invitationId, 'accepted');
+  }
+
+  @override
+  Future<void> declineInvitation(String invitationId) async {
+    calls.add('declineInvitation:$invitationId');
+    _maybeFail();
+    if (_pendingMine(invitationId) == null) {
+      throw DataError(
+        message: GroupErrors.map(
+          'INVITE_NOT_FOUND',
+          context: GroupErrorContext.invitation,
+        ),
+      );
+    }
+    _setInvitationStatus(invitationId, 'declined');
   }
 }
