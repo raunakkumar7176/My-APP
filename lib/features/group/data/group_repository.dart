@@ -7,6 +7,8 @@ import '../../../core/models/group_member.dart';
 import '../../../core/services/auth_service.dart';
 import '../../../core/services/supabase_service.dart';
 import '../domain/group_errors.dart';
+import '../domain/group_permission.dart';
+import '../domain/group_role.dart';
 
 /// Outcome of `fn_join_group`. The live function returns the group id when the
 /// caller became a member and **NULL when the group is `restricted`**, where
@@ -70,6 +72,25 @@ abstract interface class GroupRepository {
   /// returns true for the owner, so this mirrors the live `groups` UPDATE
   /// policy (`GROUP_SETTINGS` OR owner) without a client-side role guess.
   Future<bool> canEditSettings(String groupId);
+
+  /// One `fn_has_permission` probe per requested permission (the live,
+  /// verified signature). Owner is reported true for everything by the
+  /// function itself. A failed probe reads as "not granted"; the server still
+  /// refuses the mutation regardless.
+  Future<GroupPermissions> permissionsFor(
+    String groupId, {
+    List<GroupPermission> of = GroupPermission.live,
+  });
+
+  /// Changes another member's role. Today this is the direct
+  /// `group_members` UPDATE the live "role changes" policy allows to
+  /// MANAGE_ROLES holders; owner demotion is refused by `trg_owner_guard`.
+  /// If the guarded RPC proposed in G3 is approved, only this body changes.
+  Future<void> setMemberRole({
+    required String groupId,
+    required String userId,
+    required GroupRole role,
+  });
 
   /// Updates `groups.name` / `groups.description` and, when given, `privacy`
   /// (live CHECK: public | private | restricted). The live UPDATE policy
@@ -238,6 +259,33 @@ class SupabaseGroupRepository implements GroupRepository {
   @override
   Future<bool> canEditSettings(String groupId) =>
       _hasPermission(groupId, 'GROUP_SETTINGS');
+
+  @override
+  Future<GroupPermissions> permissionsFor(
+    String groupId, {
+    List<GroupPermission> of = GroupPermission.live,
+  }) async {
+    final results = await Future.wait([
+      for (final p in of) _hasPermission(groupId, p.db),
+    ]);
+    return GroupPermissions({
+      for (var i = 0; i < of.length; i++)
+        if (results[i]) of[i],
+    });
+  }
+
+  @override
+  Future<void> setMemberRole({
+    required String groupId,
+    required String userId,
+    required GroupRole role,
+  }) => _guard(GroupErrorContext.changeRole, () async {
+    await _client
+        .from('group_members')
+        .update({'role': role.db})
+        .eq('group_id', groupId)
+        .eq('user_id', userId);
+  });
 
   /// `fn_has_permission(p_group, p_user, p_perm)` — live-verified signature.
   Future<bool> _hasPermission(String groupId, String permission) async {

@@ -6,6 +6,7 @@ import '../../../core/models/group_member.dart';
 import '../domain/group_role.dart';
 import '../state/group_hub_controller.dart';
 import '../widgets/group_avatar.dart';
+import '../widgets/role_badge.dart';
 
 /// One group's hub: profile header, roster, and the G1 membership actions.
 /// Later phases (announcements, chat, group tests, leaderboard) attach here;
@@ -249,20 +250,76 @@ class _GroupHubScreenState extends State<GroupHubScreen> {
     // Offered only when the server confirmed MANAGE_MEMBERS, never for the
     // owner and never for yourself — the server refuses those too.
     final canRemove = _c.canManageMembers && !isMe && !role.isOwner;
+    // Role editing: MANAGE_ROLES confirmed by the server, never yourself and
+    // never the owner (an invariant, not a permission).
+    final canChangeRole = _c.canManageRoles && !isMe && !role.isOwner;
     return ListTile(
       key: Key('member_${m.userId}'),
       contentPadding: EdgeInsets.zero,
       leading: CircleAvatar(child: Text(m.displayName[0].toUpperCase())),
       title: Text(isMe ? '${m.displayName} (you)' : m.displayName),
-      subtitle: Text(role.label),
-      trailing: canRemove
-          ? IconButton(
+      subtitle: Align(alignment: Alignment.centerLeft, child: RoleBadge(role)),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (canChangeRole)
+            PopupMenuButton<GroupRole>(
+              key: Key('role_menu_${m.userId}'),
+              tooltip: 'Change role',
+              enabled: !_c.isBusy,
+              icon: const Icon(Icons.manage_accounts_outlined),
+              onSelected: (r) => _changeRole(m, r),
+              itemBuilder: (_) => [
+                for (final r in GroupHubController.assignableRoles)
+                  PopupMenuItem(
+                    key: Key('role_option_${m.userId}_${r.name}'),
+                    value: r,
+                    enabled: r != role,
+                    child: Text(r == role ? '${r.label} (current)' : r.label),
+                  ),
+              ],
+            ),
+          if (canRemove)
+            IconButton(
               key: Key('remove_${m.userId}'),
               tooltip: 'Remove member',
               icon: const Icon(Icons.person_remove_outlined),
               onPressed: _c.isBusy ? null : () => _removeMember(m),
-            )
-          : null,
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _changeRole(GroupMember member, GroupRole role) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Change role?'),
+        content: Text(
+          '${member.displayName} will become ${role.label} of this group.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const Key('confirm_role_change'),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Change'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    final ok = await _c.changeRole(member.userId, role);
+    if (!mounted) return;
+    _snack(
+      ok
+          ? '${member.displayName} is now ${role.label}.'
+          : (_c.error ?? 'Could not change the role.'),
+      error: !ok,
     );
   }
 

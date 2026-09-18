@@ -8,7 +8,15 @@
 /// `fn_approve_group_join_request` and `fn_reset_group_invite` raise
 /// `NOT_AUTHORIZED`. Nothing is invented here: unknown text falls back to a
 /// neutral message and the raw error stays in the log.
-enum GroupErrorContext { load, create, join, leave, removeMember, update }
+enum GroupErrorContext {
+  load,
+  create,
+  join,
+  leave,
+  removeMember,
+  update,
+  changeRole,
+}
 
 class GroupErrors {
   const GroupErrors._();
@@ -34,6 +42,16 @@ class GroupErrors {
     if (lower.contains('invalid_privacy')) {
       return 'That privacy setting is not allowed.';
     }
+    // trg_owner_guard (fn_prevent_owner_removal) on group_members.
+    if (lower.contains('cannot_demote_owner')) {
+      return 'The group owner cannot be demoted.';
+    }
+    if (lower.contains('cannot_remove_owner')) {
+      return 'The group owner cannot be removed from the group.';
+    }
+    if (lower.contains('invalid input value for enum')) {
+      return 'That role is not valid.';
+    }
     if (lower.contains('not_authorized') ||
         lower.contains('row-level security') ||
         lower.contains('violates row-level') ||
@@ -43,6 +61,8 @@ class GroupErrors {
           return 'You do not have permission to remove members from this group.';
         case GroupErrorContext.update:
           return 'You do not have permission to change this group.';
+        case GroupErrorContext.changeRole:
+          return 'You do not have permission to change roles in this group.';
         default:
           return 'You do not have permission to do that.';
       }
@@ -75,6 +95,8 @@ class GroupErrors {
         return 'Could not remove that member. Please try again.';
       case GroupErrorContext.update:
         return 'Could not save the group. Please try again.';
+      case GroupErrorContext.changeRole:
+        return 'Could not change that role. Please try again.';
     }
   }
 

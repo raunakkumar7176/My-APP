@@ -10,6 +10,7 @@ import 'package:my_praperation/core/models/group.dart';
 import 'package:my_praperation/core/models/group_member.dart';
 import 'package:my_praperation/features/group/data/group_repository.dart';
 import 'package:my_praperation/features/group/domain/group_errors.dart';
+import 'package:my_praperation/features/group/domain/group_permission.dart';
 import 'package:my_praperation/features/group/domain/group_privacy.dart';
 import 'package:my_praperation/features/group/domain/group_role.dart';
 import 'package:my_praperation/features/group/screens/group_create_screen.dart';
@@ -687,6 +688,17 @@ class _FailingRepository implements GroupRepository {
   Future<bool> canEditSettings(String groupId) async => false;
   @override
   Future<void> clearLogo(String groupId) async {}
+  @override
+  Future<GroupPermissions> permissionsFor(
+    String groupId, {
+    List<GroupPermission> of = GroupPermission.live,
+  }) async => GroupPermissions.none;
+  @override
+  Future<void> setMemberRole({
+    required String groupId,
+    required String userId,
+    required GroupRole role,
+  }) async {}
 }
 
 /// Create takes a turn to complete, so the busy guard can be observed.

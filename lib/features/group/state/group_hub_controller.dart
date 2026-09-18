@@ -7,6 +7,7 @@ import '../../test/state/disposable_notifier.dart';
 import '../data/group_repository.dart';
 import '../domain/group_errors.dart';
 import '../domain/group_privacy.dart';
+import '../domain/group_permission.dart';
 import '../domain/group_role.dart';
 
 /// One group's core state: profile, roster, the caller's own role, and the
@@ -34,8 +35,7 @@ class GroupHubController extends DisposableNotifier {
   bool _busy = false;
   bool _accessDenied = false;
   bool _leftGroup = false;
-  bool _canManageMembers = false;
-  bool _canEditSettings = false;
+  GroupPermissions _permissions = GroupPermissions.none;
   String? _error;
 
   Group? get group => _group;
@@ -60,15 +60,31 @@ class GroupHubController extends DisposableNotifier {
   bool get isOwner => myRole.isOwner;
   int get memberCount => _group?.memberCount ?? _members.length;
 
-  /// Server-confirmed `MANAGE_MEMBERS` (`fn_has_permission`), not a guess
-  /// from the role string. Used only to decide whether to offer the action.
-  bool get canManageMembers => _canManageMembers;
+  /// The caller's server-reported permissions in this group (one
+  /// `fn_has_permission` probe per value; owner is true for all of them by the
+  /// function's own owner branch). UX mirror only — the server decides.
+  GroupPermissions get permissions => _permissions;
 
-  /// Server-confirmed `GROUP_SETTINGS` via `fn_has_permission`, which itself
-  /// returns true for the owner — exactly the live `groups` UPDATE policy
-  /// (`GROUP_SETTINGS` OR owner). Owner is also accepted locally so a failed
-  /// probe never hides the owner's own settings; the server still decides.
-  bool get canEditBasics => _canEditSettings || isOwner;
+  /// Server-confirmed `MANAGE_MEMBERS`. Used only to decide whether to offer
+  /// the action.
+  bool get canManageMembers => _permissions.canManageMembers;
+
+  /// Server-confirmed `MANAGE_ROLES`.
+  bool get canManageRoles => _permissions.canManageRoles;
+
+  /// Server-confirmed `GROUP_SETTINGS`, which is exactly the live `groups`
+  /// UPDATE policy (`GROUP_SETTINGS` OR owner). Owner is also accepted locally
+  /// so a failed probe never hides the owner's own settings.
+  bool get canEditBasics => _permissions.canEditSettings || isOwner;
+
+  /// Roles an authorised manager may assign through ordinary role editing.
+  /// `owner` is never assignable here: it is an invariant, not a permission
+  /// (no ownership-transfer mechanism exists live).
+  static const assignableRoles = [
+    GroupRole.leader,
+    GroupRole.moderator,
+    GroupRole.member,
+  ];
 
   /// The owner has no way out today: the live `self leave group` policy would
   /// happily delete the owner's membership row and orphan the group, and no
@@ -97,8 +113,14 @@ class GroupHubController extends DisposableNotifier {
         _group = group;
         _accessDenied = false;
         _members = await _repo.members(groupId);
-        _canManageMembers = await _repo.canManageMembers(groupId);
-        _canEditSettings = await _repo.canEditSettings(groupId);
+        _permissions = await _repo.permissionsFor(
+          groupId,
+          of: const [
+            GroupPermission.manageMembers,
+            GroupPermission.manageRoles,
+            GroupPermission.groupSettings,
+          ],
+        );
       }
     } on AppError catch (e) {
       _error = e.message;
@@ -128,6 +150,50 @@ class GroupHubController extends DisposableNotifier {
       _members = const [];
       notifyListeners();
     }
+    return ok;
+  }
+
+  /// Changes another member's role. Client invariants (all also expected of
+  /// the server): never yourself, never the owner, never *to* owner, only a
+  /// live assignable role, and only a user who is in this group's roster.
+  /// `MANAGE_ROLES` is enforced by the live policy; the client merely does not
+  /// offer the action without it.
+  Future<bool> changeRole(String userId, GroupRole role) async {
+    if (!canManageRoles) {
+      _error = GroupErrors.map(
+        'NOT_AUTHORIZED',
+        context: GroupErrorContext.changeRole,
+      );
+      notifyListeners();
+      return false;
+    }
+    if (userId == _currentUserId) {
+      _error = 'You cannot change your own role.';
+      notifyListeners();
+      return false;
+    }
+    final target = _members.where((m) => m.userId == userId).firstOrNull;
+    if (target == null) {
+      _error = 'That user is not a member of this group.';
+      notifyListeners();
+      return false;
+    }
+    if (GroupRole.fromDb(target.role).isOwner) {
+      _error = 'The group owner cannot be demoted.';
+      notifyListeners();
+      return false;
+    }
+    if (!assignableRoles.contains(role)) {
+      _error = 'That role cannot be assigned here.';
+      notifyListeners();
+      return false;
+    }
+    if (GroupRole.fromDb(target.role) == role) return true; // no-op
+    final ok = await _run(
+      GroupErrorContext.changeRole,
+      () => _repo.setMemberRole(groupId: groupId, userId: userId, role: role),
+    );
+    if (ok) await load();
     return ok;
   }
 

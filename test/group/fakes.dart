@@ -16,6 +16,8 @@ import 'package:my_praperation/core/models/group.dart';
 import 'package:my_praperation/core/models/group_member.dart';
 import 'package:my_praperation/features/group/data/group_repository.dart';
 import 'package:my_praperation/features/group/domain/group_errors.dart';
+import 'package:my_praperation/features/group/domain/group_permission.dart';
+import 'package:my_praperation/features/group/domain/group_role.dart';
 
 class FakeGroup {
   FakeGroup({
@@ -222,21 +224,81 @@ class InMemoryGroupRepository implements GroupRepository {
   }
 
   @override
-  Future<bool> canManageMembers(String groupId) async {
+  Future<bool> canManageMembers(String groupId) async =>
+      hasPermission(groupId, GroupPermission.manageMembers);
+
+  @override
+  Future<bool> canEditSettings(String groupId) async =>
+      hasPermission(groupId, GroupPermission.groupSettings);
+
+  /// Extra `role_permissions` rows beyond the live seeding, as
+  /// `'<groupId>:<role>:<PERMISSION>'`.
+  final Set<String> roleGrants = {};
+
+  /// Mirrors live `fn_has_permission`: owner → true; otherwise the role must
+  /// hold a `role_permissions` row. Live seeding (fn_create_group) gives the
+  /// leader 10 permissions — everything except GROUP_SETTINGS and
+  /// MANAGE_ROLES; moderator and member hold nothing.
+  bool hasPermission(String groupId, GroupPermission p) {
     final g = groups[groupId];
     if (g == null) return false;
-    // Live seeding: owner passes by role, leader by seeded MANAGE_MEMBERS.
     final role = g.roles[currentUser];
-    return role == 'owner' || role == 'leader';
+    if (role == null) return false;
+    if (role == 'owner') return true;
+    if (settingsGrant.contains('$groupId:$currentUser') &&
+        p == GroupPermission.groupSettings) {
+      return true;
+    }
+    if (roleGrants.contains('$groupId:$role:${p.db}')) return true;
+    if (role == 'leader') {
+      return p != GroupPermission.groupSettings &&
+          p != GroupPermission.manageRoles &&
+          p != GroupPermission.unknown;
+    }
+    return false;
   }
 
   @override
-  Future<bool> canEditSettings(String groupId) async {
+  Future<GroupPermissions> permissionsFor(
+    String groupId, {
+    List<GroupPermission> of = GroupPermission.live,
+  }) async {
+    calls.add('permissionsFor:$groupId');
+    return GroupPermissions({
+      for (final p in of)
+        if (hasPermission(groupId, p)) p,
+    });
+  }
+
+  /// Whether the fake models the live `trg_owner_guard` trigger
+  /// (CANNOT_DEMOTE_OWNER / CANNOT_REMOVE_OWNER). On by default.
+  bool ownerGuardTrigger = true;
+
+  /// Mirrors the live "role changes" UPDATE policy **as it is today**:
+  /// `fn_has_permission(MANAGE_ROLES) OR user_id = auth.uid()` — i.e. the
+  /// self-update branch is deliberately reproduced so tests can prove the
+  /// client never relies on it, and to document the defect G3 must fix.
+  @override
+  Future<void> setMemberRole({
+    required String groupId,
+    required String userId,
+    required GroupRole role,
+  }) async {
+    calls.add('setRole:$groupId:$userId:${role.db}');
+    _maybeFail();
     final g = groups[groupId];
-    if (g == null) return false;
-    // fn_has_permission: owner → true; else a role_permissions row.
-    final role = g.roles[currentUser];
-    return role == 'owner' || settingsGrant.contains('$groupId:$currentUser');
+    if (g == null || !g.roles.containsKey(userId)) {
+      // No row matches → PostgREST updates 0 rows silently.
+      return;
+    }
+    final allowed =
+        hasPermission(groupId, GroupPermission.manageRoles) ||
+        userId == currentUser;
+    if (!allowed) throw _notAuthorized(GroupErrorContext.changeRole);
+    if (ownerGuardTrigger && g.roles[userId] == 'owner' && !role.isOwner) {
+      throw const DataError(message: 'The group owner cannot be demoted.');
+    }
+    g.roles[userId] = role.db;
   }
 
   @override
