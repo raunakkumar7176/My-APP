@@ -6,6 +6,7 @@ import '../../../core/models/group.dart';
 import '../../../core/models/group_invitation.dart';
 import '../../../core/models/group_join_request.dart';
 import '../../../core/models/group_member.dart';
+import '../../../core/models/profile_match.dart';
 import '../../../core/services/auth_service.dart';
 import '../../../core/services/supabase_service.dart';
 import '../domain/group_errors.dart';
@@ -184,6 +185,22 @@ abstract interface class GroupRepository {
   /// succeeded, a [DataError] starting with [reinviteIncompletePrefix] is thrown so the caller can say
   /// exactly that — the declined record is gone and no new invitation exists.
   Future<void> reinvite(GroupInvitation declined);
+
+  /// `rpc_find_profile_by_student_code(p_code)` — exact-match lookup of one
+  /// registered user (id, full_name, avatar_url, student_code). Null when no
+  /// such code. Called only from the manager-gated invite flow; the result is
+  /// never cached beyond that sheet.
+  Future<ProfileMatch?> findProfileByStudentCode(String code);
+
+  /// Inserts one pending `group_invitations` row `{group_id, invitee_id}`;
+  /// `inviter_id` is the authenticated user (the live INSERT policy requires
+  /// `inviter_id = auth.uid() AND MANAGE_MEMBERS`). Touches no other table.
+  /// A `UNIQUE(group_id, invitee_id)` violation surfaces as an [AppError]
+  /// whose message contains "already".
+  Future<void> sendInvitation({
+    required String groupId,
+    required String inviteeId,
+  });
 }
 
 class SupabaseGroupRepository implements GroupRepository {
@@ -586,13 +603,10 @@ class SupabaseGroupRepository implements GroupRepository {
     await cancelInvitation(declined.id);
     // Step 2 — new pending row; the caller is the inviter.
     try {
-      await _guard(GroupErrorContext.invitation, () async {
-        await _client.from('group_invitations').insert({
-          'group_id': declined.groupId,
-          'inviter_id': uid,
-          'invitee_id': declined.inviteeId,
-        });
-      });
+      await sendInvitation(
+        groupId: declined.groupId,
+        inviteeId: declined.inviteeId,
+      );
     } on AppError catch (e) {
       throw DataError(
         message:
@@ -601,6 +615,38 @@ class SupabaseGroupRepository implements GroupRepository {
       );
     }
   }
+
+  @override
+  Future<ProfileMatch?> findProfileByStudentCode(String code) =>
+      _guard(GroupErrorContext.invitation, () async {
+        final trimmed = code.trim();
+        if (trimmed.isEmpty) return null;
+        final response = await _client.rpc(
+          'rpc_find_profile_by_student_code',
+          params: {'p_code': trimmed},
+        );
+        // Identity of a third party: log the shape only, never the values.
+        AppLogger.rpcShape('rpc_find_profile_by_student_code', response);
+        final rows = response is List
+            ? response
+            : [if (response != null) response];
+        if (rows.isEmpty) return null;
+        return ProfileMatch.fromJson(rows.first as Map<String, dynamic>);
+      });
+
+  @override
+  Future<void> sendInvitation({
+    required String groupId,
+    required String inviteeId,
+  }) => _guard(GroupErrorContext.invitation, () async {
+    final uid = _uid;
+    if (uid == null) throw const AuthError(message: 'Please sign in again.');
+    await _client.from('group_invitations').insert({
+      'group_id': groupId,
+      'inviter_id': uid, // must equal auth.uid() or the policy rejects it
+      'invitee_id': inviteeId,
+    });
+  });
 
   static Future<T> _guard<T>(
     GroupErrorContext context,

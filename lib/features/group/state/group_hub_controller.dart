@@ -30,6 +30,10 @@ class GroupHubController extends DisposableNotifier {
   final GroupRepository _repo;
   final String? _currentUserId;
 
+  /// The data source this hub uses, so flows opened from it (invite sheet)
+  /// share it instead of constructing a second one.
+  GroupRepository get repository => _repo;
+
   Group? _group;
   List<GroupMember> _members = const [];
   bool _loading = false;

@@ -10,6 +10,7 @@ import 'package:my_praperation/core/models/group.dart';
 import 'package:my_praperation/core/models/group_invitation.dart';
 import 'package:my_praperation/core/models/group_join_request.dart';
 import 'package:my_praperation/core/models/group_member.dart';
+import 'package:my_praperation/core/models/profile_match.dart';
 import 'package:my_praperation/features/group/data/group_repository.dart';
 import 'package:my_praperation/features/group/domain/group_errors.dart';
 import 'package:my_praperation/features/group/domain/group_permission.dart';
@@ -721,6 +722,13 @@ class _FailingRepository implements GroupRepository {
   Future<void> cancelInvitation(String invitationId) async {}
   @override
   Future<void> reinvite(GroupInvitation declined) async {}
+  @override
+  Future<ProfileMatch?> findProfileByStudentCode(String code) async => null;
+  @override
+  Future<void> sendInvitation({
+    required String groupId,
+    required String inviteeId,
+  }) async {}
   @override
   Future<GroupPermissions> permissionsFor(
     String groupId, {

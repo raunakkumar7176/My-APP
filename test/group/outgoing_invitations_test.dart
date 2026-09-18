@@ -393,11 +393,11 @@ void main() {
         expect(find.byKey(const Key('outgoing_i-dec')), findsNothing);
         expect(find.byKey(const Key('outgoing_pending_count')), findsOneWidget);
         final fresh = repo.invitations.where((i) => i.inviteeId == 'u-c');
-      expect(fresh.single.isPending, isTrue);
-      expect(
-        find.byKey(Key('cancel_invitation_${fresh.single.id}')),
-        findsOneWidget,
-      );
+        expect(fresh.single.isPending, isTrue);
+        expect(
+          find.byKey(Key('cancel_invitation_${fresh.single.id}')),
+          findsOneWidget,
+        );
         await tester.pumpWidget(const SizedBox());
         c.dispose();
       },

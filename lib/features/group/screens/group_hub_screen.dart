@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/constants/theme/app_colors.dart';
 import '../state/group_hub_controller.dart';
 import '../widgets/group_avatar.dart';
+import '../widgets/invite_member_sheet.dart';
 import '../widgets/join_request_queue.dart';
 import '../widgets/member_tile.dart';
 import '../widgets/outgoing_invitations_section.dart';
@@ -59,6 +60,13 @@ class _GroupHubScreenState extends State<GroupHubScreen> {
     // Name / description / privacy / logo may have changed: reload, never
     // show a stale header.
     if (mounted) await _c.refresh();
+  }
+
+  Future<void> _inviteMember() async {
+    // Manager-only (server-reported MANAGE_MEMBERS); the sheet never runs
+    // the lookup for anyone else because it is never opened for them.
+    final sent = await InviteMemberSheet.show(context, hub: _c);
+    if (sent == true && mounted) await _c.refresh();
   }
 
   Future<void> _openMembers() async {
@@ -138,6 +146,13 @@ class _GroupHubScreenState extends State<GroupHubScreen> {
       appBar: AppBar(
         title: Text(group.name),
         actions: [
+          if (_c.canManageMembers)
+            IconButton(
+              key: const Key('invite_member_action'),
+              tooltip: 'Invite member',
+              icon: const Icon(Icons.person_add_alt_1_outlined),
+              onPressed: _c.isBusy ? null : _inviteMember,
+            ),
           if (_c.canEditBasics)
             IconButton(
               key: const Key('group_settings_action'),

@@ -80,7 +80,10 @@ class GroupErrors {
       }
     }
     if (lower.contains('duplicate key') || lower.contains('already exists')) {
-      return 'You are already a member of this group.';
+      // group_invitations UNIQUE(group_id, invitee_id) vs. membership.
+      return context == GroupErrorContext.invitation
+          ? 'An invitation for this person already exists in this group.'
+          : 'You are already a member of this group.';
     }
     if (lower.contains('fk_profile_missing') ||
         lower.contains('fn_ensure_profile_failed')) {

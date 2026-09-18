@@ -16,6 +16,7 @@ import 'package:my_praperation/core/models/group.dart';
 import 'package:my_praperation/core/models/group_invitation.dart';
 import 'package:my_praperation/core/models/group_join_request.dart';
 import 'package:my_praperation/core/models/group_member.dart';
+import 'package:my_praperation/core/models/profile_match.dart';
 import 'package:my_praperation/features/group/data/group_repository.dart';
 import 'package:my_praperation/features/group/domain/group_errors.dart';
 import 'package:my_praperation/features/group/domain/group_permission.dart';
@@ -637,6 +638,37 @@ class InMemoryGroupRepository implements GroupRepository {
         createdAt: DateTime(2026, 9, 13),
       ),
     );
+  }
+
+  /// Registered users the resolver can find: student code -> user id.
+  /// Mirrors `rpc_find_profile_by_student_code`: exact match after
+  /// upper(trim()), at most one row, only id/full_name/avatar_url/student_code.
+  final Map<String, String> registry = {};
+  final List<String> lookups = [];
+
+  @override
+  Future<ProfileMatch?> findProfileByStudentCode(String code) async {
+    final norm = code.trim().toUpperCase();
+    lookups.add(norm);
+    _maybeFail();
+    if (norm.isEmpty) return null;
+    final id = registry[norm];
+    if (id == null) return null;
+    return ProfileMatch(
+      id: id,
+      fullName: profileNames[id] ?? 'User $id',
+      studentCode: norm,
+      avatarUrl: null,
+    );
+  }
+
+  @override
+  Future<void> sendInvitation({
+    required String groupId,
+    required String inviteeId,
+  }) async {
+    _maybeFail();
+    await _insertInvitation(groupId, inviteeId);
   }
 
   @override
