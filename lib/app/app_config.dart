@@ -18,25 +18,25 @@ final class AppConfig {
   bool get isProduction => environment == Environment.production;
 
   static AppConfig dev() => const AppConfig._(
-    environment: Environment.dev,
-    appName: 'My Preparation (Dev)',
-    supabaseUrl: String.fromEnvironment('SUPABASE_URL'),
-    supabaseAnonKey: String.fromEnvironment('SUPABASE_ANON_KEY'),
-  );
+        environment: Environment.dev,
+        appName: 'My Preparation (Dev)',
+        supabaseUrl: String.fromEnvironment('SUPABASE_URL'),
+        supabaseAnonKey: String.fromEnvironment('SUPABASE_ANON_KEY'),
+      );
 
   static AppConfig staging() => const AppConfig._(
-    environment: Environment.staging,
-    appName: 'My Preparation (Staging)',
-    supabaseUrl: String.fromEnvironment('SUPABASE_URL'),
-    supabaseAnonKey: String.fromEnvironment('SUPABASE_ANON_KEY'),
-  );
+        environment: Environment.staging,
+        appName: 'My Preparation (Staging)',
+        supabaseUrl: String.fromEnvironment('SUPABASE_URL'),
+        supabaseAnonKey: String.fromEnvironment('SUPABASE_ANON_KEY'),
+      );
 
   static AppConfig production() => const AppConfig._(
-    environment: Environment.production,
-    appName: 'My Preparation',
-    supabaseUrl: String.fromEnvironment('SUPABASE_URL'),
-    supabaseAnonKey: String.fromEnvironment('SUPABASE_ANON_KEY'),
-  );
+        environment: Environment.production,
+        appName: 'My Preparation',
+        supabaseUrl: String.fromEnvironment('SUPABASE_URL'),
+        supabaseAnonKey: String.fromEnvironment('SUPABASE_ANON_KEY'),
+      );
 
   static AppConfig fromEnvironment() {
     const env = String.fromEnvironment('ENV', defaultValue: 'dev');
