@@ -203,7 +203,7 @@ void main() {
         expect(noGroups.canProceedFromConfiguration, isFalse);
 
         final groups = FakeGroupRepository()
-          ..groups = [
+          ..seedGroups([
             Group(
               id: 'g-1',
               name: 'Batch A',
@@ -212,7 +212,7 @@ void main() {
               memberCount: 3,
               userRole: 'member',
             ),
-          ];
+          ]);
         final c = _controller(tests: tests, groups: groups)
           ..setTitle('G')
           ..setKind(TestKind.group)

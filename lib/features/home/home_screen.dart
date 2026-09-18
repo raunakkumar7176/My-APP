@@ -49,21 +49,23 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
-    ProfileService.loadProfile().then((_) {
-      if (mounted) {
-        setState(() {
-          _profile = ProfileService.currentProfile;
-          _isLoadingProfile = false;
+    ProfileService.loadProfile()
+        .then((_) {
+          if (mounted) {
+            setState(() {
+              _profile = ProfileService.currentProfile;
+              _isLoadingProfile = false;
+            });
+          }
+        })
+        .catchError((e) {
+          if (mounted) {
+            setState(() {
+              _profileError = e.toString().replaceFirst('AppError: ', '');
+              _isLoadingProfile = false;
+            });
+          }
         });
-      }
-    }).catchError((e) {
-      if (mounted) {
-        setState(() {
-          _profileError = e.toString().replaceFirst('AppError: ', '');
-          _isLoadingProfile = false;
-        });
-      }
-    });
   }
 
   void _loadSubjects() {
@@ -72,21 +74,23 @@ class _HomeScreenState extends State<HomeScreen> {
       _subjectsError = null;
     });
 
-    SubjectService.loadSubjects().then((subjects) {
-      if (mounted) {
-        setState(() {
-          _subjects = subjects;
-          _isLoadingSubjects = false;
+    SubjectService.loadSubjects()
+        .then((subjects) {
+          if (mounted) {
+            setState(() {
+              _subjects = subjects;
+              _isLoadingSubjects = false;
+            });
+          }
+        })
+        .catchError((e) {
+          if (mounted) {
+            setState(() {
+              _subjectsError = e.toString().replaceFirst('AppError: ', '');
+              _isLoadingSubjects = false;
+            });
+          }
         });
-      }
-    }).catchError((e) {
-      if (mounted) {
-        setState(() {
-          _subjectsError = e.toString().replaceFirst('AppError: ', '');
-          _isLoadingSubjects = false;
-        });
-      }
-    });
   }
 
   @override
@@ -174,10 +178,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   style: const TextStyle(color: AppColors.error),
                 ),
               ),
-              TextButton(
-                onPressed: _loadProfile,
-                child: const Text('Retry'),
-              ),
+              TextButton(onPressed: _loadProfile, child: const Text('Retry')),
             ],
           ),
         ),
@@ -208,29 +209,26 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   Text(
                     _profile?.displayName ?? 'Student',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
+                    style: Theme.of(context).textTheme.titleLarge
+                        ?.copyWith(fontWeight: FontWeight.w600),
                   ),
                   if (_profile?.studentCode != null) ...[
                     const SizedBox(height: 2),
                     Text(
                       _profile!.studentCode!,
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: AppColors.primaryLight,
-                            fontWeight: FontWeight.w500,
-                          ),
+                        color: AppColors.primaryLight,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ],
                   const SizedBox(height: 2),
                   Text(
                     user?.email ?? '',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onSurface
-                              .withValues(alpha: 0.6),
-                        ),
+                      color: Theme.of(context).colorScheme.onSurface
+                          .withValues(alpha: 0.6),
+                    ),
                   ),
                 ],
               ),
@@ -247,9 +245,8 @@ class _HomeScreenState extends State<HomeScreen> {
       children: [
         Text(
           'Create Test',
-          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
+          style: Theme.of(context).textTheme.titleLarge
+              ?.copyWith(fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 8),
         Card(
@@ -272,9 +269,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 subtitle: const Text('Create a test manually'),
                 trailing: Icon(
                   Icons.chevron_right,
-                  color: Theme.of(context)
-                      .colorScheme
-                      .onSurface
+                  color: Theme.of(context).colorScheme.onSurface
                       .withValues(alpha: 0.5),
                 ),
                 onTap: () => context.push('/tests/create'),
@@ -296,9 +291,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 title: Text(
                   'Via Document',
                   style: TextStyle(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurface
+                    color: Theme.of(context).colorScheme.onSurface
                         .withValues(alpha: 0.5),
                   ),
                 ),
@@ -322,9 +315,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 title: Text(
                   'AI Generated',
                   style: TextStyle(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurface
+                    color: Theme.of(context).colorScheme.onSurface
                         .withValues(alpha: 0.5),
                   ),
                 ),
@@ -348,9 +339,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 title: Text(
                   'From Books',
                   style: TextStyle(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurface
+                    color: Theme.of(context).colorScheme.onSurface
                         .withValues(alpha: 0.5),
                   ),
                 ),
@@ -373,9 +362,8 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             Text(
               'Tests',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
+              style: Theme.of(context).textTheme.titleLarge
+                  ?.copyWith(fontWeight: FontWeight.w600),
             ),
             TextButton(
               onPressed: () => context.push('/tests'),
@@ -401,12 +389,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
                 title: const Text('Browse Tests'),
-                subtitle: const Text('Upcoming, challenges, and previous tests'),
+                subtitle: const Text(
+                  'Upcoming, challenges, and previous tests',
+                ),
                 trailing: Icon(
                   Icons.chevron_right,
-                  color: Theme.of(context)
-                      .colorScheme
-                      .onSurface
+                  color: Theme.of(context).colorScheme.onSurface
                       .withValues(alpha: 0.5),
                 ),
                 onTap: () => context.push('/tests'),
@@ -429,12 +417,33 @@ class _HomeScreenState extends State<HomeScreen> {
                 subtitle: const Text('Continue editing your draft tests'),
                 trailing: Icon(
                   Icons.chevron_right,
-                  color: Theme.of(context)
-                      .colorScheme
-                      .onSurface
+                  color: Theme.of(context).colorScheme.onSurface
                       .withValues(alpha: 0.5),
                 ),
                 onTap: () => context.push('/tests/drafts'),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: AppColors.primaryLight.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.groups_outlined,
+                    color: AppColors.primaryLight,
+                  ),
+                ),
+                title: const Text('Groups'),
+                subtitle: const Text('Your study groups'),
+                trailing: Icon(
+                  Icons.chevron_right,
+                  color: Theme.of(context).colorScheme.onSurface
+                      .withValues(alpha: 0.5),
+                ),
+                onTap: () => context.push('/groups'),
               ),
             ],
           ),
@@ -452,9 +461,8 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             Text(
               'Subjects',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
+              style: Theme.of(context).textTheme.titleLarge
+                  ?.copyWith(fontWeight: FontWeight.w600),
             ),
             if (_subjects.isNotEmpty)
               TextButton(
@@ -489,9 +497,8 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(height: 12),
               Text(
                 _subjectsError!,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: AppColors.error,
-                    ),
+                style: Theme.of(context).textTheme.bodyMedium
+                    ?.copyWith(color: AppColors.error),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 16),
@@ -514,9 +521,7 @@ class _HomeScreenState extends State<HomeScreen> {
               Icon(
                 Icons.school_outlined,
                 size: 48,
-                color: Theme.of(context)
-                    .colorScheme
-                    .onSurface
+                color: Theme.of(context).colorScheme.onSurface
                     .withValues(alpha: 0.3),
               ),
               const SizedBox(height: 12),
@@ -528,11 +533,9 @@ class _HomeScreenState extends State<HomeScreen> {
               Text(
                 'Subjects will appear here when they are added.',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onSurface
-                          .withValues(alpha: 0.6),
-                    ),
+                  color: Theme.of(context).colorScheme.onSurface
+                      .withValues(alpha: 0.6),
+                ),
                 textAlign: TextAlign.center,
               ),
             ],
@@ -553,22 +556,16 @@ class _HomeScreenState extends State<HomeScreen> {
                 color: AppColors.primaryLight.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: const Icon(
-                Icons.menu_book,
-                color: AppColors.primaryLight,
-              ),
+              child: const Icon(Icons.menu_book, color: AppColors.primaryLight),
             ),
             title: Text(
               subject.name,
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    fontWeight: FontWeight.w500,
-                  ),
+              style: Theme.of(context).textTheme.bodyLarge
+                  ?.copyWith(fontWeight: FontWeight.w500),
             ),
             trailing: Icon(
               Icons.chevron_right,
-              color: Theme.of(context)
-                  .colorScheme
-                  .onSurface
+              color: Theme.of(context).colorScheme.onSurface
                   .withValues(alpha: 0.5),
             ),
             onTap: () => context.push(

@@ -7,6 +7,9 @@ import '../core/services/auth_service.dart';
 import '../core/services/profile_service.dart';
 import '../features/auth/auth_screen.dart';
 import '../features/auth/splash_screen.dart';
+import '../features/group/screens/group_create_screen.dart';
+import '../features/group/screens/group_hub_screen.dart';
+import '../features/group/screens/group_list_screen.dart';
 import '../features/home/home_screen.dart';
 import '../features/profile/profile_screen.dart';
 import '../features/study/material_detail_screen.dart';
@@ -95,10 +98,7 @@ final class AppRouter {
         builder: (context, state) {
           final subjectId = state.pathParameters['subjectId']!;
           final subjectName = state.extra as String?;
-          return SyllabusScreen(
-            subjectId: subjectId,
-            subjectName: subjectName,
-          );
+          return SyllabusScreen(subjectId: subjectId, subjectName: subjectName);
         },
       ),
       GoRoute(
@@ -121,10 +121,7 @@ final class AppRouter {
         builder: (context, state) {
           final nodeId = state.pathParameters['nodeId']!;
           final nodeName = state.extra as String? ?? 'Materials';
-          return MaterialListScreen(
-            nodeId: nodeId,
-            nodeName: nodeName,
-          );
+          return MaterialListScreen(nodeId: nodeId, nodeName: nodeName);
         },
       ),
       GoRoute(
@@ -138,6 +135,32 @@ final class AppRouter {
             materialTitle: materialTitle,
           );
         },
+      ),
+      // ── Group Hub (G1): routes carry ids only ──
+      GoRoute(
+        path: '/groups',
+        name: 'group-list',
+        builder: (context, state) => const GroupListScreen(),
+        routes: [
+          GoRoute(
+            path: 'create',
+            name: 'group-create',
+            builder: (context, state) => const GroupCreateScreen(),
+          ),
+          // Declared before ':groupId' so the literal wins the match.
+          GoRoute(
+            path: 'join',
+            name: 'group-join',
+            builder: (context, state) =>
+                const GroupListScreen(openJoinSheet: true),
+          ),
+          GoRoute(
+            path: ':groupId',
+            name: 'group-hub',
+            builder: (context, state) =>
+                GroupHubScreen(groupId: state.pathParameters['groupId']!),
+          ),
+        ],
       ),
       // ── Test system (R4 restart): routes carry ids only ──
       GoRoute(
@@ -159,10 +182,9 @@ final class AppRouter {
             builder: (context, state) {
               final s = state.uri.queryParameters['source'];
               return TestCreationScreen(
-                initialSource: QuestionSource.values.cast<QuestionSource?>().firstWhere(
-                  (v) => v?.name == s,
-                  orElse: () => null,
-                ),
+                initialSource: QuestionSource.values
+                    .cast<QuestionSource?>()
+                    .firstWhere((v) => v?.name == s, orElse: () => null),
               );
             },
           ),

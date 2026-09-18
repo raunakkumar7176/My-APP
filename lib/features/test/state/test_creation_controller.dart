@@ -4,7 +4,7 @@ import '../../../core/models/group.dart';
 import '../../../core/models/question.dart';
 import '../../../core/models/test.dart';
 import '../../../core/services/auth_service.dart';
-import '../data/group_repository.dart';
+import '../../group/data/group_repository.dart';
 import '../data/question_repository.dart';
 import '../data/test_repository.dart';
 import '../domain/attempt_policy.dart';

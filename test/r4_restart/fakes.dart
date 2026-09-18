@@ -9,11 +9,12 @@ import 'package:my_praperation/core/models/result_batch.dart';
 import 'package:my_praperation/core/models/test.dart';
 import 'package:my_praperation/core/models/test_syllabus.dart';
 import 'package:my_praperation/features/test/data/attempt_repository.dart';
-import 'package:my_praperation/features/test/data/group_repository.dart';
 import 'package:my_praperation/features/test/data/question_repository.dart';
 import 'package:my_praperation/features/test/data/result_repository.dart';
 import 'package:my_praperation/features/test/data/test_repository.dart';
 import 'package:my_praperation/features/test/models/question_draft.dart';
+
+import '../group/fakes.dart';
 
 class FakeTestRepository implements TestRepository {
   final Map<String, Test> rows = {};
@@ -119,8 +120,9 @@ class FakeTestRepository implements TestRepository {
         message: 'You do not have permission to perform this action.',
       );
     }
-    if (t.isSoftDeleted)
+    if (t.isSoftDeleted) {
       throw const DataError(message: 'This test has already been deleted.');
+    }
     if (t.status != TestStatus.draft) {
       throw const DataError(message: 'Only draft tests can be deleted.');
     }
@@ -279,10 +281,20 @@ class FakeQuestionRepository implements QuestionRepository {
   }
 }
 
-class FakeGroupRepository implements GroupRepository {
-  List<Group> groups = const [];
-  @override
-  Future<List<Group>> myGroups() async => groups;
+/// The R4 test feature only reads [myGroups]; the full Group Hub behaviour
+/// lives in `test/group/fakes.dart`.
+class FakeGroupRepository extends InMemoryGroupRepository {
+  /// Seeds the fake from canned rows (R4 only needs id, name and role).
+  void seedGroups(List<Group> rows) {
+    groups.clear();
+    for (final g in rows) {
+      final f = seed(id: g.id, name: g.name, ownerId: g.ownerId);
+      f.roles[currentUser] = g.userRole;
+      for (var i = f.roles.length; i < g.memberCount; i++) {
+        f.roles['filler-$i'] = 'member';
+      }
+    }
+  }
 }
 
 /// Mirrors the live start path (`_fn_start_attempt_core` + the re-attempt
@@ -323,8 +335,9 @@ class FakeAttemptRepository implements AttemptRepository {
   }) async {
     calls.add('code:$code${reattempt ? ':reattempt' : ''}');
     if (failStartWith != null) throw failStartWith!;
-    if (next != null && rows.isEmpty)
+    if (next != null && rows.isEmpty) {
       return (attempt: next!, testTitle: 'Coded');
+    }
     return (
       attempt: _serverStart('t-coded', reattempt: reattempt),
       testTitle: 'Coded',
