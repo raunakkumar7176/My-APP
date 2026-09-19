@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:my_praperation/core/errors/app_error.dart';
+import 'package:my_praperation/core/models/group_rule.dart';
 import 'package:my_praperation/features/group/domain/group_privacy.dart';
 import 'package:my_praperation/features/group/screens/group_hub_screen.dart';
 import 'package:my_praperation/features/group/screens/group_settings_screen.dart';
@@ -407,6 +408,178 @@ void main() {
       expect(find.byKey(const Key('group_header_meta')), findsOneWidget);
       expect(find.text('2 members · Member · Public'), findsOneWidget);
       expect(find.byKey(const Key('group_settings_action')), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+  });
+  group('G13 — Rules summary', () {
+    testWidgets('shows rules count and first 3 rules', (tester) async {
+      _tallView(tester);
+      final repo = InMemoryGroupRepository()..seed(id: 'g-1', ownerId: 'u-me');
+      final c = _hub(repo);
+      await c.load();
+      // Seed 5 rules
+      for (var i = 1; i <= 5; i++) {
+        repo.groups['g-1']!.rules.add(
+          GroupRule(
+            id: 'rule-$i',
+            groupId: 'g-1',
+            ruleText: 'Rule $i text',
+            position: i,
+            createdAt: DateTime(2026, 9, i),
+            updatedAt: DateTime(2026, 9, i),
+          ),
+        );
+      }
+      await c.retryRules();
+
+      await tester.pumpWidget(
+        MaterialApp(home: GroupSettingsScreen(groupId: 'g-1', controller: c)),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('settings_rules_summary')), findsOneWidget);
+      expect(find.text('5'), findsOneWidget);
+      expect(find.text('Rule 1 text'), findsOneWidget);
+      expect(find.text('Rule 2 text'), findsOneWidget);
+      expect(find.text('Rule 3 text'), findsOneWidget);
+      expect(find.text('+2 more'), findsOneWidget);
+      expect(find.byKey(const Key('settings_manage_rules')), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('empty rules shows no-rules message', (tester) async {
+      _tallView(tester);
+      final repo = InMemoryGroupRepository()..seed(id: 'g-1', ownerId: 'u-me');
+      final c = _hub(repo);
+      await c.load();
+
+      await tester.pumpWidget(
+        MaterialApp(home: GroupSettingsScreen(groupId: 'g-1', controller: c)),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('settings_rules_empty')), findsOneWidget);
+      expect(find.text('No rules yet.'), findsOneWidget);
+      expect(find.byKey(const Key('settings_manage_rules')), findsNothing);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+  });
+
+  group('G13 — Members summary', () {
+    testWidgets('shows member count and role', (tester) async {
+      _tallView(tester);
+      final repo = InMemoryGroupRepository()..seed(
+        id: 'g-1',
+        ownerId: 'u-me',
+        members: {'u-2': 'leader', 'u-3': 'member'},
+      );
+      final c = _hub(repo);
+      await c.load();
+
+      await tester.pumpWidget(
+        MaterialApp(home: GroupSettingsScreen(groupId: 'g-1', controller: c)),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('settings_members_summary')), findsOneWidget);
+      expect(find.byKey(const Key('settings_members_count')), findsOneWidget);
+      expect(find.text('3'), findsWidgets);
+      expect(find.byKey(const Key('settings_my_role')), findsOneWidget);
+      expect(find.textContaining('Your role:'), findsOneWidget);
+      expect(find.byKey(const Key('settings_manage_members')), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+  });
+
+  group('G13 — Leave section', () {
+    testWidgets('owner sees blocked message, not leave button', (tester) async {
+      _tallView(tester);
+      final repo = InMemoryGroupRepository()..seed(id: 'g-1', ownerId: 'u-me');
+      final c = _hub(repo);
+      await c.load();
+
+      await tester.pumpWidget(
+        MaterialApp(home: GroupSettingsScreen(groupId: 'g-1', controller: c)),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('settings_leave_section')), findsOneWidget);
+      expect(find.byKey(const Key('settings_leave_button')), findsNothing);
+      expect(find.byKey(const Key('settings_leave_blocked')), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('non-owner sees leave button and can leave', (tester) async {
+      _tallView(tester);
+      final repo = InMemoryGroupRepository()
+        ..seed(id: 'g-1', ownerId: 'u-owner', members: {'u-me': 'member'});
+      repo.settingsGrant.add('g-1:u-me');
+      final c = _hub(repo, user: 'u-me');
+      await c.load();
+
+      final router = GoRouter(
+        initialLocation: '/groups/g-1/settings',
+        routes: [
+          GoRoute(
+            path: '/groups',
+            builder: (_, _) => const Scaffold(body: Text('Groups list')),
+          ),
+          GoRoute(
+            path: '/groups/:groupId/settings',
+            builder: (_, _) =>
+                GroupSettingsScreen(groupId: 'g-1', controller: c),
+          ),
+        ],
+      );
+      await tester.pumpWidget(MaterialApp.router(routerConfig: router));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('settings_leave_button')), findsOneWidget);
+      expect(find.byKey(const Key('settings_leave_blocked')), findsNothing);
+
+      await tester.tap(find.byKey(const Key('settings_leave_button')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('confirm_leave')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('confirm_leave')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Groups list'), findsOneWidget);
+
+      router.dispose();
+      c.dispose();
+    });
+
+    testWidgets('leave cancelled does nothing', (tester) async {
+      _tallView(tester);
+      final repo = InMemoryGroupRepository()
+        ..seed(id: 'g-1', ownerId: 'u-owner', members: {'u-me': 'member'});
+      repo.settingsGrant.add('g-1:u-me');
+      final c = _hub(repo, user: 'u-me');
+      await c.load();
+
+      await tester.pumpWidget(
+        MaterialApp(home: GroupSettingsScreen(groupId: 'g-1', controller: c)),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('settings_leave_button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+
+      // Still on settings screen
+      expect(find.byKey(const Key('settings_leave_button')), findsOneWidget);
+
       await tester.pumpWidget(const SizedBox());
       c.dispose();
     });

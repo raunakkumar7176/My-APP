@@ -9,7 +9,8 @@ import '../state/group_hub_controller.dart';
 import '../state/invite_code_controller.dart';
 import '../widgets/group_avatar.dart';
 
-/// Basic group settings: name, description, privacy, and logo removal.
+/// Full group settings: profile, privacy, invite code, rules summary,
+/// members summary, and a danger zone (leave).
 ///
 /// Editability comes from the server (`fn_has_permission(GROUP_SETTINGS)`,
 /// which is true for the owner) — the UI only hides controls; the live
@@ -258,6 +259,196 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
     );
   }
 
+  Widget _rulesSummary(BuildContext context) {
+    final rules = _c.rules;
+    final isLoading = _c.rulesLoading && rules.isEmpty;
+    final error = _c.rulesError;
+    final theme = Theme.of(context);
+    return Column(
+      key: const Key('settings_rules_summary'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.gavel_outlined, size: 20, color: theme.colorScheme.outline),
+            const SizedBox(width: 8),
+            Text('Group rules', style: theme.textTheme.titleSmall),
+            const SizedBox(width: 8),
+            if (!isLoading)
+              Text(
+                '${rules.length}',
+                key: const Key('settings_rules_count'),
+                style: theme.textTheme.bodySmall,
+              ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        if (isLoading)
+          const LinearProgressIndicator(key: Key('settings_rules_loading'))
+        else if (error != null && rules.isEmpty)
+          Text(
+            error,
+            key: const Key('settings_rules_error'),
+            style: const TextStyle(color: AppColors.error, fontSize: 12),
+          )
+        else if (rules.isEmpty)
+          Text(
+            'No rules yet.',
+            key: const Key('settings_rules_empty'),
+            style: theme.textTheme.bodySmall,
+          )
+        else
+          for (final rule in rules.take(3))
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                rule.ruleText,
+                key: Key('settings_rule_${rule.id}'),
+                style: theme.textTheme.bodySmall,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+        if (rules.length > 3)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              '+${rules.length - 3} more',
+              key: const Key('settings_rules_more'),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.primary,
+              ),
+            ),
+          ),
+        if (rules.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          TextButton(
+            key: const Key('settings_manage_rules'),
+            onPressed: () => context.push('/groups/${widget.groupId}'),
+            child: const Text('Manage rules'),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _membersSummary(BuildContext context) {
+    final group = _c.group;
+    if (group == null) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+    final myRole = _c.myRole;
+    return Column(
+      key: const Key('settings_members_summary'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.people_outlined, size: 20, color: theme.colorScheme.outline),
+            const SizedBox(width: 8),
+            Text('Members', style: theme.textTheme.titleSmall),
+            const Spacer(),
+            Text(
+              '${_c.memberCount}',
+              key: const Key('settings_members_count'),
+              style: theme.textTheme.bodySmall,
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Your role: ${myRole.label}',
+          key: const Key('settings_my_role'),
+          style: theme.textTheme.bodySmall,
+        ),
+        const SizedBox(height: 8),
+        TextButton(
+          key: const Key('settings_manage_members'),
+          onPressed: () => context.push('/groups/${widget.groupId}/members'),
+          child: const Text('Manage members'),
+        ),
+      ],
+    );
+  }
+
+  Widget _leaveSection(BuildContext context) {
+    final theme = Theme.of(context);
+    final canLeave = _c.canLeave;
+    final blockedReason = _c.leaveBlockedReason;
+    return Column(
+      key: const Key('settings_leave_section'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.logout, size: 20, color: AppColors.error),
+            const SizedBox(width: 8),
+            Text(
+              'Danger zone',
+              style: theme.textTheme.titleSmall?.copyWith(color: AppColors.error),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (canLeave)
+          OutlinedButton.icon(
+            key: const Key('settings_leave_button'),
+            onPressed: _c.isBusy ? null : _leaveGroup,
+            icon: const Icon(Icons.logout, color: AppColors.error),
+            label: const Text('Leave group', style: TextStyle(color: AppColors.error)),
+            style: OutlinedButton.styleFrom(
+              side: const BorderSide(color: AppColors.error),
+            ),
+          )
+        else
+          Text(
+            blockedReason,
+            key: const Key('settings_leave_blocked'),
+            style: theme.textTheme.bodySmall?.copyWith(color: AppColors.error),
+          ),
+      ],
+    );
+  }
+
+  Future<void> _leaveGroup() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Leave group?'),
+        content: Text(
+          'You will lose access to ${_c.group?.name ?? 'this group'}, its '
+          'tests and its members. You can rejoin later with the invite code '
+          'if the group allows it.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const Key('confirm_leave'),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Leave'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    final ok = await _c.leave();
+    if (!mounted) return;
+    if (ok) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('You left the group.')));
+      context.go('/groups');
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_c.error ?? 'Could not leave the group.'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+  }
+
   Future<void> _removeLogo() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -430,6 +621,21 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
             onPressed: _c.isBusy ? null : _save,
             child: Text(_c.isBusy ? 'Saving…' : 'Save'),
           ),
+          const SizedBox(height: 24),
+          // ── Rules summary ──
+          const Divider(),
+          const SizedBox(height: 8),
+          _rulesSummary(context),
+          const SizedBox(height: 24),
+          // ── Members summary ──
+          const Divider(),
+          const SizedBox(height: 8),
+          _membersSummary(context),
+          const SizedBox(height: 24),
+          // ── Danger zone: leave ──
+          const Divider(),
+          const SizedBox(height: 8),
+          _leaveSection(context),
           const SizedBox(height: 8),
           TextButton(
             onPressed: () => context.pop(),
