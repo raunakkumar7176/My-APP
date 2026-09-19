@@ -1,6 +1,6 @@
 # G10.2 — B2 Fix: Group Test Direct-UPDATE Lifecycle Guard
 
-**Branch:** `r4-restart` · **Base:** `d304ef4` (G10 audit) · **Commit:** `__COMMIT__` · **Date:** 2026-09-19
+**Branch:** `r4-restart` · **Base:** `d304ef4` (G10 audit) · **Commit:** `1a9a5cf` · **Date:** 2026-09-19
 **Scope:** B2 only. G10.1 (B1, `rpc_create_test`) is already applied live (`has_fix = true`, verified by the owner).
 
 ## FINAL STATUS
@@ -82,7 +82,7 @@ No Flutter change. Full suite (G1–G8, G10, R4) green; the G8 chat, announcemen
 
 ## 9. Commit
 
-`__COMMIT__` — migration + PRECHECK + POSTCHECK + this report only. G9's uncommitted work (one doc-comment line in `group_hub_screen.dart`) and the other agent's on-disk rewrite of `docs/G10_GROUP_TEST_MANAGEMENT_VERIFICATION_REPORT.md` were left untouched and uncommitted (HEAD keeps `d304ef4`'s version).
+`1a9a5cf` — migration + PRECHECK + POSTCHECK + this report only. G9's uncommitted work (one doc-comment line in `group_hub_screen.dart`) and the other agent's on-disk rewrite of `docs/G10_GROUP_TEST_MANAGEMENT_VERIFICATION_REPORT.md` were left untouched and uncommitted (HEAD keeps `d304ef4`'s version).
 
 ## 10. Decision needed, then apply
 
