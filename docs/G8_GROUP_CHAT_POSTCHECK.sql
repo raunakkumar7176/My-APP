@@ -45,7 +45,7 @@ SELECT
 -- ------------------------------------------------------------
 SELECT
   bool_and(CASE WHEN cmd IN ('SELECT', 'ALL') THEN coalesce(qual, '') ILIKE '%fn_is_member%' ELSE true END) AS read_gated_by_membership,
-  bool_and(CASE WHEN cmd IN ('INSERT', 'ALL') THEN coalesce(with_check, '') ILIKE '%sender_id = auth.uid()%' ELSE true END) AS insert_pins_sender,
+  bool_and(CASE WHEN cmd IN ('INSERT', 'ALL') THEN coalesce(with_check, '') ILIKE '%sender_id = %auth.uid()%' ELSE true END) AS insert_pins_sender,
   bool_and(CASE WHEN cmd IN ('INSERT', 'ALL') THEN coalesce(with_check, '') ILIKE '%fn_is_member%' ELSE true END) AS insert_gated_by_membership,
   bool_and('authenticated' = ANY (roles) OR 'public' = ANY (roles)) AS all_policies_authenticated_or_default,
   bool_and(NOT ('anon' = ANY (roles))) AS no_anon_policy,
@@ -72,7 +72,7 @@ SELECT p.proname,
         OR pg_get_functiondef(p.oid) ILIKE '%delete from public.group_messages%') AS writes_table
 FROM pg_proc p
 JOIN pg_namespace n ON n.oid = p.pronamespace
-WHERE n.nspname = 'public'
+WHERE n.nspname = 'public' AND p.prokind = 'f'
   AND pg_get_functiondef(p.oid) ILIKE '%group_messages%'
 ORDER BY p.proname;
 
