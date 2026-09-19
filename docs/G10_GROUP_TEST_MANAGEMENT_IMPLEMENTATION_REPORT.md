@@ -1,6 +1,6 @@
 # G10 — Group Test Management: Implementation Report (builder)
 
-**Branch:** `r4-restart` · **Base:** `520fec0` (G8.1 verified) · **Commit:** `__COMMIT__` · **Date:** 2026-09-19
+**Branch:** `r4-restart` · **Base:** `520fec0` (G8.1 verified) · **Commit:** `1327a5e` · **Date:** 2026-09-19
 **Role:** implementer only (not audited). G9 was being built concurrently by another agent; nothing of G9 was audited or redesigned here.
 
 ## FINAL STATUS
@@ -115,6 +115,6 @@ GAP-1 / GAP-2 (§5) — owner decision; `anon` table grants on `tests` (inert bu
 
 ## 14. Commit
 
-`__COMMIT__` on `r4-restart`.
+`1327a5e` on `r4-restart`.
 
 **FINAL STATUS: G10 IMPLEMENTATION COMPLETE — BACKEND PENDING**
