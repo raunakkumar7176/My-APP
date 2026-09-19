@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/theme/app_colors.dart';
+import '../data/notification_repository.dart';
 import '../state/group_hub_controller.dart';
 import '../widgets/group_announcements_section.dart';
 import '../widgets/group_avatar.dart';
@@ -34,7 +35,13 @@ class _GroupHubScreenState extends State<GroupHubScreen> {
   void initState() {
     super.initState();
     _owns = widget.controller == null;
-    _c = widget.controller ?? GroupHubController(groupId: widget.groupId);
+    _c =
+        widget.controller ??
+        GroupHubController(
+          groupId: widget.groupId,
+          // G16: live inbox for the unread badge (tests inject their own).
+          notifications: const SupabaseNotificationRepository(),
+        );
     _c.addListener(_onChanged);
     _c.load();
   }
@@ -82,6 +89,12 @@ class _GroupHubScreenState extends State<GroupHubScreen> {
   Future<void> _openMembers() async {
     await context.push('/groups/${widget.groupId}/members');
     // Roles / roster / count may have changed there.
+    if (mounted) await _c.refresh();
+  }
+
+  Future<void> _openNotifications() async {
+    await context.push('/groups/${widget.groupId}/notifications');
+    // Rows were marked read there: re-read the count, never keep a stale badge.
     if (mounted) await _c.refresh();
   }
 
@@ -163,6 +176,18 @@ class _GroupHubScreenState extends State<GroupHubScreen> {
       appBar: AppBar(
         title: Text(group.name),
         actions: [
+          if (_c.hasNotifications)
+            IconButton(
+              key: const Key('group_notifications_action'),
+              tooltip: 'Notifications',
+              icon: Badge.count(
+                key: const Key('group_notifications_badge'),
+                count: _c.unreadNotifications ?? 0,
+                isLabelVisible: _c.hasUnreadNotifications,
+                child: const Icon(Icons.notifications_outlined),
+              ),
+              onPressed: _openNotifications,
+            ),
           if (_c.canManageMembers)
             IconButton(
               key: const Key('invite_member_action'),

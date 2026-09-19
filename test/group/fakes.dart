@@ -12,6 +12,7 @@
 //   * groups.privacy CHECK → public | private | restricted
 
 import 'package:my_praperation/core/errors/app_error.dart';
+import 'package:my_praperation/core/models/app_notification.dart';
 import 'package:my_praperation/core/models/group.dart';
 import 'package:my_praperation/core/models/group_announcement.dart';
 import 'package:my_praperation/core/models/group_invitation.dart';
@@ -21,6 +22,7 @@ import 'package:my_praperation/core/models/group_message.dart';
 import 'package:my_praperation/core/models/group_rule.dart';
 import 'package:my_praperation/core/models/profile_match.dart';
 import 'package:my_praperation/features/group/data/group_repository.dart';
+import 'package:my_praperation/features/group/data/notification_repository.dart';
 import 'package:my_praperation/features/group/domain/group_controls.dart';
 import 'package:my_praperation/features/group/domain/group_errors.dart';
 import 'package:my_praperation/features/group/domain/group_permission.dart';
@@ -1115,5 +1117,149 @@ class InMemoryGroupRepository implements GroupRepository {
       throw const DataError(message: 'check constraint');
     }
     seedMessage(groupId: groupId, senderId: senderId, body: b);
+  }
+}
+
+/// G16 — in-memory `NotificationRepository` mirroring the live rules:
+///   * notifications RLS → SELECT / UPDATE own rows only (`user_id = uid`);
+///     no INSERT or DELETE policy for clients (rows come from triggers);
+///   * read state is `read_at`; unread == `read_at IS NULL`;
+///   * group scope is `data->>'group_id'`;
+///   * group_mutes → own rows only (FOR ALL), PK (user_id, group_id).
+/// Rows for other users are seeded so cross-user reads/marks can be shown to
+/// match 0 rows exactly as RLS does.
+class FakeNotificationRepository implements NotificationRepository {
+  FakeNotificationRepository({this.currentUser = 'u-me'});
+
+  String currentUser;
+  final List<AppNotification> rows = [];
+  final Map<String, bool> mutes = {}; // '<user>:<group>' -> is_muted
+  final List<String> calls = [];
+  Object? failNextWith;
+  int _seq = 0;
+
+  /// Seeds one server-written row (what `fn_notify_group` would insert).
+  AppNotification seed({
+    required String userId,
+    required String groupId,
+    String category = 'GROUP_MESSAGE',
+    String type = 'group_message',
+    String title = 'Nn — new message',
+    String body = 'hello',
+    DateTime? createdAt,
+    DateTime? readAt,
+    Map<String, dynamic> extra = const {},
+  }) {
+    _seq++;
+    final n = AppNotification(
+      id: 'n-${_seq.toString().padLeft(3, '0')}',
+      userId: userId,
+      category: category,
+      title: title,
+      body: body,
+      data: {'group_id': groupId, 'type': type, ...extra},
+      createdAt: createdAt ?? DateTime(2026, 9, 1).add(Duration(minutes: _seq)),
+      readAt: readAt,
+      priority: 'low',
+    );
+    rows.add(n);
+    return n;
+  }
+
+  void _maybeFail() {
+    final f = failNextWith;
+    if (f != null) {
+      failNextWith = null;
+      throw f;
+    }
+  }
+
+  Iterable<AppNotification> _own(String groupId) =>
+      rows.where((n) => n.userId == currentUser && n.groupId == groupId);
+
+  @override
+  Future<List<AppNotification>> forGroup(
+    String groupId, {
+    int limit = notificationPageSize,
+    DateTime? before,
+  }) async {
+    calls.add('forGroup:$groupId:$limit:${before?.toIso8601String() ?? ''}');
+    _maybeFail();
+    final list = _own(groupId)
+        .where((n) => before == null || n.createdAt.isBefore(before))
+        .toList()
+      ..sort((a, b) {
+        final c = b.createdAt.compareTo(a.createdAt);
+        return c != 0 ? c : b.id.compareTo(a.id);
+      });
+    return list.take(limit).toList();
+  }
+
+  @override
+  Future<int> unreadCount(String groupId) async {
+    calls.add('unreadCount:$groupId');
+    _maybeFail();
+    return _own(groupId).where((n) => !n.isRead).length;
+  }
+
+  @override
+  Future<bool> markRead(String notificationId) async {
+    calls.add('markRead:$notificationId');
+    _maybeFail();
+    final i = rows.indexWhere(
+      (n) => n.id == notificationId && n.userId == currentUser && !n.isRead,
+    );
+    if (i < 0) return false; // RLS: 0 rows for another user's row
+    rows[i] = rows[i].copyWith(readAt: DateTime(2026, 9, 2));
+    return true;
+  }
+
+  @override
+  Future<int> markAllRead(String groupId) async {
+    calls.add('markAllRead:$groupId');
+    _maybeFail();
+    var n = 0;
+    for (var i = 0; i < rows.length; i++) {
+      final r = rows[i];
+      if (r.userId == currentUser && r.groupId == groupId && !r.isRead) {
+        rows[i] = r.copyWith(readAt: DateTime(2026, 9, 2));
+        n++;
+      }
+    }
+    return n;
+  }
+
+  @override
+  Future<bool> isMuted(String groupId) async {
+    calls.add('isMuted:$groupId');
+    _maybeFail();
+    return mutes['$currentUser:$groupId'] ?? false;
+  }
+
+  @override
+  Future<void> setMuted(String groupId, {required bool muted}) async {
+    calls.add('setMuted:$groupId:$muted');
+    _maybeFail();
+    mutes['$currentUser:$groupId'] = muted;
+  }
+
+  /// Mirrors `fn_notify_group` for tests: one row per member except the
+  /// actor, skipping muted members. Used to show the G5/G7/G8 paths and the
+  /// mute semantics without a second delivery mechanism in the app.
+  void notifyGroup({
+    required Iterable<String> members,
+    required String groupId,
+    required String category,
+    required String type,
+    required String title,
+    String body = '',
+    String? exclude,
+    Map<String, dynamic> extra = const {},
+  }) {
+    for (final u in members) {
+      if (u == exclude) continue;
+      if (mutes['$u:$groupId'] == true) continue;
+      seed(userId: u, groupId: groupId, category: category, type: type, title: title, body: body, extra: extra);
+    }
   }
 }

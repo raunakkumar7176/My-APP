@@ -10,6 +10,7 @@ import '../../../core/models/group_rule.dart';
 import '../../../core/services/auth_service.dart';
 import '../../test/state/disposable_notifier.dart';
 import '../data/group_repository.dart';
+import '../data/notification_repository.dart';
 import '../domain/group_controls.dart';
 import '../domain/group_errors.dart';
 import '../domain/group_privacy.dart';
@@ -27,12 +28,18 @@ class GroupHubController extends DisposableNotifier {
     required this.groupId,
     GroupRepository? repository,
     String? currentUserId,
+    this.notifications,
   }) : _repo = repository ?? const SupabaseGroupRepository(),
        _currentUserId = currentUserId ?? AuthService.currentUser?.id;
 
   final String groupId;
   final GroupRepository _repo;
   final String? _currentUserId;
+
+  /// G16: the live notification inbox, when the hub is wired with one (the
+  /// hub screen passes the Supabase repository; tests inject a fake or
+  /// nothing). Null means no badge, never a guessed count.
+  final NotificationRepository? notifications;
 
   /// The data source this hub uses, so flows opened from it (invite sheet)
   /// share it instead of constructing a second one.
@@ -112,6 +119,30 @@ class GroupHubController extends DisposableNotifier {
   bool get sending => _sending;
   bool get hasOlderMessages => _hasOlder;
   bool get hasMessages => _messages.isNotEmpty;
+
+  // ── G16: notification unread badge ──
+  int? _unreadNotifications;
+
+  /// The caller's unread `notifications` rows for this group (live
+  /// `read_at IS NULL`, `data->>'group_id'`), or null when the hub has no
+  /// notification repository or the count could not be read — the badge is
+  /// then simply not shown. Re-read on every [load] / [refresh], so it never
+  /// goes stale after the notification screen marked rows read.
+  int? get unreadNotifications => _unreadNotifications;
+  bool get hasUnreadNotifications => (_unreadNotifications ?? 0) > 0;
+  bool get hasNotifications => notifications != null;
+
+  Future<void> _loadUnreadNotifications() async {
+    final repo = notifications;
+    if (repo == null) return;
+    try {
+      _unreadNotifications = await repo.unreadCount(groupId);
+    } catch (e) {
+      // A badge is never worth an error state; the inbox screen reports.
+      AppLogger.warning('Unread notification count unavailable: $e');
+      _unreadNotifications = null;
+    }
+  }
 
   // ── G14: management controls & role permissions ──
   GroupRolePermissions _rolePermissions = GroupRolePermissions.empty;
@@ -379,6 +410,7 @@ class GroupHubController extends DisposableNotifier {
         // server-reported permissions and matrix are dropped with access.
         _permissions = GroupPermissions.none;
         _rolePermissions = GroupRolePermissions.empty;
+        _unreadNotifications = null;
       } else {
         _group = group;
         _accessDenied = false;
@@ -406,6 +438,8 @@ class GroupHubController extends DisposableNotifier {
         await _loadAnnouncements();
         // Chat: latest window for all members (RLS: member-only read).
         await _loadMessages();
+        // G16: unread badge (own `notifications` rows; one count request).
+        await _loadUnreadNotifications();
       }
     } on AppError catch (e) {
       _error = e.message;
