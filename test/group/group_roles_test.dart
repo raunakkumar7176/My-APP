@@ -303,6 +303,11 @@ void main() {
       WidgetTester tester,
       InMemoryGroupRepository repo,
     ) async {
+      // Tall viewport: the hub's lazy ListView must build the roster below
+      // the G6 rules and G7 announcements sections too.
+      tester.view.physicalSize = const Size(800, 2800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
       final c = _hub(repo);
       await tester.pumpWidget(
         MaterialApp(

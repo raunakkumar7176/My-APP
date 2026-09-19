@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/theme/app_colors.dart';
 import '../state/group_hub_controller.dart';
+import '../widgets/group_announcements_section.dart';
 import '../widgets/group_avatar.dart';
 import '../widgets/group_rules_section.dart';
 import '../widgets/invite_member_sheet.dart';
@@ -213,7 +214,10 @@ class _GroupHubScreenState extends State<GroupHubScreen> {
               Text(group.description!.trim()),
             ],
             const SizedBox(height: 24),
-            // Rules: visible to all members; manager controls are inside.
+            // Announcements then rules: visible to all members; manager
+            // controls are inside each section.
+            GroupAnnouncementsSection(controller: _c),
+            const SizedBox(height: 24),
             GroupRulesSection(controller: _c),
             const SizedBox(height: 24),
             if (_c.canManageMembers) ...[

@@ -310,6 +310,11 @@ void main() {
     testWidgets('hub: View all opens the members hub', (tester) async {
       final repo = _roster();
       final c = _hub(repo);
+      // Tall viewport: the roster sits below the G6/G7 sections in the
+      // hub's lazy ListView.
+      tester.view.physicalSize = const Size(800, 2800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
       await tester.pumpWidget(
         MaterialApp(
           home: GroupHubScreen(groupId: 'g-1', controller: c),

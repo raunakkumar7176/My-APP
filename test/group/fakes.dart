@@ -13,6 +13,7 @@
 
 import 'package:my_praperation/core/errors/app_error.dart';
 import 'package:my_praperation/core/models/group.dart';
+import 'package:my_praperation/core/models/group_announcement.dart';
 import 'package:my_praperation/core/models/group_invitation.dart';
 import 'package:my_praperation/core/models/group_join_request.dart';
 import 'package:my_praperation/core/models/group_member.dart';
@@ -43,6 +44,7 @@ class FakeGroup {
   String? logoUrl;
   final Map<String, String> roles = {}; // userId -> group_role
   final List<GroupRule> rules = [];
+  final List<GroupAnnouncement> announcements = [];
   DateTime createdAt = DateTime(2026, 9, 1);
 }
 
@@ -839,5 +841,111 @@ class InMemoryGroupRepository implements GroupRepository {
     }
     final (g, i) = hit;
     g.rules.removeAt(i);
+  }
+
+  // ── Group Announcements (G7) ──
+  // Mirrors the legacy-defined `group_announcements` RLS (0020/0033/0040):
+  //   SELECT               → fn_is_member(group_id, uid)
+  //   INSERT               → SEND_ANNOUNCEMENT or owner (author_id = uid)
+  //   UPDATE/DELETE (ALL)  → SEND_ANNOUNCEMENT or owner (USING + CHECK)
+  // Leader holds SEND_ANNOUNCEMENT by the live seeding; moderator/member do
+  // not. A row the caller may not update/delete is simply not matched.
+
+  int _announcementSeq = 0;
+
+  bool _canSendAnnouncement(String groupId) =>
+      hasPermission(groupId, GroupPermission.sendAnnouncement);
+
+  @override
+  Future<List<GroupAnnouncement>> announcements(String groupId) async {
+    calls.add('announcements:$groupId');
+    if (!_isMemberOf(groupId)) return const [];
+    final rows = List<GroupAnnouncement>.of(groups[groupId]!.announcements)
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return rows;
+  }
+
+  @override
+  Future<void> createAnnouncement({
+    required String groupId,
+    required String title,
+    required String body,
+  }) async {
+    calls.add('createAnnouncement:$groupId');
+    _maybeFail();
+    final g = groups[groupId];
+    if (g == null || !_canSendAnnouncement(groupId)) {
+      throw _notAuthorized(GroupErrorContext.announcement);
+    }
+    final t = title.trim();
+    final b = body.trim();
+    if (t.isEmpty || t.length > 120 || b.isEmpty || b.length > 2000) {
+      throw const DataError(message: 'check constraint');
+    }
+    _announcementSeq++;
+    final now = DateTime(2026, 9, 15, 12, _announcementSeq);
+    g.announcements.add(
+      GroupAnnouncement(
+        id: 'a-$_announcementSeq',
+        groupId: groupId,
+        authorId: currentUser,
+        title: t,
+        body: b,
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+  }
+
+  Iterable<(FakeGroup, int)> _writableAnnouncementRows(String id) sync* {
+    for (final g in groups.values) {
+      if (!_canSendAnnouncement(g.id)) continue;
+      for (var i = 0; i < g.announcements.length; i++) {
+        if (g.announcements[i].id == id) yield (g, i);
+      }
+    }
+  }
+
+  @override
+  Future<void> updateAnnouncement({
+    required String announcementId,
+    required String title,
+    required String body,
+  }) async {
+    calls.add('updateAnnouncement:$announcementId');
+    _maybeFail();
+    final hit = _writableAnnouncementRows(announcementId).firstOrNull;
+    if (hit == null) {
+      throw const DataError(
+        message:
+            'This announcement could not be updated. It may have been removed.',
+      );
+    }
+    final t = title.trim();
+    final b = body.trim();
+    if (t.isEmpty || t.length > 120 || b.isEmpty || b.length > 2000) {
+      throw const DataError(message: 'check constraint');
+    }
+    final (g, i) = hit;
+    g.announcements[i] = g.announcements[i].copyWith(
+      title: t,
+      body: b,
+      updatedAt: DateTime(2026, 9, 15, 13),
+    );
+  }
+
+  @override
+  Future<void> deleteAnnouncement(String announcementId) async {
+    calls.add('deleteAnnouncement:$announcementId');
+    _maybeFail();
+    final hit = _writableAnnouncementRows(announcementId).firstOrNull;
+    if (hit == null) {
+      throw const DataError(
+        message:
+            'This announcement could not be deleted. It may have been removed.',
+      );
+    }
+    final (g, i) = hit;
+    g.announcements.removeAt(i);
   }
 }

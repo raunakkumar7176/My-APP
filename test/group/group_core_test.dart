@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:my_praperation/core/errors/app_error.dart';
 import 'package:my_praperation/core/models/group.dart';
+import 'package:my_praperation/core/models/group_announcement.dart';
 import 'package:my_praperation/core/models/group_invitation.dart';
 import 'package:my_praperation/core/models/group_join_request.dart';
 import 'package:my_praperation/core/models/group_member.dart';
@@ -751,6 +752,23 @@ class _FailingRepository implements GroupRepository {
   }) async {}
   @override
   Future<void> deleteRule(String ruleId) async {}
+  @override
+  Future<List<GroupAnnouncement>> announcements(String groupId) async =>
+      const [];
+  @override
+  Future<void> createAnnouncement({
+    required String groupId,
+    required String title,
+    required String body,
+  }) async {}
+  @override
+  Future<void> updateAnnouncement({
+    required String announcementId,
+    required String title,
+    required String body,
+  }) async {}
+  @override
+  Future<void> deleteAnnouncement(String announcementId) async {}
   @override
   Future<GroupPermissions> permissionsFor(
     String groupId, {

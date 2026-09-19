@@ -19,6 +19,7 @@ enum GroupErrorContext {
   inviteCode,
   invitation,
   joinRequest,
+  announcement,
 }
 
 class GroupErrors {
@@ -80,6 +81,8 @@ class GroupErrors {
           return 'Only the group owner or a member with the settings permission can manage the invite code.';
         case GroupErrorContext.joinRequest:
           return 'You do not have permission to decide join requests for this group.';
+        case GroupErrorContext.announcement:
+          return 'Only the group owner or a member with the announcement permission can manage announcements.';
         default:
           return 'You do not have permission to do that.';
       }
@@ -123,6 +126,8 @@ class GroupErrors {
         return 'Could not update the invitation. Please try again.';
       case GroupErrorContext.joinRequest:
         return 'Could not update the join request. Please try again.';
+      case GroupErrorContext.announcement:
+        return 'Could not update the announcement. Please try again.';
     }
   }
 

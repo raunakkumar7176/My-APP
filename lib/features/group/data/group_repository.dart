@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/errors/app_error.dart';
 import '../../../core/logging/app_logger.dart';
 import '../../../core/models/group.dart';
+import '../../../core/models/group_announcement.dart';
 import '../../../core/models/group_invitation.dart';
 import '../../../core/models/group_join_request.dart';
 import '../../../core/models/group_member.dart';
@@ -230,6 +231,33 @@ abstract interface class GroupRepository {
 
   /// Deletes a rule. RLS: GROUP_SETTINGS or owner (live groups UPDATE gate).
   Future<void> deleteRule(String ruleId);
+
+  // ── Group Announcements (G7) — existing `public.group_announcements` ──
+
+  /// Announcements of one group, newest first. RLS "members read
+  /// announcements": member only (and, where the 0040 columns exist, only
+  /// published / not expired rows — the server decides, the client never
+  /// filters).
+  Future<List<GroupAnnouncement>> announcements(String groupId);
+
+  /// Inserts `{group_id, author_id = auth.uid(), title, body}`. RLS
+  /// "leaders create announcements": SEND_ANNOUNCEMENT or owner.
+  Future<void> createAnnouncement({
+    required String groupId,
+    required String title,
+    required String body,
+  });
+
+  /// Updates title/body by exact id. RLS "leaders manage announcements"
+  /// (FOR ALL, SEND_ANNOUNCEMENT or owner, USING + CHECK). 0 rows ⇒ error.
+  Future<void> updateAnnouncement({
+    required String announcementId,
+    required String title,
+    required String body,
+  });
+
+  /// Deletes by exact id under the same policy. 0 rows ⇒ error.
+  Future<void> deleteAnnouncement(String announcementId);
 }
 
 class SupabaseGroupRepository implements GroupRepository {
@@ -759,6 +787,80 @@ class SupabaseGroupRepository implements GroupRepository {
           throw const DataError(
             message:
                 'This rule could not be deleted. It may have been removed.',
+          );
+        }
+      });
+
+  // ── Group Announcements (G7) ──
+
+  /// Base columns only (present since migration 0020; 0040's optional
+  /// columns are never requested so a partially-migrated live table still
+  /// reads).
+  static const _announcementColumns =
+      'id, group_id, author_id, title, body, created_at, updated_at';
+
+  @override
+  Future<List<GroupAnnouncement>> announcements(String groupId) =>
+      _guard(GroupErrorContext.load, () async {
+        final rows = await _client
+            .from('group_announcements')
+            .select(_announcementColumns)
+            .eq('group_id', groupId)
+            .order('created_at', ascending: false);
+        AppLogger.rpcShape('group_announcements.select', rows);
+        return [
+          for (final r in rows as List)
+            GroupAnnouncement.fromJson(r as Map<String, dynamic>),
+        ];
+      });
+
+  @override
+  Future<void> createAnnouncement({
+    required String groupId,
+    required String title,
+    required String body,
+  }) => _guard(GroupErrorContext.announcement, () async {
+    final uid = _uid;
+    if (uid == null) throw const AuthError(message: 'Please sign in again.');
+    await _client.from('group_announcements').insert({
+      'group_id': groupId,
+      'author_id': uid, // NOT NULL, no default; FK → profiles(id)
+      'title': title.trim(),
+      'body': body.trim(),
+    });
+  });
+
+  @override
+  Future<void> updateAnnouncement({
+    required String announcementId,
+    required String title,
+    required String body,
+  }) => _guard(GroupErrorContext.announcement, () async {
+    final updated = await _client
+        .from('group_announcements')
+        .update({'title': title.trim(), 'body': body.trim()})
+        .eq('id', announcementId)
+        .select('id');
+    if ((updated as List).isEmpty) {
+      throw const DataError(
+        message:
+            'This announcement could not be updated. It may have been removed.',
+      );
+    }
+  });
+
+  @override
+  Future<void> deleteAnnouncement(String announcementId) =>
+      _guard(GroupErrorContext.announcement, () async {
+        final deleted = await _client
+            .from('group_announcements')
+            .delete()
+            .eq('id', announcementId)
+            .select('id');
+        if ((deleted as List).isEmpty) {
+          throw const DataError(
+            message:
+                'This announcement could not be deleted. It may have been removed.',
           );
         }
       });

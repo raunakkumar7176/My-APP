@@ -1,6 +1,7 @@
 import '../../../core/errors/app_error.dart';
 import '../../../core/logging/app_logger.dart';
 import '../../../core/models/group.dart';
+import '../../../core/models/group_announcement.dart';
 import '../../../core/models/group_invitation.dart';
 import '../../../core/models/group_join_request.dart';
 import '../../../core/models/group_member.dart';
@@ -77,6 +78,29 @@ class GroupHubController extends DisposableNotifier {
   String? get actingRuleId => _actingRuleId;
   bool get rulesSaving => _rulesSaving;
   bool get hasRules => _rules.isNotEmpty;
+
+  // ── group announcements (G7) ──
+  List<GroupAnnouncement> _announcements = const [];
+  bool _announcementsLoading = false;
+  String? _announcementsError;
+  String? _actingAnnouncementId;
+  bool _announcementSaving = false;
+
+  /// Newest first, exactly as the server returned them (member-only rows).
+  List<GroupAnnouncement> get announcements => _announcements;
+  bool get announcementsLoading => _announcementsLoading;
+  String? get announcementsError => _announcementsError;
+  String? get actingAnnouncementId => _actingAnnouncementId;
+  bool get announcementSaving => _announcementSaving;
+  bool get hasAnnouncements => _announcements.isNotEmpty;
+
+  /// Author label from the roster already loaded (no extra profile read):
+  /// "You", the member's display name, or null when the author is no longer
+  /// a member — then nothing is shown rather than a guessed identity.
+  String? announcementAuthorLabel(GroupAnnouncement a) {
+    if (a.authorId == _currentUserId) return 'You';
+    return _members.where((m) => m.userId == a.authorId).firstOrNull?.displayName;
+  }
 
   /// Re-invite is offered only for a `declined` row whose invitee is not
   /// already in the roster. Pending/accepted/expired rows are never re-sent.
@@ -187,6 +211,13 @@ class GroupHubController extends DisposableNotifier {
   /// so a failed probe never hides the owner's own settings.
   bool get canEditBasics => _permissions.canEditSettings || isOwner;
 
+  /// Server-confirmed `SEND_ANNOUNCEMENT` (owner true via the function's own
+  /// bypass) — exactly the live `group_announcements` INSERT / manage gate.
+  /// Owner accepted locally too so a failed probe never hides the owner's
+  /// controls; the server still decides.
+  bool get canSendAnnouncement =>
+      _permissions.has(GroupPermission.sendAnnouncement) || isOwner;
+
   /// Roles an authorised manager may assign through ordinary role editing.
   /// `owner` is never assignable here: it is an invariant, not a permission
   /// (no ownership-transfer mechanism exists live).
@@ -228,6 +259,7 @@ class GroupHubController extends DisposableNotifier {
             GroupPermission.manageMembers,
             GroupPermission.manageRoles,
             GroupPermission.groupSettings,
+            GroupPermission.sendAnnouncement,
           ],
         );
         // Manager queue: loaded only when the server says MANAGE_MEMBERS.
@@ -242,6 +274,8 @@ class GroupHubController extends DisposableNotifier {
         }
         // Rules: loaded for all members (RLS enforces member-only read).
         await _loadRules();
+        // Announcements: loaded for all members (RLS: member-only read).
+        await _loadAnnouncements();
       }
     } on AppError catch (e) {
       _error = e.message;
@@ -696,6 +730,162 @@ class GroupHubController extends DisposableNotifier {
       _busy = false;
       notifyListeners();
     }
+  }
+
+  // ── Group Announcements (G7) ──
+
+  Future<void> _loadAnnouncements() async {
+    _announcementsLoading = true;
+    _announcementsError = null;
+    try {
+      _announcements = await _repo.announcements(groupId);
+    } on AppError catch (e) {
+      _announcements = const [];
+      _announcementsError = e.message;
+    } catch (e, st) {
+      AppLogger.error('Group announcements load failed: $e', stackTrace: st);
+      _announcements = const [];
+      _announcementsError = GroupErrors.map(
+        e.toString(),
+        context: GroupErrorContext.load,
+      );
+    }
+    _announcementsLoading = false;
+  }
+
+  Future<void> retryAnnouncements() async {
+    if (_announcementsLoading) return;
+    notifyListeners();
+    await _loadAnnouncements();
+    notifyListeners();
+  }
+
+  /// Client mirror of the live CHECKs (title 1..120, body 1..2000 after
+  /// trim). Returns the message to show, or null when acceptable. The server
+  /// re-validates regardless.
+  static String? validateAnnouncement({
+    required String title,
+    required String body,
+  }) {
+    final t = title.trim();
+    final b = body.trim();
+    if (t.isEmpty) return 'Announcement title cannot be empty.';
+    if (t.length > GroupAnnouncement.maxTitleLength) {
+      return 'Announcement title must be at most '
+          '${GroupAnnouncement.maxTitleLength} characters.';
+    }
+    if (b.isEmpty) return 'Announcement text cannot be empty.';
+    if (b.length > GroupAnnouncement.maxBodyLength) {
+      return 'Announcement text must be at most '
+          '${GroupAnnouncement.maxBodyLength} characters.';
+    }
+    return null;
+  }
+
+  /// UX-only pre-check mirroring the live gate (SEND_ANNOUNCEMENT or owner);
+  /// the `group_announcements` RLS is the boundary and is exercised
+  /// regardless.
+  bool _announcementMutationAllowed() {
+    if (canSendAnnouncement) return true;
+    _error = GroupErrors.map(
+      'NOT_AUTHORIZED',
+      context: GroupErrorContext.announcement,
+    );
+    notifyListeners();
+    return false;
+  }
+
+  Future<bool> _runAnnouncementMutation(
+    String? actingId,
+    Future<void> Function() body,
+  ) async {
+    _actingAnnouncementId = actingId;
+    _announcementSaving = true;
+    _error = null;
+    notifyListeners();
+    try {
+      await body();
+      await _loadAnnouncements();
+      return true;
+    } on AppError catch (e) {
+      _error = e.message;
+      await _loadAnnouncements();
+      return false;
+    } catch (e, st) {
+      AppLogger.error('Announcement mutation failed: $e', stackTrace: st);
+      _error = GroupErrors.map(
+        e.toString(),
+        context: GroupErrorContext.announcement,
+      );
+      await _loadAnnouncements();
+      return false;
+    } finally {
+      _actingAnnouncementId = null;
+      _announcementSaving = false;
+      notifyListeners();
+    }
+  }
+
+  /// Creates an announcement. Single-flight. Re-reads after success or
+  /// failure (the server may also have fired its notification triggers).
+  Future<bool> createAnnouncement({
+    required String title,
+    required String body,
+  }) async {
+    if (_announcementSaving || _busy) return false;
+    if (!_announcementMutationAllowed()) return false;
+    final invalid = validateAnnouncement(title: title, body: body);
+    if (invalid != null) {
+      _error = invalid;
+      notifyListeners();
+      return false;
+    }
+    return _runAnnouncementMutation(
+      null,
+      () => _repo.createAnnouncement(
+        groupId: groupId,
+        title: title.trim(),
+        body: body.trim(),
+      ),
+    );
+  }
+
+  /// Edits title/body. Single-flight per announcement. Re-reads after.
+  Future<bool> updateAnnouncement(
+    GroupAnnouncement a, {
+    required String title,
+    required String body,
+  }) async {
+    if (_announcementSaving || _actingAnnouncementId == a.id || _busy) {
+      return false;
+    }
+    if (!_announcementMutationAllowed()) return false;
+    final invalid = validateAnnouncement(title: title, body: body);
+    if (invalid != null) {
+      _error = invalid;
+      notifyListeners();
+      return false;
+    }
+    return _runAnnouncementMutation(
+      a.id,
+      () => _repo.updateAnnouncement(
+        announcementId: a.id,
+        title: title.trim(),
+        body: body.trim(),
+      ),
+    );
+  }
+
+  /// Deletes an announcement. Single-flight per announcement. Re-reads after.
+  Future<bool> deleteAnnouncement(GroupAnnouncement a) async {
+    if (_announcementSaving || _actingAnnouncementId == a.id || _busy) {
+      return false;
+    }
+    if (!_announcementMutationAllowed()) return false;
+    return _runAnnouncementMutation(
+      a.id,
+      () => _repo.deleteAnnouncement(a.id),
+    );
   }
 
   void clearError() {
