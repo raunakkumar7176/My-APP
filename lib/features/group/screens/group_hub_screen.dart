@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/constants/theme/app_colors.dart';
 import '../state/group_hub_controller.dart';
 import '../widgets/group_avatar.dart';
+import '../widgets/group_rules_section.dart';
 import '../widgets/invite_member_sheet.dart';
 import '../widgets/join_request_queue.dart';
 import '../widgets/member_tile.dart';
@@ -211,6 +212,9 @@ class _GroupHubScreenState extends State<GroupHubScreen> {
               const SizedBox(height: 12),
               Text(group.description!.trim()),
             ],
+            const SizedBox(height: 24),
+            // Rules: visible to all members; manager controls are inside.
+            GroupRulesSection(controller: _c),
             const SizedBox(height: 24),
             if (_c.canManageMembers) ...[
               JoinRequestQueue(controller: _c),

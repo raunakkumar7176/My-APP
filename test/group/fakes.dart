@@ -16,6 +16,7 @@ import 'package:my_praperation/core/models/group.dart';
 import 'package:my_praperation/core/models/group_invitation.dart';
 import 'package:my_praperation/core/models/group_join_request.dart';
 import 'package:my_praperation/core/models/group_member.dart';
+import 'package:my_praperation/core/models/group_rule.dart';
 import 'package:my_praperation/core/models/profile_match.dart';
 import 'package:my_praperation/features/group/data/group_repository.dart';
 import 'package:my_praperation/features/group/domain/group_errors.dart';
@@ -41,6 +42,7 @@ class FakeGroup {
   String inviteCode;
   String? logoUrl;
   final Map<String, String> roles = {}; // userId -> group_role
+  final List<GroupRule> rules = [];
   DateTime createdAt = DateTime(2026, 9, 1);
 }
 
@@ -731,5 +733,111 @@ class InMemoryGroupRepository implements GroupRepository {
             'this person — use Re-invite again once the problem is resolved.',
       );
     }
+  }
+
+  // ── Group Rules (G6) ──
+  // Mirrors the proposed group_rules RLS:
+  //   SELECT              → fn_is_member(group_id, uid)
+  //   INSERT/UPDATE/DELETE → fn_has_permission(group_id, uid, GROUP_SETTINGS)
+  //                          OR role = owner  (= canEditSettings here)
+  // A row the caller may not update/delete is simply not matched (0 rows),
+  // which the real repository reports as "could not be updated/deleted".
+
+  int _ruleSeq = 0;
+
+  bool _isMemberOf(String groupId) =>
+      groups[groupId]?.roles.containsKey(currentUser) ?? false;
+
+  @override
+  Future<List<GroupRule>> groupRules(String groupId) async {
+    calls.add('groupRules:$groupId');
+    if (!_isMemberOf(groupId)) return const [];
+    final rules = List<GroupRule>.of(groups[groupId]!.rules)
+      ..sort((a, b) {
+        final byPos = a.position.compareTo(b.position);
+        return byPos != 0 ? byPos : a.createdAt.compareTo(b.createdAt);
+      });
+    return rules;
+  }
+
+  @override
+  Future<void> createRule({
+    required String groupId,
+    required String ruleText,
+  }) async {
+    calls.add('createRule:$groupId');
+    _maybeFail();
+    final g = groups[groupId];
+    if (g == null || !await canEditSettings(groupId)) {
+      throw _notAuthorized(GroupErrorContext.update);
+    }
+    final text = ruleText.trim();
+    if (text.isEmpty || text.length > 2000) {
+      // CHECK (char_length(btrim(rule_text)) BETWEEN 1 AND 2000)
+      throw const DataError(message: 'check constraint');
+    }
+    final maxPos = g.rules.isEmpty
+        ? 0
+        : g.rules.map((r) => r.position).reduce((a, b) => a > b ? a : b) + 1;
+    final now = DateTime(2026, 9, 15, 12, _ruleSeq);
+    _ruleSeq++;
+    g.rules.add(
+      GroupRule(
+        id: 'rule-$_ruleSeq',
+        groupId: groupId,
+        ruleText: text,
+        position: maxPos,
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+  }
+
+  /// Rows the caller could UPDATE/DELETE under the policy.
+  Iterable<(FakeGroup, int)> _writableRuleRows(String ruleId) sync* {
+    for (final g in groups.values) {
+      if (!hasPermission(g.id, GroupPermission.groupSettings)) continue;
+      for (var i = 0; i < g.rules.length; i++) {
+        if (g.rules[i].id == ruleId) yield (g, i);
+      }
+    }
+  }
+
+  @override
+  Future<void> updateRule({
+    required String ruleId,
+    required String ruleText,
+  }) async {
+    calls.add('updateRule:$ruleId');
+    _maybeFail();
+    final text = ruleText.trim();
+    final hit = _writableRuleRows(ruleId).firstOrNull;
+    if (hit == null) {
+      throw const DataError(
+        message: 'This rule could not be updated. It may have been removed.',
+      );
+    }
+    if (text.isEmpty || text.length > 2000) {
+      throw const DataError(message: 'check constraint');
+    }
+    final (g, i) = hit;
+    g.rules[i] = g.rules[i].copyWith(
+      ruleText: text,
+      updatedAt: DateTime(2026, 9, 15, 13),
+    );
+  }
+
+  @override
+  Future<void> deleteRule(String ruleId) async {
+    calls.add('deleteRule:$ruleId');
+    _maybeFail();
+    final hit = _writableRuleRows(ruleId).firstOrNull;
+    if (hit == null) {
+      throw const DataError(
+        message: 'This rule could not be deleted. It may have been removed.',
+      );
+    }
+    final (g, i) = hit;
+    g.rules.removeAt(i);
   }
 }

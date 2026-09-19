@@ -10,6 +10,7 @@ import 'package:my_praperation/core/models/group.dart';
 import 'package:my_praperation/core/models/group_invitation.dart';
 import 'package:my_praperation/core/models/group_join_request.dart';
 import 'package:my_praperation/core/models/group_member.dart';
+import 'package:my_praperation/core/models/group_rule.dart';
 import 'package:my_praperation/core/models/profile_match.dart';
 import 'package:my_praperation/features/group/data/group_repository.dart';
 import 'package:my_praperation/features/group/domain/group_errors.dart';
@@ -578,6 +579,11 @@ void main() {
         repository: repo,
         currentUserId: 'u-me',
       );
+      // Tall viewport: the hub's lazy ListView must build the leave note
+      // below the G6 rules section too.
+      tester.view.physicalSize = const Size(800, 2200);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
       await tester.pumpWidget(
         MaterialApp(
           home: GroupHubScreen(groupId: 'g-1', controller: c),
@@ -731,6 +737,20 @@ class _FailingRepository implements GroupRepository {
   }) async {}
   @override
   Future<void> withdrawJoinRequest(String requestId) async {}
+  @override
+  Future<List<GroupRule>> groupRules(String groupId) async => const [];
+  @override
+  Future<void> createRule({
+    required String groupId,
+    required String ruleText,
+  }) async {}
+  @override
+  Future<void> updateRule({
+    required String ruleId,
+    required String ruleText,
+  }) async {}
+  @override
+  Future<void> deleteRule(String ruleId) async {}
   @override
   Future<GroupPermissions> permissionsFor(
     String groupId, {

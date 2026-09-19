@@ -4,6 +4,7 @@ import '../../../core/models/group.dart';
 import '../../../core/models/group_invitation.dart';
 import '../../../core/models/group_join_request.dart';
 import '../../../core/models/group_member.dart';
+import '../../../core/models/group_rule.dart';
 import '../../../core/services/auth_service.dart';
 import '../../test/state/disposable_notifier.dart';
 import '../data/group_repository.dart';
@@ -62,6 +63,20 @@ class GroupHubController extends DisposableNotifier {
   bool get outgoingLoading => _outgoingLoading;
   String? get outgoingError => _outgoingError;
   String? get actingInvitationId => _actingInvitationId;
+
+  // ── group rules (G6) ──
+  List<GroupRule> _rules = const [];
+  bool _rulesLoading = false;
+  String? _rulesError;
+  String? _actingRuleId;
+  bool _rulesSaving = false;
+
+  List<GroupRule> get rules => _rules;
+  bool get rulesLoading => _rulesLoading;
+  String? get rulesError => _rulesError;
+  String? get actingRuleId => _actingRuleId;
+  bool get rulesSaving => _rulesSaving;
+  bool get hasRules => _rules.isNotEmpty;
 
   /// Re-invite is offered only for a `declined` row whose invitee is not
   /// already in the roster. Pending/accepted/expired rows are never re-sent.
@@ -225,6 +240,8 @@ class GroupHubController extends DisposableNotifier {
           _outgoingInvitations = const [];
           _outgoingError = null;
         }
+        // Rules: loaded for all members (RLS enforces member-only read).
+        await _loadRules();
       }
     } on AppError catch (e) {
       _error = e.message;
@@ -521,6 +538,140 @@ class GroupHubController extends DisposableNotifier {
     );
     if (ok) await load();
     return ok;
+  }
+
+  // ── Group Rules (G6) ──
+
+  Future<void> _loadRules() async {
+    _rulesLoading = true;
+    _rulesError = null;
+    try {
+      _rules = await _repo.groupRules(groupId);
+    } on AppError catch (e) {
+      _rules = const [];
+      _rulesError = e.message;
+    } catch (e, st) {
+      AppLogger.error('Group rules load failed: $e', stackTrace: st);
+      _rules = const [];
+      _rulesError = GroupErrors.map(
+        e.toString(),
+        context: GroupErrorContext.load,
+      );
+    }
+    _rulesLoading = false;
+  }
+
+  Future<void> retryRules() async {
+    if (_rulesLoading) return;
+    notifyListeners();
+    await _loadRules();
+    notifyListeners();
+  }
+
+  /// UX-only pre-check mirroring the live gate (GROUP_SETTINGS or owner);
+  /// the `group_rules` RLS is the boundary and is exercised regardless.
+  bool _ruleMutationAllowed() {
+    if (canEditBasics) return true;
+    _error = GroupErrors.map(
+      'NOT_AUTHORIZED',
+      context: GroupErrorContext.update,
+    );
+    notifyListeners();
+    return false;
+  }
+
+  /// Creates a rule. Single-flight. Re-reads after success or failure.
+  Future<bool> createRule(String ruleText) async {
+    if (_rulesSaving || _busy) return false;
+    if (!_ruleMutationAllowed()) return false;
+    final trimmed = ruleText.trim();
+    if (trimmed.isEmpty) {
+      _error = 'Rule text cannot be empty.';
+      notifyListeners();
+      return false;
+    }
+    _rulesSaving = true;
+    _error = null;
+    notifyListeners();
+    try {
+      await _repo.createRule(groupId: groupId, ruleText: trimmed);
+      await _loadRules();
+      return true;
+    } on AppError catch (e) {
+      _error = e.message;
+      await _loadRules();
+      return false;
+    } catch (e, st) {
+      AppLogger.error('Create rule failed: $e', stackTrace: st);
+      _error = GroupErrors.map(e.toString(), context: GroupErrorContext.update);
+      await _loadRules();
+      return false;
+    } finally {
+      _rulesSaving = false;
+      notifyListeners();
+    }
+  }
+
+  /// Updates a rule's text. Single-flight per rule. Re-reads after.
+  Future<bool> updateRule(GroupRule rule, String ruleText) async {
+    if (_rulesSaving || _actingRuleId == rule.id || _busy) return false;
+    if (!_ruleMutationAllowed()) return false;
+    final trimmed = ruleText.trim();
+    if (trimmed.isEmpty) {
+      _error = 'Rule text cannot be empty.';
+      notifyListeners();
+      return false;
+    }
+    _actingRuleId = rule.id;
+    _rulesSaving = true;
+    _error = null;
+    notifyListeners();
+    try {
+      await _repo.updateRule(ruleId: rule.id, ruleText: trimmed);
+      await _loadRules();
+      return true;
+    } on AppError catch (e) {
+      _error = e.message;
+      await _loadRules();
+      return false;
+    } catch (e, st) {
+      AppLogger.error('Update rule failed: $e', stackTrace: st);
+      _error = GroupErrors.map(e.toString(), context: GroupErrorContext.update);
+      await _loadRules();
+      return false;
+    } finally {
+      _actingRuleId = null;
+      _rulesSaving = false;
+      notifyListeners();
+    }
+  }
+
+  /// Deletes a rule. Single-flight per rule. Re-reads after.
+  Future<bool> deleteRule(GroupRule rule) async {
+    if (_rulesSaving || _actingRuleId == rule.id || _busy) return false;
+    if (!_ruleMutationAllowed()) return false;
+    _actingRuleId = rule.id;
+    _rulesSaving = true;
+    _error = null;
+    notifyListeners();
+    try {
+      await _repo.deleteRule(rule.id);
+      await _loadRules();
+      return true;
+    } on AppError catch (e) {
+      _error = e.message;
+      await _loadRules();
+      return false;
+    } catch (e, st) {
+      AppLogger.error('Delete rule failed: $e', stackTrace: st);
+      _error = GroupErrors.map(e.toString(), context: GroupErrorContext.update);
+      await _loadRules();
+      return false;
+    } finally {
+      _actingRuleId = null;
+      _rulesSaving = false;
+      notifyListeners();
+    }
   }
 
   Future<bool> _run(

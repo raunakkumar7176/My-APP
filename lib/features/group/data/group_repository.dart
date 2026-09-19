@@ -6,6 +6,7 @@ import '../../../core/models/group.dart';
 import '../../../core/models/group_invitation.dart';
 import '../../../core/models/group_join_request.dart';
 import '../../../core/models/group_member.dart';
+import '../../../core/models/group_rule.dart';
 import '../../../core/models/profile_match.dart';
 import '../../../core/services/auth_service.dart';
 import '../../../core/services/supabase_service.dart';
@@ -208,6 +209,27 @@ abstract interface class GroupRepository {
     required String groupId,
     required String inviteeId,
   });
+
+  // ── Group Rules (G6) ──
+
+  /// All rules for one group, ordered by position then created_at.
+  /// RLS: members only.
+  Future<List<GroupRule>> groupRules(String groupId);
+
+  /// Creates a rule. RLS: GROUP_SETTINGS or owner (live groups UPDATE gate).
+  Future<void> createRule({
+    required String groupId,
+    required String ruleText,
+  });
+
+  /// Updates a rule's text. RLS: GROUP_SETTINGS or owner (live groups UPDATE gate).
+  Future<void> updateRule({
+    required String ruleId,
+    required String ruleText,
+  });
+
+  /// Deletes a rule. RLS: GROUP_SETTINGS or owner (live groups UPDATE gate).
+  Future<void> deleteRule(String ruleId);
 }
 
 class SupabaseGroupRepository implements GroupRepository {
@@ -662,6 +684,83 @@ class SupabaseGroupRepository implements GroupRepository {
           'fn_withdraw_join_request',
           params: {'p_request_id': requestId},
         );
+      });
+
+  // ── Group Rules (G6) ──
+
+  static const _ruleColumns = 'id, group_id, rule_text, position, created_at, updated_at';
+
+  @override
+  Future<List<GroupRule>> groupRules(String groupId) =>
+      _guard(GroupErrorContext.load, () async {
+        final rows = await _client
+            .from('group_rules')
+            .select(_ruleColumns)
+            .eq('group_id', groupId)
+            .order('position')
+            .order('created_at');
+        return [
+          for (final r in rows as List)
+            GroupRule.fromJson(r as Map<String, dynamic>),
+        ];
+      });
+
+  @override
+  Future<void> createRule({
+    required String groupId,
+    required String ruleText,
+  }) => _guard(GroupErrorContext.update, () async {
+    // Position = max existing + 1 for this group.
+    final existing = await _client
+        .from('group_rules')
+        .select('position')
+        .eq('group_id', groupId)
+        .order('position', ascending: false)
+        .limit(1);
+    final maxPos =
+        existing.isEmpty
+            ? 0
+            : (existing.first['position'] as num)
+                  .toInt() +
+                1;
+    await _client.from('group_rules').insert({
+      'group_id': groupId,
+      'rule_text': ruleText.trim(),
+      'position': maxPos,
+    });
+  });
+
+  @override
+  Future<void> updateRule({
+    required String ruleId,
+    required String ruleText,
+  }) => _guard(GroupErrorContext.update, () async {
+    final updated = await _client
+        .from('group_rules')
+        .update({'rule_text': ruleText.trim()})
+        .eq('id', ruleId)
+        .select('id');
+    if ((updated as List).isEmpty) {
+      throw const DataError(
+        message: 'This rule could not be updated. It may have been removed.',
+      );
+    }
+  });
+
+  @override
+  Future<void> deleteRule(String ruleId) =>
+      _guard(GroupErrorContext.update, () async {
+        final deleted = await _client
+            .from('group_rules')
+            .delete()
+            .eq('id', ruleId)
+            .select('id');
+        if ((deleted as List).isEmpty) {
+          throw const DataError(
+            message:
+                'This rule could not be deleted. It may have been removed.',
+          );
+        }
       });
 
   static Future<T> _guard<T>(
