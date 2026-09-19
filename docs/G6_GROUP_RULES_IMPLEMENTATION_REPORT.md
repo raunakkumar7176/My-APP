@@ -1,6 +1,6 @@
 # G6 — Group Rules: Implementation Report (builder)
 
-**Branch:** `r4-restart` · **Base:** `3125a27` (G6 audit: BLOCKED) · **Commit:** `__COMMIT__` · **Date:** 2026-09-19
+**Branch:** `r4-restart` · **Base:** `3125a27` (G6 audit: BLOCKED) · **Commit:** `4e9b355 (report hash added in the follow-up commit)` · **Date:** 2026-09-19
 
 ## FINAL STATUS
 
