@@ -72,6 +72,12 @@ class _GroupHubScreenState extends State<GroupHubScreen> {
     if (sent == true && mounted) await _c.refresh();
   }
 
+  Future<void> _openTests() async {
+    // G10: group test management; the screen probes its own permissions.
+    await context.push('/groups/${widget.groupId}/tests');
+    if (mounted) await _c.refresh();
+  }
+
   Future<void> _openMembers() async {
     await context.push('/groups/${widget.groupId}/members');
     // Roles / roster / count may have changed there.
@@ -223,6 +229,14 @@ class _GroupHubScreenState extends State<GroupHubScreen> {
             const SizedBox(height: 24),
             // Chat: every member reads and sends; server-backed, no realtime.
             GroupChatSection(controller: _c),
+            const SizedBox(height: 24),
+            // G10: every member may view the group's tests; managers act there.
+            OutlinedButton.icon(
+              key: const Key('open_group_tests'),
+              onPressed: _c.isBusy ? null : _openTests,
+              icon: const Icon(Icons.quiz_outlined),
+              label: const Text('Group tests'),
+            ),
             const SizedBox(height: 24),
             if (_c.canManageMembers) ...[
               JoinRequestQueue(controller: _c),

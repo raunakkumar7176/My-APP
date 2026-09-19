@@ -11,6 +11,7 @@ import 'package:my_praperation/core/models/test_syllabus.dart';
 import 'package:my_praperation/features/test/data/attempt_repository.dart';
 import 'package:my_praperation/features/test/data/question_repository.dart';
 import 'package:my_praperation/features/test/data/result_repository.dart';
+import 'package:my_praperation/features/group/domain/group_permission.dart';
 import 'package:my_praperation/features/test/data/test_repository.dart';
 import 'package:my_praperation/features/test/models/question_draft.dart';
 
@@ -26,6 +27,23 @@ class FakeTestRepository implements TestRepository {
 
   /// Throw on the Nth create (1-based) to simulate failure.
   Object? failCreateWith;
+
+  /// G10: when attached, the LIVE group policies are mirrored —
+  /// `group create test` (INSERT WITH CHECK: created_by = uid, test_mode =
+  /// 'group', CREATE_TEST in that group), `member read tests` (SELECT:
+  /// member, not soft-deleted) + `creator sees soft-deleted`, and
+  /// `fn_soft_delete_test` (creator OR owner OR EDIT_TEST; not live /
+  /// scheduled). Without it the old canned behaviour stays.
+  InMemoryGroupRepository? groups;
+
+  bool _hasPermission(String groupId, GroupPermission p) =>
+      groups?.hasPermission(groupId, p) ?? true;
+
+  bool _isMember(String groupId) =>
+      groups?.groups[groupId]?.roles.containsKey(currentUser) ?? true;
+
+  bool _isGroupOwner(String groupId) =>
+      groups?.groups[groupId]?.roles[currentUser] == 'owner';
 
   @override
   Future<Test?> getById(String testId) async {
@@ -58,6 +76,17 @@ class FakeTestRepository implements TestRepository {
   Future<Test> create(TestWriteInput input) async {
     calls.add('create');
     if (failCreateWith != null) throw failCreateWith!;
+    if (groups != null && input.groupId != null) {
+      // Live `group create test` policy: the row is refused unless the
+      // caller holds CREATE_TEST in exactly that group (owner bypass inside
+      // fn_has_permission). A forged group_id fails here.
+      if (input.testMode != 'group' ||
+          !_hasPermission(input.groupId!, GroupPermission.createTest)) {
+        throw const DataError(
+          message: 'You do not have permission to perform this action.',
+        );
+      }
+    }
     createCount++;
     final id = 't-${nextId++}';
     final t = Test(
@@ -147,9 +176,90 @@ class FakeTestRepository implements TestRepository {
       id: t.id,
       createdBy: t.createdBy,
       title: t.title,
+      description: t.description,
       status: TestStatus.published,
       testMode: t.testMode,
+      groupId: t.groupId, // G10: a published group test stays in its group
+      durationSec: t.durationSec,
+      marksPerQuestion: t.marksPerQuestion,
+      negativeMarks: t.negativeMarks,
+      startsAt: t.startsAt,
+      endsAt: t.endsAt,
       settings: t.settings,
+      config: t.config,
+    );
+  }
+
+  // ── G9 compile dependency (interface method added by the G9 branch in
+  // progress; thin mirror of `member read tests` so the suite compiles) ──
+  @override
+  Future<List<Test>> listByGroup(String groupId, {int limit = 100}) async {
+    calls.add('listByGroup:$groupId');
+    if (!_isMember(groupId)) return const [];
+    return rows.values
+        .where((t) => t.groupId == groupId && !t.isSoftDeleted)
+        .take(limit)
+        .toList();
+  }
+
+  // ── G10 ──
+
+  /// Live SELECT policies: members see the group's non-deleted tests; the
+  /// creator additionally sees their own soft-deleted (archived) ones.
+  @override
+  Future<List<Test>> listForGroup(String groupId, {int limit = 100}) async {
+    calls.add('listForGroup:$groupId');
+    final member = _isMember(groupId);
+    final out = rows.values.where((t) {
+      if (t.groupId != groupId) return false;
+      if (t.createdBy == currentUser) return true;
+      return member && !t.isSoftDeleted;
+    }).toList();
+    // Newest first, like the live query (by id sequence here).
+    out.sort((a, b) => b.id.compareTo(a.id));
+    return out.take(limit).toList();
+  }
+
+  Object? failArchiveWith;
+
+  /// Mirrors `fn_soft_delete_test`.
+  @override
+  Future<void> archive(String testId, {String? reason}) async {
+    calls.add('archive:$testId');
+    if (failArchiveWith != null) throw failArchiveWith!;
+    final t = rows[testId];
+    if (t == null) throw const DataError(message: 'Test not found.');
+    if (t.isSoftDeleted) return; // idempotent server behaviour
+    if (t.status == TestStatus.live || t.status == TestStatus.scheduled) {
+      throw const DataError(
+        message: 'Ongoing or scheduled tests cannot be archived.',
+      );
+    }
+    if (t.createdBy != currentUser) {
+      final g = t.groupId;
+      if (g == null ||
+          !(_isGroupOwner(g) || _hasPermission(g, GroupPermission.editTest))) {
+        throw const DataError(
+          message: 'You do not have permission to perform this action.',
+        );
+      }
+    }
+    rows[testId] = Test(
+      id: t.id,
+      createdBy: t.createdBy,
+      title: t.title,
+      description: t.description,
+      status: TestStatus.archived,
+      testMode: t.testMode,
+      groupId: t.groupId,
+      durationSec: t.durationSec,
+      startsAt: t.startsAt,
+      endsAt: t.endsAt,
+      settings: t.settings,
+      config: t.config,
+      isSoftDeleted: true,
+      deletedAt: DateTime(2026, 9, 19),
+      archivedAt: DateTime(2026, 9, 19),
     );
   }
 

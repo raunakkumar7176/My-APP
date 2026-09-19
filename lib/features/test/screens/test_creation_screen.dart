@@ -21,8 +21,14 @@ class TestCreationScreen extends StatefulWidget {
     this.testId,
     this.controller,
     this.initialSource,
+    this.initialGroupId,
     super.key,
   });
+
+  /// G10: opened from a group's test management — the wizard starts as a
+  /// Group Test scoped to this group (the user may still change it; the
+  /// server enforces CREATE_TEST for the group on save).
+  final String? initialGroupId;
 
   /// Pre-selected question source (Home tiles); unavailable sources open the
   /// wizard on the truthful "Not configured" step.
@@ -66,7 +72,11 @@ class _TestCreationScreenState extends State<TestCreationScreen> {
         TestCreationController(editingTestId: widget.testId);
     _c.addListener(_onChanged);
     _c.loadGroups();
-    if (widget.testId != null) _c.loadForEdit();
+    if (widget.testId != null) {
+      _c.loadForEdit();
+    } else if (widget.initialGroupId != null) {
+      _c.presetGroup(widget.initialGroupId!);
+    }
   }
 
   void _onChanged() {

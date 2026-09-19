@@ -17,6 +17,7 @@ abstract final class TestErrors {
       return 'Your session has expired. Please log in again.';
     }
     if (lower.contains('test_access_denied') ||
+        lower.contains('not_authorized') ||
         lower.contains('permission') ||
         lower.contains('denied') ||
         lower.contains('row-level security')) {
@@ -48,6 +49,9 @@ abstract final class TestErrors {
     }
     if (lower.contains('test_already_deleted')) {
       return 'This test has already been deleted.';
+    }
+    if (lower.contains('test_live_cannot_delete')) {
+      return 'Ongoing or scheduled tests cannot be archived.';
     }
     if (lower.contains('test_not_draft')) {
       return 'Only draft tests can be deleted.';

@@ -94,6 +94,10 @@ abstract interface class TestRepository {
 
   Future<List<Test>> listMyDrafts({int limit = 50});
 
+  /// Non-deleted tests assigned to [groupId], newest first. RLS limits
+  /// visibility to group members; the server enforces this.
+  Future<List<Test>> listByGroup(String groupId, {int limit = 100});
+
   /// `rpc_create_test` returns only `test_id`, so the created row is read
   /// once here (the single read-after-write in the test system).
   Future<Test> create(TestWriteInput input);
@@ -112,6 +116,19 @@ abstract interface class TestRepository {
   Future<void> addSyllabus(String testId, String nodeId);
 
   Future<void> removeSyllabus(String testId, String nodeId);
+
+  // ── Group test management (G10) ──
+
+  /// One group's tests, newest first, finite. Soft-deleted rows are NOT
+  /// filtered client-side: the live SELECT policies decide — members see
+  /// non-deleted group tests (`member read tests`), the creator additionally
+  /// sees their own soft-deleted/archived ones (`creator sees soft-deleted`).
+  Future<List<Test>> listForGroup(String groupId, {int limit = 100});
+
+  /// `fn_soft_delete_test(p_test, p_reason)` — live archive: creator OR
+  /// (group owner OR EDIT_TEST); refused for live/scheduled; sets
+  /// status = archived + is_soft_deleted, keeps attempts/answers/results.
+  Future<void> archive(String testId, {String? reason});
 }
 
 class SupabaseTestRepository implements TestRepository {
@@ -156,6 +173,19 @@ class SupabaseTestRepository implements TestRepository {
         .range(0, limit - 1);
     return _rows(rows);
   }, TestErrorContext.load);
+
+  @override
+  Future<List<Test>> listByGroup(String groupId, {int limit = 100}) =>
+      _guard(() async {
+        final rows = await _client
+            .from('tests')
+            .select()
+            .eq('is_soft_deleted', false)
+            .eq('group_id', groupId)
+            .order('created_at', ascending: false)
+            .range(0, limit - 1);
+        return _rows(rows);
+      }, TestErrorContext.load);
 
   @override
   Future<Test> create(TestWriteInput input) => _guard(() async {
@@ -246,6 +276,35 @@ class SupabaseTestRepository implements TestRepository {
       params: {'p_test_id': testId, 'p_syllabus_node_id': nodeId},
     );
   }, TestErrorContext.save);
+
+  // ── Group test management (G10) ──
+
+  @override
+  Future<List<Test>> listForGroup(String groupId, {int limit = 100}) =>
+      _guard(() async {
+        final rows = await _client
+            .from('tests')
+            .select()
+            .eq('group_id', groupId)
+            .order('created_at', ascending: false)
+            .range(0, limit - 1);
+        AppLogger.rpcShape('tests.select(group)', rows);
+        return _rows(rows);
+      }, TestErrorContext.load);
+
+  @override
+  Future<void> archive(String testId, {String? reason}) => _guard(() async {
+    final response = await _client.rpc(
+      'fn_soft_delete_test',
+      params: {
+        'p_test': testId,
+        'p_reason': reason == null || reason.trim().isEmpty
+            ? null
+            : reason.trim(),
+      },
+    );
+    AppLogger.rpcShape('fn_soft_delete_test', response);
+  }, TestErrorContext.delete);
 
   // ── helpers ──
 

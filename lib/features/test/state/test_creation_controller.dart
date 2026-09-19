@@ -244,6 +244,12 @@ class TestCreationController extends DisposableNotifier {
   void setTitle(String v) => _set(() => title = v);
   void setDescription(String v) => _set(() => description = v);
 
+  /// G10: start the wizard as a Group Test for [groupId] (creation only).
+  void presetGroup(String groupId) => _set(() {
+    kind = TestKind.group;
+    this.groupId = groupId;
+  });
+
   void setKind(TestKind newKind) => _set(() {
     final changed = newKind != kind;
     kind = newKind;
