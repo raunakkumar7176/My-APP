@@ -1,6 +1,6 @@
 # G8 — Group Chat: Implementation Report (builder)
 
-**Branch:** `r4-restart` · **Base:** `ce577fd` (G7 verification) · **Commit:** `__COMMIT__` · **Date:** 2026-09-19
+**Branch:** `r4-restart` · **Base:** `ce577fd` (G7 verification) · **Commit:** `4299fe8` · **Date:** 2026-09-19
 
 ## FINAL STATUS
 
@@ -125,6 +125,6 @@ Open hub → latest 50 messages load (oldest→newest) with sender, text, timest
 
 ## 14. Commit
 
-`__COMMIT__` on `r4-restart` (recorded by the follow-up report commit).
+`4299fe8` on `r4-restart` (recorded by the follow-up report commit).
 
 **FINAL STATUS: G8 IMPLEMENTATION COMPLETE — BACKEND PENDING**
