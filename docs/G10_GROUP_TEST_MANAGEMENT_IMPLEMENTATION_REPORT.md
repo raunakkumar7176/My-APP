@@ -7,7 +7,7 @@
 
 **G10 IMPLEMENTATION COMPLETE — BACKEND PENDING**
 
-All management capabilities the LIVE backend already supports are implemented on top of the existing R4 + Group architecture, with no migration (nothing G10 needs is missing live). "BACKEND PENDING" refers to two **pre-existing live security gaps found by the live-first audit** (§5, §11) that G10 does not depend on but that the owner should decide on; a proposed hardening migration is drafted but **NOT applied**. No device run was performed.
+All management capabilities the LIVE backend already supports are implemented on top of the existing R4 + Group architecture, with no migration (nothing G10 needs is missing live). "BACKEND PENDING" refers to two **pre-existing live security gaps found by the live-first audit** (§5, §11) that G10 does not depend on but that the owner should decide on; no migration file was created (the smallest fixes are spelled out in §5 for an owner-approved hardening). No device run was performed.
 
 ---
 
