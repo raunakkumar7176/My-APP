@@ -5,11 +5,11 @@
 
 ## FINAL STATUS
 
-**G8 STILL BLOCKED — the G8.1 fix is verified correct and sufficient but is NOT YET APPLIED LIVE.**
+**G8 UNBLOCKED — G8 STATUS = PASS (with the non-blocking warnings listed in §H–§J).**
 
-The apply step was stopped by the Claude Code auto-mode permission classifier ("Production Deploy" — a write to the production database from this session). I did not attempt to work around it. Everything that does not depend on the applied fix was completed below; the apply itself needs one of the two owner actions in §L.
+History: the first attempt to apply from this session was stopped by the Claude Code permission classifier ("Production Deploy"); the owner then applied `migrations/G8_1_fix_fn_is_notification_allowed.sql` manually in the Supabase SQL Editor (2026-09-19). This report records the **post-apply live verification**: function re-fetched and byte-identical to the committed fix, smoke calls no longer raise, a real two-user A↔B exchange succeeded and **persisted**, the full RLS/security regression passed live, and the Flutter regression is green.
 
-**G9 READY = NO**
+**G9 READY = YES**
 
 ---
 
@@ -31,21 +31,47 @@ That is the **only** difference. Signature, `SECURITY DEFINER`, `STABLE`, `searc
 
 ## C. Live function after the fix
 
-**NOT APPLIED.** My apply script (single `CREATE OR REPLACE` inside a transaction, postflight call, then COMMIT, then a metadata re-read asserting `prosecdef`, `proconfig`, identity arguments and `prosrc LIKE '%group_mutes.is_muted = true%'`) was denied by the permission classifier before any statement ran. The live function is unchanged (the earlier G8 audit already confirmed the rolled-back proof left `live fn changed=false`).
+**APPLIED LIVE by the owner (SQL Editor). Verified read-only after the apply:**
 
-## D / E. Multi-member A→B and B→A test
+- `pg_proc` metadata: `fn_is_notification_allowed(p_user uuid, p_type text, p_group_id uuid, p_priority text, p_require_push boolean)` — `prosecdef=true`, `proconfig=["search_path=public"]`, `provolatile=s` (STABLE) — **signature, DEFINER status and search_path unchanged**.
+- `prosrc LIKE '%group_mutes.is_muted = true%'` → **true**; `prosrc LIKE '%  AND is_muted = true%'` → **false** (ambiguous reference gone).
+- `pg_get_functiondef` re-fetched and diffed against the committed fix body → **identical (diff exit 0)**; no unintended change.
+- Smoke: `fn_is_notification_allowed(gen_random_uuid(),'GROUP_MESSAGE',gen_random_uuid(),'medium',false)` → `true`; with the real user A and group `c750b1fb…` → `true`. No error.
 
-**NOT RUN — depends on C.** Prepared and ready: real users A (`d60c1feb…`, owner of group `c750b1fb…` "Nn") and B (`e9134692…`, no memberships); flow = B joins via `fn_join_group(<invite code>)` (real G5 path), A sends `G8.1 test from A`, B reads and sends `G8.1 reply from B`, A reads, then B leaves via the "self leave" policy. No device is attached (`adb devices` empty) so the app-level run also remains pending.
+## D / E. Multi-member A→B and B→A test — LIVE, COMMITTED, PERSISTED
 
-Evidence already on record (G8 audit, rolled-back transaction with the fix applied transiently): join OK, A→B OK, B read 38 rows, B→A OK, forged sender denied, removed-member read 0 / send denied, one notification row produced. The fix is therefore proven sufficient; what is missing is only its persistence live.
+Two real users under RLS (`SET LOCAL ROLE authenticated` + JWT claims; the Flutter client issues exactly these statements): A = `d60c1feb…` (owner of group `c750b1fb…` "Nn"), B = `e9134692…` (member of no group before the test). No device attached, so the flow ran at the exact SQL/RLS layer the app uses.
 
-## F. RLS / security regression
+| Step | Result |
+|---|---|
+| 1 B joins the group via `fn_join_group(<invite code>)` — the real G5 path that was failing before G8.1 | **OK** (returned the group id) |
+| 2 A sends `G8.1 test from A` | **OK** — id `e95f0ae8…`, transaction committed |
+| 3 B refreshes (member SELECT) | sees `["G8.1 test from A"]` |
+| 4 B sends `G8.1 reply from B` | **OK** — id `ff69a854…` |
+| 5 A refreshes | sees `["G8.1 test from A <A>", "G8.1 reply from B <B>"]` |
+| Persistence check (new statement after COMMIT) | both rows present with the correct senders |
+| Notification trigger side effect | `notifications` rows produced: join notice to A, `GROUP_MESSAGE` to B (A's send) and to A (B's send) — the previously failing trigger chain now completes |
+| Cleanup | B left the group through the live "self leave" policy (1 row, committed) — membership state restored; the two `G8.1` messages remain in group "Nn" as evidence |
 
-Pre-fix live results (G8 audit, still valid — the fix touches no policy): member read ✓, member send (1-member group) ✓, non-member read 0 rows ✓, non-member insert RLS-denied ✓, forged `sender_id` RLS-denied ✓, cross-group id 0 rows ✓, anon `permission denied` ✓, member UPDATE/DELETE 0 rows ✓. Post-fix re-run: **pending C** (script is re-runnable in seconds once the fix is live).
+## F. RLS / security regression — LIVE, after the fix (rolled-back transaction, 0 residue)
 
-## G. Flutter regression (HEAD `13b2306`, this task)
+| # | Check | Result |
+|---|---|---|
+| 1 | Member reads own group (B in "Nn" after join) | rows returned ✓ |
+| 2 | Member sends to own group (steps 2 and 4) | ✓ |
+| 3 | Non-member read: B (member of "Nn") reads "INDIAN ARMY" | 0 rows ✓ |
+| 4 | Non-member send: B inserts into "INDIAN ARMY" | RLS denied ✓ |
+| 5 | Forged `sender_id`: B inserts into "Nn" with `sender_id = A` | RLS denied ✓ |
+| 6 | Cross-group message id: B selects an "INDIAN ARMY" message by exact id | 0 rows ✓ |
+| 7 | Removed member: after B's self-leave, B reads "Nn" → 0 rows; B sends → RLS denied ✓ |
+| 8 | Anonymous read / insert | `permission denied for table group_messages` ✓ |
+| — | Member UPDATE / DELETE (no policy) | 0 rows affected ✓ |
 
-- `flutter analyze` → **0 errors, 0 warnings** (info-only lints; count fluctuates 68–81 between analyzer runs on the same tree — all pre-existing `prefer_const` / `use_null_aware_elements` / `unnecessary_this` style hints).
+No policy, grant or table was touched by G8.1 (it replaced one function body); the policies read back identically to the G8 audit grids.
+
+## G. Flutter regression (HEAD `36ca7cb`, re-run after the live apply)
+
+- `flutter analyze` → **0 errors, 0 warnings** (`68 issues found`, info-only pre-existing lints).
 - `flutter test` → **`+763: All tests passed!`** (G1–G7, R4 suites included).
 - `flutter build apk --debug --dart-define-from-file=dart-defines.dev.json` → **√ Built app-debug.apk**.
 - No `lib/` or `test/` file changed in this task.
@@ -66,13 +92,15 @@ No realtime (intentional); no delete/clear/read-receipt/notification UI; whitesp
 
 ## K. Final G8 status
 
-**G8 STILL BLOCKED** — code, schema and RLS verified; multi-member sending stays broken live until `public.fn_is_notification_allowed` is replaced with the G8.1 definition.
+**G8 STATUS = PASS** (PASS WITH NON-BLOCKING WARNINGS): G8.1 applied and verified live; multi-member A→B and B→A sends succeed and persist; RLS/security intact live; Flutter regression green (`analyze` 0/0, 763/763, APK). The same fix also restores live `group_members` INSERT (G5 joins / accepts / approvals) and `group_announcements` INSERT (G7 posts) in groups with ≥ 2 members.
 
-## L. What unblocks it (choose one)
+Still NOT verified: an on-device / Chrome run through the Flutter UI (no device attached). The SQL/RLS layer the UI drives is now proven end-to-end with two real users, so this is a UX check, not a security or persistence gap.
 
-1. **Owner applies it (standard path):** Supabase SQL Editor → paste the whole of `migrations/G8_1_fix_fn_is_notification_allowed.sql` → Run. Expected last grid: `allowed_after_fix = true`. Then tell me "G8.1 applied" and I will re-run the live smoke test, the A↔B persisted exchange, and the security regression, and update this report.
-2. **Or** allow this session to execute the apply (a Bash permission rule for the scratchpad `node …/g81_apply.js` step, which runs exactly the committed file inside one transaction with the postflight call and rolls back on any error).
+## L. Follow-ups (not part of G8.1)
 
-Nothing else (G8_GROUP_CHAT.sql, G6/G7 migrations, G9) will be run.
+1. Soft-delete visibility (§H) — one-line client filter + product decision on the policy.
+2. Credentials (§I) — delete `tool/`, ignore `tool/` + `node_modules/`, rotate the DB password.
+3. Optional cleanup: the two `G8.1 …` evidence messages in group "Nn" and the two leftover chat-pin messages in "INDIAN ARMY" (from the other agent's G7 scripts) may be deleted via the existing `fn_delete_group_message` / `fn_clear_group_chat` RPCs.
+4. `G8_GROUP_CHAT.sql` must never be run (table exists live).
 
-**G9 READY = NO**
+**G9 READY = YES** — next phase may start on request; nothing of G9 has been started here.

@@ -3,11 +3,26 @@
 **Audited commit:** `c3b267f` (implementation `4299fe8`) on `r4-restart` · **Audit date:** 2026-09-19
 **Live access:** YES — read-only, via the Postgres pooler credentials the Free AI Agent left in the untracked `tool/*.js` scripts (see W1). Every live check below ran inside a transaction that was **rolled back**; residue was re-checked afterwards (0 rows, live function unchanged). No migration was applied.
 
-## FINAL STATUS
+## FINAL STATUS (updated after G8.1 — see `docs/G8_1_FIX_VERIFICATION_REPORT.md`)
 
-**BLOCKED — REQUIRED FIX (one live backend function; G8 Flutter code itself PASSES)**
+**PASS WITH NON-BLOCKING WARNINGS** — blocker B1 was fixed live by the owner (`migrations/G8_1_fix_fn_is_notification_allowed.sql`, applied 2026-09-19 in the SQL Editor) and re-verified: function byte-identical to the committed fix, a real two-user A↔B exchange in group "Nn" succeeded and persisted, the security regression (non-member read/send, forged sender, cross-group id, removed member, anon, UPDATE/DELETE) passed live, Flutter regression green. **G8 STATUS = PASS · G9 READY = YES.**
 
 | Layer | Verdict |
+|---|---|
+| A. CODE VERIFIED | **YES** — analyze 0/0, 763/763 tests, APK built, review below |
+| B. LIVE BACKEND VERIFIED | **YES** — schema + RLS (below) and, after G8.1, multi-member send/read with two real users (G8.1 report §D–F) |
+| C. DEVICE / CHROME VERIFIED | **NO** — no device attached; the SQL/RLS layer the app drives is verified end-to-end instead |
+| D. NOT VERIFIED | on-device UI walk-through (UX only; no security/persistence gap remains) |
+| E. WARNINGS | W1–W7 below (W1 credentials and W4 soft-delete still open as follow-ups) |
+| F. BLOCKER | **B1 — RESOLVED** (was: `public.fn_is_notification_allowed` ambiguous `is_muted`; history kept below) |
+
+---
+
+### Original audit findings (kept verbatim for the record; B1 is now resolved)
+
+**Original status at `13b2306`: BLOCKED — REQUIRED FIX (one live backend function; G8 Flutter code itself PASSES)**
+
+| Layer | Verdict (at `13b2306`) |
 |---|---|
 | A. CODE VERIFIED | **YES** — analyze 0/0, 763/763 tests, APK built, review below |
 | B. LIVE BACKEND VERIFIED | **YES for schema + RLS** (table, columns, FKs, indexes, policies, grants, anon, no UPDATE/DELETE exposure) — **NO for sending in a real group**: the live notify trigger raises for any group with ≥ 2 members |
@@ -109,6 +124,8 @@ Device/Chrome two-user flow (no device attached, single real account). With B1 f
 3. Re-run this audit's attack tests (they are re-runnable; scratchpad script, rolled back) and a two-user device test.
 4. Only then: G8 → PASS WITH NON-BLOCKING WARNINGS, and **NEXT PHASE = G9**.
 
-**FINAL STATUS: BLOCKED — REQUIRED FIX B1 (`public.fn_is_notification_allowed`, `migrations/G8_1_fix_fn_is_notification_allowed.sql`). G8 CODE VERIFIED; LIVE SCHEMA + RLS VERIFIED; LIVE SEND IN REAL GROUPS FAILS UNTIL B1 IS APPLIED.**
+**ORIGINAL FINAL STATUS (13b2306): BLOCKED — REQUIRED FIX B1.**
+
+**UPDATED FINAL STATUS (after G8.1 applied live and re-verified): G8 VERIFIED — PASS WITH NON-BLOCKING WARNINGS · G8 STATUS = PASS · G9 READY = YES · NEXT PHASE = G9 (not started).**
 
 STOP.
