@@ -5,6 +5,7 @@ import '../../../core/models/group_announcement.dart';
 import '../../../core/models/group_invitation.dart';
 import '../../../core/models/group_join_request.dart';
 import '../../../core/models/group_member.dart';
+import '../../../core/models/group_message.dart';
 import '../../../core/models/group_rule.dart';
 import '../../../core/services/auth_service.dart';
 import '../../test/state/disposable_notifier.dart';
@@ -93,6 +94,34 @@ class GroupHubController extends DisposableNotifier {
   String? get actingAnnouncementId => _actingAnnouncementId;
   bool get announcementSaving => _announcementSaving;
   bool get hasAnnouncements => _announcements.isNotEmpty;
+
+  // ── group chat (G8) ──
+  /// Oldest → newest for display; the server window is newest-first.
+  List<GroupMessage> _messages = const [];
+  bool _messagesLoading = false;
+  bool _olderLoading = false;
+  String? _messagesError;
+  bool _sending = false;
+  bool _hasOlder = false;
+
+  List<GroupMessage> get messages => _messages;
+  bool get messagesLoading => _messagesLoading;
+  bool get olderMessagesLoading => _olderLoading;
+  String? get messagesError => _messagesError;
+  bool get sending => _sending;
+  bool get hasOlderMessages => _hasOlder;
+  bool get hasMessages => _messages.isNotEmpty;
+
+  /// Sender label from the roster already loaded: "You", the member's
+  /// display name, "System" for server notices (null sender), or "Former
+  /// member" when the sender is no longer in the roster.
+  String messageSenderLabel(GroupMessage m) {
+    final sender = m.senderId;
+    if (sender == null) return 'System';
+    if (sender == _currentUserId) return 'You';
+    return _members.where((x) => x.userId == sender).firstOrNull?.displayName ??
+        'Former member';
+  }
 
   /// Author label from the roster already loaded (no extra profile read):
   /// "You", the member's display name, or null when the author is no longer
@@ -276,6 +305,8 @@ class GroupHubController extends DisposableNotifier {
         await _loadRules();
         // Announcements: loaded for all members (RLS: member-only read).
         await _loadAnnouncements();
+        // Chat: latest window for all members (RLS: member-only read).
+        await _loadMessages();
       }
     } on AppError catch (e) {
       _error = e.message;
@@ -886,6 +917,119 @@ class GroupHubController extends DisposableNotifier {
       a.id,
       () => _repo.deleteAnnouncement(a.id),
     );
+  }
+
+  // ── Group Chat (G8) ──
+
+  /// Loads the latest window (newest [messagePageSize]) and stores it
+  /// oldest → newest. A full page means older rows may exist.
+  Future<void> _loadMessages() async {
+    _messagesLoading = true;
+    _messagesError = null;
+    try {
+      final page = await _repo.messages(groupId);
+      _messages = page.reversed.toList(growable: false);
+      _hasOlder = page.length >= messagePageSize;
+    } on AppError catch (e) {
+      _messages = const [];
+      _hasOlder = false;
+      _messagesError = e.message;
+    } catch (e, st) {
+      AppLogger.error('Group chat load failed: $e', stackTrace: st);
+      _messages = const [];
+      _hasOlder = false;
+      _messagesError = GroupErrors.map(
+        e.toString(),
+        context: GroupErrorContext.load,
+      );
+    }
+    _messagesLoading = false;
+  }
+
+  /// Re-reads the latest window from the server (pull-to-refresh, the
+  /// refresh button, and after every send). Single-flight.
+  Future<void> refreshMessages() async {
+    if (_messagesLoading) return;
+    notifyListeners();
+    await _loadMessages();
+    notifyListeners();
+  }
+
+  /// Prepends the page before the oldest loaded message. Single-flight;
+  /// keeps the current window on failure and reports the error inline.
+  Future<void> loadOlderMessages() async {
+    if (_olderLoading || _messagesLoading || !_hasOlder || _messages.isEmpty) {
+      return;
+    }
+    _olderLoading = true;
+    _messagesError = null;
+    notifyListeners();
+    try {
+      final oldest = _messages.first.createdAt;
+      final page = await _repo.messages(groupId, before: oldest);
+      final known = {for (final m in _messages) m.id};
+      _messages = [
+        ...page.reversed.where((m) => !known.contains(m.id)),
+        ..._messages,
+      ];
+      _hasOlder = page.length >= messagePageSize;
+    } on AppError catch (e) {
+      _messagesError = e.message;
+    } catch (e, st) {
+      AppLogger.error('Group chat older page failed: $e', stackTrace: st);
+      _messagesError = GroupErrors.map(
+        e.toString(),
+        context: GroupErrorContext.load,
+      );
+    } finally {
+      _olderLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Client mirror of the live CHECK (`char_length(body) BETWEEN 1 AND
+  /// 2000` after trim). Returns the message to show, or null.
+  static String? validateMessage(String body) {
+    final b = body.trim();
+    if (b.isEmpty) return 'Message cannot be empty.';
+    if (b.length > GroupMessage.maxBodyLength) {
+      return 'Message must be at most ${GroupMessage.maxBodyLength} characters.';
+    }
+    return null;
+  }
+
+  /// Sends one message. Single-flight; the sender is always the signed-in
+  /// user (the repository sets it, the live INSERT policy enforces it). The
+  /// window is re-read from the server after success **and** failure — no
+  /// optimistic row is ever kept.
+  Future<bool> sendMessage(String body) async {
+    if (_sending || _busy) return false;
+    final invalid = validateMessage(body);
+    if (invalid != null) {
+      _error = invalid;
+      notifyListeners();
+      return false;
+    }
+    _sending = true;
+    _error = null;
+    notifyListeners();
+    try {
+      await _repo.sendMessage(groupId: groupId, body: body.trim());
+      await _loadMessages();
+      return true;
+    } on AppError catch (e) {
+      _error = e.message;
+      await _loadMessages();
+      return false;
+    } catch (e, st) {
+      AppLogger.error('Send message failed: $e', stackTrace: st);
+      _error = GroupErrors.map(e.toString(), context: GroupErrorContext.chat);
+      await _loadMessages();
+      return false;
+    } finally {
+      _sending = false;
+      notifyListeners();
+    }
   }
 
   void clearError() {

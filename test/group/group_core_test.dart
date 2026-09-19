@@ -11,6 +11,7 @@ import 'package:my_praperation/core/models/group_announcement.dart';
 import 'package:my_praperation/core/models/group_invitation.dart';
 import 'package:my_praperation/core/models/group_join_request.dart';
 import 'package:my_praperation/core/models/group_member.dart';
+import 'package:my_praperation/core/models/group_message.dart';
 import 'package:my_praperation/core/models/group_rule.dart';
 import 'package:my_praperation/core/models/profile_match.dart';
 import 'package:my_praperation/features/group/data/group_repository.dart';
@@ -639,6 +640,11 @@ void main() {
         repository: repo,
         currentUserId: 'u-me',
       );
+      // Tall viewport: the leave button sits below the G6/G7/G8 sections in
+      // the hub's lazy ListView.
+      tester.view.physicalSize = const Size(800, 3200);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
       await tester.pumpWidget(
         MaterialApp(
           home: GroupHubScreen(groupId: 'g-1', controller: c),
@@ -769,6 +775,17 @@ class _FailingRepository implements GroupRepository {
   }) async {}
   @override
   Future<void> deleteAnnouncement(String announcementId) async {}
+  @override
+  Future<List<GroupMessage>> messages(
+    String groupId, {
+    int limit = messagePageSize,
+    DateTime? before,
+  }) async => const [];
+  @override
+  Future<void> sendMessage({
+    required String groupId,
+    required String body,
+  }) async {}
   @override
   Future<GroupPermissions> permissionsFor(
     String groupId, {

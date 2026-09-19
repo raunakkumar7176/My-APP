@@ -5,6 +5,7 @@ import '../../../core/constants/theme/app_colors.dart';
 import '../state/group_hub_controller.dart';
 import '../widgets/group_announcements_section.dart';
 import '../widgets/group_avatar.dart';
+import '../widgets/group_chat_section.dart';
 import '../widgets/group_rules_section.dart';
 import '../widgets/invite_member_sheet.dart';
 import '../widgets/join_request_queue.dart';
@@ -219,6 +220,9 @@ class _GroupHubScreenState extends State<GroupHubScreen> {
             GroupAnnouncementsSection(controller: _c),
             const SizedBox(height: 24),
             GroupRulesSection(controller: _c),
+            const SizedBox(height: 24),
+            // Chat: every member reads and sends; server-backed, no realtime.
+            GroupChatSection(controller: _c),
             const SizedBox(height: 24),
             if (_c.canManageMembers) ...[
               JoinRequestQueue(controller: _c),

@@ -20,6 +20,7 @@ enum GroupErrorContext {
   invitation,
   joinRequest,
   announcement,
+  chat,
 }
 
 class GroupErrors {
@@ -83,6 +84,8 @@ class GroupErrors {
           return 'You do not have permission to decide join requests for this group.';
         case GroupErrorContext.announcement:
           return 'Only the group owner or a member with the announcement permission can manage announcements.';
+        case GroupErrorContext.chat:
+          return 'Only group members can read or send messages in this group.';
         default:
           return 'You do not have permission to do that.';
       }
@@ -128,6 +131,8 @@ class GroupErrors {
         return 'Could not update the join request. Please try again.';
       case GroupErrorContext.announcement:
         return 'Could not update the announcement. Please try again.';
+      case GroupErrorContext.chat:
+        return 'Could not send the message. Please try again.';
     }
   }
 

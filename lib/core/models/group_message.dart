@@ -1,0 +1,59 @@
+/// One row of `public.group_messages` — only the base columns the migration
+/// set has carried since 0001_init:
+/// `id, group_id, sender_id, body, created_at`.
+/// Later optional columns (message_type, metadata, deleted_at, deleted_by)
+/// are never selected, so the client stays correct whether or not they
+/// exist live. `sender_id` is nullable live (0047 dropped NOT NULL so system
+/// notices such as "History Cleared" can be inserted without an actor).
+final class GroupMessage {
+  const GroupMessage({
+    required this.id,
+    required this.groupId,
+    required this.senderId,
+    required this.body,
+    required this.createdAt,
+  });
+
+  /// Live CHECK: `char_length(body) BETWEEN 1 AND 2000`.
+  static const maxBodyLength = 2000;
+
+  final String id;
+  final String groupId;
+
+  /// Null for server-inserted system notices.
+  final String? senderId;
+  final String body;
+  final DateTime createdAt;
+
+  bool get isSystem => senderId == null;
+
+  factory GroupMessage.fromJson(Map<String, dynamic> json) {
+    return GroupMessage(
+      id: json['id'] as String,
+      groupId: json['group_id'] as String,
+      senderId: json['sender_id'] as String?,
+      body: json['body'] as String,
+      createdAt: DateTime.parse(json['created_at'] as String).toLocal(),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'group_id': groupId,
+    'sender_id': senderId,
+    'body': body,
+    'created_at': createdAt.toUtc().toIso8601String(),
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is GroupMessage &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          body == other.body &&
+          createdAt == other.createdAt;
+
+  @override
+  int get hashCode => Object.hash(id, body, createdAt);
+}

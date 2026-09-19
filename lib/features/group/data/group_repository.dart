@@ -7,6 +7,7 @@ import '../../../core/models/group_announcement.dart';
 import '../../../core/models/group_invitation.dart';
 import '../../../core/models/group_join_request.dart';
 import '../../../core/models/group_member.dart';
+import '../../../core/models/group_message.dart';
 import '../../../core/models/group_rule.dart';
 import '../../../core/models/profile_match.dart';
 import '../../../core/services/auth_service.dart';
@@ -258,7 +259,26 @@ abstract interface class GroupRepository {
 
   /// Deletes by exact id under the same policy. 0 rows ⇒ error.
   Future<void> deleteAnnouncement(String announcementId);
+
+  // ── Group Chat (G8) — existing `public.group_messages` ──
+
+  /// A finite window of one group's messages, **newest first**, at most
+  /// [limit] rows; with [before] only rows created strictly earlier (the
+  /// "load earlier" page). RLS "member reads messages": `fn_is_member`.
+  Future<List<GroupMessage>> messages(
+    String groupId, {
+    int limit = messagePageSize,
+    DateTime? before,
+  });
+
+  /// Inserts `{group_id, sender_id = auth.uid(), body}`. RLS "member sends
+  /// messages": `sender_id = auth.uid() AND fn_is_member(group_id, uid)` —
+  /// the server rejects any other sender and any group the caller is not in.
+  Future<void> sendMessage({required String groupId, required String body});
 }
+
+/// Default chat window; one page per hub open, older pages on demand.
+const messagePageSize = 50;
 
 class SupabaseGroupRepository implements GroupRepository {
   const SupabaseGroupRepository();
@@ -863,6 +883,50 @@ class SupabaseGroupRepository implements GroupRepository {
                 'This announcement could not be deleted. It may have been removed.',
           );
         }
+      });
+
+  // ── Group Chat (G8) ──
+
+  /// Base columns only (0001_init); message_type / metadata / deleted_* are
+  /// never requested so a partially-migrated live table still reads.
+  static const _messageColumns = 'id, group_id, sender_id, body, created_at';
+
+  @override
+  Future<List<GroupMessage>> messages(
+    String groupId, {
+    int limit = messagePageSize,
+    DateTime? before,
+  }) => _guard(GroupErrorContext.load, () async {
+    var query = _client
+        .from('group_messages')
+        .select(_messageColumns)
+        .eq('group_id', groupId);
+    if (before != null) {
+      query = query.lt('created_at', before.toUtc().toIso8601String());
+    }
+    final rows = await query
+        .order('created_at', ascending: false)
+        .order('id', ascending: false)
+        .limit(limit);
+    AppLogger.rpcShape('group_messages.select', rows);
+    return [
+      for (final r in rows as List)
+        GroupMessage.fromJson(r as Map<String, dynamic>),
+    ];
+  });
+
+  @override
+  Future<void> sendMessage({required String groupId, required String body}) =>
+      _guard(GroupErrorContext.chat, () async {
+        final uid = _uid;
+        if (uid == null) {
+          throw const AuthError(message: 'Please sign in again.');
+        }
+        await _client.from('group_messages').insert({
+          'group_id': groupId,
+          'sender_id': uid, // must equal auth.uid() or the policy rejects it
+          'body': body.trim(),
+        });
       });
 
   static Future<T> _guard<T>(

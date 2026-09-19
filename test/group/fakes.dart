@@ -17,6 +17,7 @@ import 'package:my_praperation/core/models/group_announcement.dart';
 import 'package:my_praperation/core/models/group_invitation.dart';
 import 'package:my_praperation/core/models/group_join_request.dart';
 import 'package:my_praperation/core/models/group_member.dart';
+import 'package:my_praperation/core/models/group_message.dart';
 import 'package:my_praperation/core/models/group_rule.dart';
 import 'package:my_praperation/core/models/profile_match.dart';
 import 'package:my_praperation/features/group/data/group_repository.dart';
@@ -45,6 +46,7 @@ class FakeGroup {
   final Map<String, String> roles = {}; // userId -> group_role
   final List<GroupRule> rules = [];
   final List<GroupAnnouncement> announcements = [];
+  final List<GroupMessage> messages = [];
   DateTime createdAt = DateTime(2026, 9, 1);
 }
 
@@ -947,5 +949,82 @@ class InMemoryGroupRepository implements GroupRepository {
     }
     final (g, i) = hit;
     g.announcements.removeAt(i);
+  }
+
+  // ── Group Chat (G8) ──
+  // Mirrors the legacy-defined `group_messages` RLS (0001_init, unchanged):
+  //   SELECT → fn_is_member(group_id, uid)
+  //   INSERT → sender_id = auth.uid() AND fn_is_member(group_id, uid)
+  //   no UPDATE / DELETE policy (deletion only via fn_delete_group_message,
+  //   out of G8 scope). body CHECK 1..2000. sender_id nullable live (system
+  //   notices) — [seedSystemMessage] models those server-side inserts.
+
+  int _messageSeq = 0;
+
+  GroupMessage seedMessage({
+    required String groupId,
+    required String? senderId,
+    required String body,
+    DateTime? at,
+  }) {
+    _messageSeq++;
+    // Default clock: strictly after the group's newest message (the server's
+    // `now()` default is monotonic in practice), so a sent message is last.
+    final existing = groups[groupId]!.messages;
+    final newest = existing.isEmpty
+        ? DateTime(2026, 9, 10, 9, 0)
+        : existing.map((m) => m.createdAt).reduce((a, b) => a.isAfter(b) ? a : b);
+    final m = GroupMessage(
+      id: 'm-$_messageSeq',
+      groupId: groupId,
+      senderId: senderId,
+      body: body,
+      createdAt: at ?? newest.add(const Duration(minutes: 1)),
+    );
+    groups[groupId]!.messages.add(m);
+    return m;
+  }
+
+  @override
+  Future<List<GroupMessage>> messages(
+    String groupId, {
+    int limit = messagePageSize,
+    DateTime? before,
+  }) async {
+    calls.add('messages:$groupId${before == null ? '' : ':before'}');
+    if (!_isMemberOf(groupId)) return const [];
+    final rows = [
+      for (final m in groups[groupId]!.messages)
+        if (before == null || m.createdAt.isBefore(before)) m,
+    ]..sort((a, b) {
+      final byTime = b.createdAt.compareTo(a.createdAt);
+      return byTime != 0 ? byTime : b.id.compareTo(a.id);
+    });
+    return rows.take(limit).toList(growable: false);
+  }
+
+  @override
+  Future<void> sendMessage({required String groupId, required String body}) =>
+      insertMessageAs(groupId: groupId, senderId: currentUser, body: body);
+
+  /// The INSERT policy as the server evaluates it, with the row's
+  /// `sender_id` explicit so tests can prove a forged sender is refused.
+  /// The real repository always sends the signed-in uid.
+  Future<void> insertMessageAs({
+    required String groupId,
+    required String senderId,
+    required String body,
+  }) async {
+    calls.add('sendMessage:$groupId');
+    _maybeFail();
+    final g = groups[groupId];
+    if (g == null || senderId != currentUser || !_isMemberOf(groupId)) {
+      throw _notAuthorized(GroupErrorContext.chat);
+    }
+    final b = body.trim();
+    if (b.isEmpty || b.length > 2000) {
+      throw const DataError(message: 'check constraint');
+    }
+    seedMessage(groupId: groupId, senderId: senderId, body: b);
   }
 }
