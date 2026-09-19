@@ -9,6 +9,7 @@ import '../features/auth/auth_screen.dart';
 import '../features/auth/splash_screen.dart';
 import '../features/group/screens/group_create_screen.dart';
 import '../features/group/screens/group_hub_screen.dart';
+import '../features/group/screens/group_leaderboard_screen.dart';
 import '../features/group/screens/group_list_screen.dart';
 import '../features/group/screens/group_members_screen.dart';
 import '../features/group/screens/group_settings_screen.dart';
@@ -194,6 +195,17 @@ final class AppRouter {
                       testId: state.pathParameters['testId']!,
                       groupId: state.pathParameters['groupId']!,
                     ),
+                    routes: [
+                      // G12: group test leaderboard.
+                      GoRoute(
+                        path: 'leaderboard',
+                        name: 'group-test-leaderboard',
+                        builder: (context, state) => GroupLeaderboardScreen(
+                          testId: state.pathParameters['testId']!,
+                          groupId: state.pathParameters['groupId']!,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),

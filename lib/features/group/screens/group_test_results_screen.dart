@@ -173,6 +173,7 @@ class _GroupTestResultsScreenState extends State<GroupTestResultsScreen> {
             _myResultCard(theme),
             const SizedBox(height: 16),
             _coachReportCard(theme, _c.myReport, title: 'AI Coach Report'),
+            if (_c.hasAnyResults) _leaderboardButton(theme),
             if (_c.canGenerateResults || _c.canSeeAllResults) ...[
               const SizedBox(height: 24),
               _managerSection(theme),
@@ -262,6 +263,24 @@ class _GroupTestResultsScreenState extends State<GroupTestResultsScreen> {
       ),
     );
   }
+
+  // ── leaderboard ──
+
+  Widget _leaderboardButton(ThemeData theme) => Padding(
+    key: const Key('leaderboard_button_section'),
+    padding: const EdgeInsets.only(top: 16),
+    child: SizedBox(
+      width: double.infinity,
+      child: FilledButton.icon(
+        key: const Key('open_leaderboard'),
+        onPressed: () => context.push(
+          '/groups/${widget.groupId}/tests/${widget.testId}/leaderboard',
+        ),
+        icon: const Icon(Icons.leaderboard_outlined, size: 18),
+        label: const Text('View Leaderboard'),
+      ),
+    ),
+  );
 
   Widget _chips(
     ThemeData theme,

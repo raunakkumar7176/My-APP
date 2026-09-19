@@ -280,4 +280,110 @@ abstract final class GroupResultsAccess {
       s == TestStatus.completed ||
       s == TestStatus.ended ||
       s == TestStatus.evaluated;
+
+  /// Leaderboard access mirrors result visibility: any group member may
+  /// view the leaderboard (the leaderboard shows only the same result data
+  /// RLS already authorises). The server re-checks membership.
+  static bool canSeeLeaderboard({
+    required bool isMember,
+    required bool isOwner,
+  }) => isMember || isOwner;
+}
+
+/// One row on the leaderboard, derived entirely from a stored `Result`.
+/// No score is computed client-side — every field comes from the server.
+final class LeaderboardEntry {
+  const LeaderboardEntry({
+    required this.rank,
+    required this.userId,
+    required this.label,
+    required this.score,
+    required this.maxScore,
+    this.percentage,
+    this.accuracy,
+    this.correctCount,
+    this.wrongCount,
+    this.unansweredCount,
+    this.isCurrentUser = false,
+  });
+
+  /// Display rank (1-based). Tied participants share the same rank.
+  final int rank;
+
+  /// The participant's user id.
+  final String userId;
+
+  /// Display name resolved from the roster: "You", full name, or
+  /// "Former member".
+  final String label;
+
+  final double? score;
+  final double? maxScore;
+  final double? percentage;
+  final double? accuracy;
+  final int? correctCount;
+  final int? wrongCount;
+  final int? unansweredCount;
+
+  /// Whether this entry belongs to the signed-in user.
+  final bool isCurrentUser;
+
+  /// Build a deterministic leaderboard from stored results.
+  ///
+  /// **Ranking rule**: primary = `score` descending, secondary =
+  /// `computed_at` ascending (earlier submission wins ties — a proxy for
+  /// "submitted first" when the schema provides no attempt-order column).
+  ///
+  /// **Tie handling**: participants with the same `score` receive the same
+  /// rank. The next distinct score receives rank = 1 + count of entries
+  /// above it (dense rank is NOT used — this matches the conventional
+  /// competition leaderboard).
+  ///
+  /// If a result has no `score`, it is placed at the bottom.
+  static List<LeaderboardEntry> fromResults(
+    List<Result> results, {
+    required String currentUserId,
+    required String Function(String userId) labelFor,
+  }) {
+    if (results.isEmpty) return const [];
+
+    final sorted = List<Result>.from(results)..sort((a, b) {
+      final sa = a.score ?? double.negativeInfinity;
+      final sb = b.score ?? double.negativeInfinity;
+      final byScore = sb.compareTo(sa);
+      if (byScore != 0) return byScore;
+      // Secondary: earlier computed_at is "better" (submitted first).
+      final ta = a.computedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final tb = b.computedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+      return ta.compareTo(tb);
+    });
+
+    final entries = <LeaderboardEntry>[];
+    int currentRank = 0;
+    double? prevScore;
+
+    for (var i = 0; i < sorted.length; i++) {
+      final r = sorted[i];
+      final s = r.score ?? double.negativeInfinity;
+      if (prevScore == null || s != prevScore) {
+        currentRank = i + 1;
+        prevScore = s;
+      }
+      entries.add(LeaderboardEntry(
+        rank: currentRank,
+        userId: r.userId,
+        label: labelFor(r.userId),
+        score: r.score,
+        maxScore: r.maxScore,
+        percentage: r.percentage,
+        accuracy: r.accuracy,
+        correctCount: r.correctCount,
+        wrongCount: r.wrongCount,
+        unansweredCount: r.unansweredCount,
+        isCurrentUser: r.userId == currentUserId,
+      ));
+    }
+
+    return entries;
+  }
 }
