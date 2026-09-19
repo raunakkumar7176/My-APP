@@ -1,6 +1,6 @@
 # G14 — Group Owner / Leader / Moderator Controls: Implementation Report (builder)
 
-**Branch:** `r4-restart` · **Base:** `5295c56` (G13 committed by the other agent) · **Commit:** _see §16_ · **Date:** 2026-09-19
+**Branch:** `r4-restart` · **Base:** `5295c56` (G13 committed by the other agent) · **Commit:** `51316f5` · **Date:** 2026-09-19
 **Role:** implementer only (not audited). G13 (`group_settings_screen.dart`, its report/tests), G12 F1, G10.2, G11 backend, G9 untouched. G15 not started.
 
 ## FINAL STATUS
@@ -149,4 +149,4 @@ Live verification of the same rules: `g14_probe.js` (before) and `g14_proof.js` 
 
 ## 16. Commit
 
-_Recorded in the follow-up commit._
+`51316f5` — G14 implementation (this report included). Hash recorded in the follow-up commit.
