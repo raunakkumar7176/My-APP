@@ -1,6 +1,6 @@
 # G7 — Group Announcements: Implementation Report (builder)
 
-**Branch:** `r4-restart` · **Base:** `0fe0139` (G6 report) · **Commit:** `__COMMIT__` · **Date:** 2026-09-19
+**Branch:** `r4-restart` · **Base:** `0fe0139` (G6 report) · **Commit:** `ee3392e` · **Date:** 2026-09-19
 
 ## FINAL STATUS
 
@@ -137,6 +137,6 @@ Member view: list newest-first with title, body, `author · timestamp[ · edited
 
 ## 14. Commit
 
-`__COMMIT__` on `r4-restart` (the hash is recorded by the follow-up report commit).
+`ee3392e` on `r4-restart` (the hash is recorded by the follow-up report commit).
 
 **FINAL STATUS: G7 IMPLEMENTATION COMPLETE — BACKEND PENDING**
