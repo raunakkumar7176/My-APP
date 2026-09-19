@@ -1,6 +1,6 @@
 # G12 — Group Test Leaderboard: Verification Report (auditor)
 
-**Audited commits:** `348e338` (implementation), `33cc280` (report hash) on `r4-restart` · **Audit date:** 2026-09-19 · **This report:** `__COMMIT__`
+**Audited commits:** `348e338` (implementation), `33cc280` (report hash) on `r4-restart` · **Audit date:** 2026-09-19 · **This report:** `35923d9`
 **Live access:** read-only + one rolled-back transaction via the pooler credentials in the untracked `tool/` scripts (never printed). No live object changed; residue re-checked (0).
 
 ## FINAL VERDICT
