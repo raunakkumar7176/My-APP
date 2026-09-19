@@ -6,11 +6,13 @@ import '../state/group_hub_controller.dart';
 import '../widgets/group_announcements_section.dart';
 import '../widgets/group_avatar.dart';
 import '../widgets/group_chat_section.dart';
+import '../widgets/group_management_section.dart';
 import '../widgets/group_rules_section.dart';
 import '../widgets/invite_member_sheet.dart';
 import '../widgets/join_request_queue.dart';
 import '../widgets/member_tile.dart';
 import '../widgets/outgoing_invitations_section.dart';
+import '../widgets/role_permissions_sheet.dart';
 
 /// One group's hub: profile header, roster, and the G1 membership actions.
 /// Later phases (leaderboard) attach here; nothing is stubbed for them yet.
@@ -80,6 +82,13 @@ class _GroupHubScreenState extends State<GroupHubScreen> {
   Future<void> _openMembers() async {
     await context.push('/groups/${widget.groupId}/members');
     // Roles / roster / count may have changed there.
+    if (mounted) await _c.refresh();
+  }
+
+  Future<void> _openRolePermissions() async {
+    // G14: MANAGE_ROLES (server-reported) or owner; the sheet re-reads the
+    // matrix from the server and the controller re-probes after each change.
+    await RolePermissionsSheet.show(context, hub: _c);
     if (mounted) await _c.refresh();
   }
 
@@ -220,6 +229,18 @@ class _GroupHubScreenState extends State<GroupHubScreen> {
               Text(group.description!.trim()),
             ],
             const SizedBox(height: 24),
+            // G14: one Manage surface, rows gated by server-reported
+            // permissions (owner bypass); renders nothing for a plain member.
+            if (_c.hasManagementControls) ...[
+              GroupManagementSection(
+                controller: _c,
+                onOpenSettings: _openSettings,
+                onOpenMembers: _openMembers,
+                onOpenTests: _openTests,
+                onOpenRolePermissions: _openRolePermissions,
+              ),
+              const SizedBox(height: 24),
+            ],
             // Announcements then rules: visible to all members; manager
             // controls are inside each section.
             GroupAnnouncementsSection(controller: _c),

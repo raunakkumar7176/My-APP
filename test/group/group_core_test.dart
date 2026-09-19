@@ -15,6 +15,7 @@ import 'package:my_praperation/core/models/group_message.dart';
 import 'package:my_praperation/core/models/group_rule.dart';
 import 'package:my_praperation/core/models/profile_match.dart';
 import 'package:my_praperation/features/group/data/group_repository.dart';
+import 'package:my_praperation/features/group/domain/group_controls.dart';
 import 'package:my_praperation/features/group/domain/group_errors.dart';
 import 'package:my_praperation/features/group/domain/group_permission.dart';
 import 'package:my_praperation/features/group/domain/group_privacy.dart';
@@ -796,6 +797,16 @@ class _FailingRepository implements GroupRepository {
     required String groupId,
     required String userId,
     required GroupRole role,
+  }) async {}
+  @override
+  Future<GroupRolePermissions> rolePermissions(String groupId) async =>
+      GroupRolePermissions.empty;
+  @override
+  Future<void> setRolePermission({
+    required String groupId,
+    required GroupRole role,
+    required GroupPermission permission,
+    required bool granted,
   }) async {}
 }
 

@@ -12,6 +12,7 @@ import '../../../core/models/group_rule.dart';
 import '../../../core/models/profile_match.dart';
 import '../../../core/services/auth_service.dart';
 import '../../../core/services/supabase_service.dart';
+import '../domain/group_controls.dart';
 import '../domain/group_errors.dart';
 import '../domain/group_permission.dart';
 import '../domain/group_role.dart';
@@ -210,6 +211,26 @@ abstract interface class GroupRepository {
   Future<void> sendInvitation({
     required String groupId,
     required String inviteeId,
+  });
+
+  // ── Role permissions (G14) — existing `public.role_permissions` ──
+
+  /// All `{role, permission}` rows of one group (exact `group_id`). Live
+  /// SELECT policy "members view perms": any member may read them.
+  Future<GroupRolePermissions> rolePermissions(String groupId);
+
+  /// Inserts or deletes exactly one `role_permissions` row
+  /// `(group_id, role, permission)`. Live policy "manage roles perms"
+  /// (FOR ALL, USING + CHECK `fn_has_permission(group_id, uid,
+  /// 'MANAGE_ROLES')`; the owner passes through the function's bypass) is the
+  /// security boundary. A revoke that deletes 0 rows is an error, never a
+  /// silent success. Role / permission targets are validated by
+  /// [RolePermissionRules] before anything is sent.
+  Future<void> setRolePermission({
+    required String groupId,
+    required GroupRole role,
+    required GroupPermission permission,
+    required bool granted,
   });
 
   // ── Group Rules (G6) ──
@@ -733,6 +754,64 @@ class SupabaseGroupRepository implements GroupRepository {
           params: {'p_request_id': requestId},
         );
       });
+
+  // ── Role permissions (G14) ──
+
+  @override
+  Future<GroupRolePermissions> rolePermissions(String groupId) =>
+      _guard(GroupErrorContext.rolePermission, () async {
+        final rows = await _client
+            .from('role_permissions')
+            .select('role, permission')
+            .eq('group_id', groupId);
+        return GroupRolePermissions.fromRows(
+          (rows as List).cast<Map<String, dynamic>>(),
+        );
+      });
+
+  @override
+  Future<void> setRolePermission({
+    required String groupId,
+    required GroupRole role,
+    required GroupPermission permission,
+    required bool granted,
+  }) => _guard(GroupErrorContext.rolePermission, () async {
+    if (!RolePermissionRules.canEditRole(role) ||
+        !RolePermissionRules.canEditPermission(permission)) {
+      throw const ValidationError(
+        message: 'That role or permission cannot be changed here.',
+      );
+    }
+    if (granted) {
+      // PK (group_id, role, permission): an existing row is left untouched.
+      await _client
+          .from('role_permissions')
+          .upsert(
+            {
+              'group_id': groupId,
+              'role': role.db,
+              'permission': permission.db,
+            },
+            onConflict: 'group_id,role,permission',
+            ignoreDuplicates: true,
+          );
+      return;
+    }
+    final deleted = await _client
+        .from('role_permissions')
+        .delete()
+        .eq('group_id', groupId)
+        .eq('role', role.db)
+        .eq('permission', permission.db)
+        .select('permission');
+    if ((deleted as List).isEmpty) {
+      throw const DataError(
+        message:
+            'That permission could not be revoked. It may already be '
+            'revoked, or you do not have permission to manage roles here.',
+      );
+    }
+  });
 
   // ── Group Rules (G6) ──
 

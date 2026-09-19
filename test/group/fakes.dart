@@ -21,6 +21,7 @@ import 'package:my_praperation/core/models/group_message.dart';
 import 'package:my_praperation/core/models/group_rule.dart';
 import 'package:my_praperation/core/models/profile_match.dart';
 import 'package:my_praperation/features/group/data/group_repository.dart';
+import 'package:my_praperation/features/group/domain/group_controls.dart';
 import 'package:my_praperation/features/group/domain/group_errors.dart';
 import 'package:my_praperation/features/group/domain/group_permission.dart';
 import 'package:my_praperation/features/group/domain/group_role.dart';
@@ -266,13 +267,9 @@ class InMemoryGroupRepository implements GroupRepository {
         p == GroupPermission.groupSettings) {
       return true;
     }
-    if (roleGrants.contains('$groupId:$role:${p.db}')) return true;
-    if (role == 'leader') {
-      return p != GroupPermission.groupSettings &&
-          p != GroupPermission.manageRoles &&
-          p != GroupPermission.unknown;
-    }
-    return false;
+    // A `role_permissions` row: an explicit grant, or the live leader seeding
+    // unless it was revoked (G14).
+    return _roleRow(groupId, role, p);
   }
 
   @override
@@ -285,6 +282,98 @@ class InMemoryGroupRepository implements GroupRepository {
       for (final p in of)
         if (hasPermission(groupId, p)) p,
     });
+  }
+
+  /// The live seeding of `fn_create_group`: leader holds everything except
+  /// GROUP_SETTINGS and MANAGE_ROLES. Present as rows so the G14 matrix reads
+  /// them exactly like the live `role_permissions` table.
+  static const seededLeaderPermissions = [
+    GroupPermission.manageMembers,
+    GroupPermission.createTest,
+    GroupPermission.editTest,
+    GroupPermission.generateQuestions,
+    GroupPermission.reviewQuestions,
+    GroupPermission.publishTest,
+    GroupPermission.scheduleTest,
+    GroupPermission.generateResults,
+    GroupPermission.viewGroupAnalytics,
+    GroupPermission.sendAnnouncement,
+  ];
+
+  /// Seeded leader rows explicitly revoked (G14 revoke), as
+  /// `'<groupId>:leader:<PERMISSION>'`.
+  final Set<String> roleRevokes = {};
+
+  bool _roleRow(String groupId, String role, GroupPermission p) {
+    final key = '$groupId:$role:${p.db}';
+    if (roleGrants.contains(key)) return true;
+    if (role == 'leader' &&
+        seededLeaderPermissions.contains(p) &&
+        !roleRevokes.contains(key)) {
+      return true;
+    }
+    return false;
+  }
+
+  /// Mirrors the live SELECT policy "members view perms" (`fn_is_member`):
+  /// a non-member reads 0 rows, never an error.
+  @override
+  Future<GroupRolePermissions> rolePermissions(String groupId) async {
+    calls.add('rolePermissions:$groupId');
+    final g = groups[groupId];
+    if (g == null || !g.roles.containsKey(currentUser)) {
+      return GroupRolePermissions.empty;
+    }
+    return GroupRolePermissions.fromRows([
+      for (final role in ['leader', 'moderator', 'member'])
+        for (final p in GroupPermission.live)
+          if (_roleRow(groupId, role, p)) {'role': role, 'permission': p.db},
+    ]);
+  }
+
+  /// Mirrors the live policy "manage roles perms" (FOR ALL, USING + CHECK
+  /// `fn_has_permission(group_id, uid, 'MANAGE_ROLES')`): an INSERT without
+  /// it raises the RLS CHECK error; a DELETE without it matches 0 rows, which
+  /// the real repository turns into an error.
+  @override
+  Future<void> setRolePermission({
+    required String groupId,
+    required GroupRole role,
+    required GroupPermission permission,
+    required bool granted,
+  }) async {
+    calls.add(
+      'setRolePermission:$groupId:${role.db}:${permission.db}:$granted',
+    );
+    _maybeFail();
+    if (!RolePermissionRules.canEditRole(role) ||
+        !RolePermissionRules.canEditPermission(permission)) {
+      throw const ValidationError(
+        message: 'That role or permission cannot be changed here.',
+      );
+    }
+    final manage = hasPermission(groupId, GroupPermission.manageRoles);
+    final key = '$groupId:${role.db}:${permission.db}';
+    if (granted) {
+      if (!manage) {
+        throw const DataError(
+          message:
+              'new row violates row-level security policy for table "role_permissions"',
+        );
+      }
+      roleGrants.add(key);
+      roleRevokes.remove(key);
+      return;
+    }
+    if (!manage || !_roleRow(groupId, role.db, permission)) {
+      throw const DataError(
+        message:
+            'That permission could not be revoked. It may already be '
+            'revoked, or you do not have permission to manage roles here.',
+      );
+    }
+    roleGrants.remove(key);
+    if (role == GroupRole.leader) roleRevokes.add(key);
   }
 
   /// Mirrors the LIVE "role changes" UPDATE policy as verified by the G3

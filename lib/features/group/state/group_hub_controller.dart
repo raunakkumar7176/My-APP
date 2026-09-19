@@ -10,6 +10,7 @@ import '../../../core/models/group_rule.dart';
 import '../../../core/services/auth_service.dart';
 import '../../test/state/disposable_notifier.dart';
 import '../data/group_repository.dart';
+import '../domain/group_controls.dart';
 import '../domain/group_errors.dart';
 import '../domain/group_privacy.dart';
 import '../domain/group_permission.dart';
@@ -111,6 +112,102 @@ class GroupHubController extends DisposableNotifier {
   bool get sending => _sending;
   bool get hasOlderMessages => _hasOlder;
   bool get hasMessages => _messages.isNotEmpty;
+
+  // ── G14: management controls & role permissions ──
+  GroupRolePermissions _rolePermissions = GroupRolePermissions.empty;
+  bool _rolePermissionsLoading = false;
+  String? _rolePermissionsError;
+
+  /// Which management controls may be offered (server-reported permissions
+  /// plus the owner bypass). UX only; every mutation is decided live.
+  GroupControls get controls =>
+      GroupControls(permissions: _permissions, isOwner: isOwner);
+
+  /// True when any management surface applies to the caller. A plain member
+  /// with no seeded permission never sees the Manage section.
+  bool get hasManagementControls => controls.hasAnyManagement;
+
+  /// `role_permissions` policy "manage roles perms": MANAGE_ROLES (owner via
+  /// the function's bypass; accepted locally too so a failed probe never
+  /// hides the owner's controls).
+  bool get canManageRolePermissions => controls.canManageRolePermissions;
+
+  /// The group's `role_permissions` rows, loaded only for a caller who may
+  /// manage them (see [loadRolePermissions]).
+  GroupRolePermissions get rolePermissions => _rolePermissions;
+  bool get rolePermissionsLoading => _rolePermissionsLoading;
+  String? get rolePermissionsError => _rolePermissionsError;
+
+  /// Reads the matrix from the server. Never called for a caller without the
+  /// manage-roles control; single-flight.
+  Future<void> loadRolePermissions() async {
+    if (!canManageRolePermissions || _rolePermissionsLoading) return;
+    _rolePermissionsLoading = true;
+    _rolePermissionsError = null;
+    notifyListeners();
+    try {
+      _rolePermissions = await _repo.rolePermissions(groupId);
+    } on AppError catch (e) {
+      _rolePermissionsError = e.message;
+    } catch (e, st) {
+      AppLogger.error('Role permissions load failed: $e', stackTrace: st);
+      _rolePermissionsError = GroupErrors.map(
+        e.toString(),
+        context: GroupErrorContext.rolePermission,
+      );
+    }
+    _rolePermissionsLoading = false;
+    notifyListeners();
+  }
+
+  /// Grants or revokes one `(role, permission)` for this group. Client
+  /// invariants (the live policy and PK enforce the rest): only a role from
+  /// [RolePermissionRules.editableRoles] — never `owner` (bypass) and never
+  /// `member` — and only a live permission value. `MANAGE_ROLES` is decided
+  /// by the server; the client merely does not offer the action without it.
+  /// After success the matrix **and** the caller's own probes are re-read
+  /// from the server (a leader changing the leader row changes themselves).
+  Future<bool> setRolePermission(
+    GroupRole role,
+    GroupPermission permission, {
+    required bool granted,
+  }) async {
+    if (!canManageRolePermissions) {
+      _error = GroupErrors.map(
+        'NOT_AUTHORIZED',
+        context: GroupErrorContext.rolePermission,
+      );
+      notifyListeners();
+      return false;
+    }
+    if (!RolePermissionRules.canEditRole(role)) {
+      _error = role.isOwner
+          ? 'The owner always holds every permission; nothing to change.'
+          : 'Permissions cannot be assigned to the ${role.label} role here.';
+      notifyListeners();
+      return false;
+    }
+    if (!RolePermissionRules.canEditPermission(permission)) {
+      _error = 'That permission cannot be changed here.';
+      notifyListeners();
+      return false;
+    }
+    if (_rolePermissions.has(role, permission) == granted) return true; // no-op
+    final ok = await _run(
+      GroupErrorContext.rolePermission,
+      () => _repo.setRolePermission(
+        groupId: groupId,
+        role: role,
+        permission: permission,
+        granted: granted,
+      ),
+    );
+    // Server re-read either way: on failure the matrix must not show a
+    // toggle the server refused.
+    await loadRolePermissions();
+    if (ok) await load();
+    return ok;
+  }
 
   /// Sender label from the roster already loaded: "You", the member's
   /// display name, "System" for server notices (null sender), or "Former
@@ -278,18 +375,20 @@ class GroupHubController extends DisposableNotifier {
         _group = null;
         _members = const [];
         _accessDenied = true;
+        // G14: a removed manager must not keep stale controls — the
+        // server-reported permissions and matrix are dropped with access.
+        _permissions = GroupPermissions.none;
+        _rolePermissions = GroupRolePermissions.empty;
       } else {
         _group = group;
         _accessDenied = false;
         _members = await _repo.members(groupId);
+        // G14: every live permission is probed (one `fn_has_permission`
+        // call each, in parallel) so the Manage section shows exactly what
+        // the server grants — test, results and analytics controls included.
         _permissions = await _repo.permissionsFor(
           groupId,
-          of: const [
-            GroupPermission.manageMembers,
-            GroupPermission.manageRoles,
-            GroupPermission.groupSettings,
-            GroupPermission.sendAnnouncement,
-          ],
+          of: GroupPermission.live,
         );
         // Manager queue: loaded only when the server says MANAGE_MEMBERS.
         if (_permissions.canManageMembers) {

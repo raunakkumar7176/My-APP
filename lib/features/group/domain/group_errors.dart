@@ -21,6 +21,7 @@ enum GroupErrorContext {
   joinRequest,
   announcement,
   chat,
+  rolePermission,
 }
 
 class GroupErrors {
@@ -86,6 +87,8 @@ class GroupErrors {
           return 'Only the group owner or a member with the announcement permission can manage announcements.';
         case GroupErrorContext.chat:
           return 'Only group members can read or send messages in this group.';
+        case GroupErrorContext.rolePermission:
+          return 'Only the group owner or a member with the manage-roles permission can change role permissions.';
         default:
           return 'You do not have permission to do that.';
       }
@@ -133,6 +136,8 @@ class GroupErrors {
         return 'Could not update the announcement. Please try again.';
       case GroupErrorContext.chat:
         return 'Could not send the message. Please try again.';
+      case GroupErrorContext.rolePermission:
+        return 'Could not update that role permission. Please try again.';
     }
   }
 
