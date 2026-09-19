@@ -1,6 +1,6 @@
 # G16 — Group Notifications / Unread State: Implementation Report (builder)
 
-**Branch:** `r4-restart` · **Base:** `aabb9d2` (G14) · **Commit:** _see §14_ · **Date:** 2026-09-20
+**Branch:** `r4-restart` · **Base:** `aabb9d2` (G14) · **Commit:** `3c30c72` · **Date:** 2026-09-20
 **Role:** implementer only (not audited). G15 files (`group_membership_edge_cases_test.dart`, in progress by the other agent), G14 backend, G12 F1, G10.2, G11 backend: untouched. G17 / G18 not started.
 
 ## FINAL STATUS
@@ -138,4 +138,4 @@ Client: `group_notifications_test.dart` "opening, refreshing and paging perform 
 
 ## 14. Commit
 
-_Recorded in the follow-up commit._
+`3c30c72` — G16 implementation (this report included); hash recorded in the follow-up commit.
