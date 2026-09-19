@@ -1,6 +1,6 @@
 # G11 — Group Test Results & AI Coach Report: Implementation Report (builder)
 
-**Branch:** `r4-restart` · **Base:** `f0c6136` · **Commit:** `__COMMIT__` · **Date:** 2026-09-19
+**Branch:** `r4-restart` · **Base:** `f0c6136` · **Commit:** `4a5e6ff` · **Date:** 2026-09-19
 **Role:** implementer (not audited). G10.2 files untouched; G9's uncommitted doc-comment left in place. An earlier uncommitted G11 draft found in the working tree (from the other agent) was taken over and corrected — it called `rpc_generate_results` on screen open (a mutation) and parsed non-live AI payload keys; both are fixed here.
 
 ## FINAL STATUS
