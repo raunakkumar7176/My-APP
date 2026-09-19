@@ -1,6 +1,6 @@
 # G11 — Group Test Results & AI Coach Report: Backend Verification Report
 
-**Branch:** `r4-restart` · **Flutter impl:** `4a5e6ff` (report `1dd82dd`) · **This report:** `__COMMIT__` · **Date:** 2026-09-19
+**Branch:** `r4-restart` · **Flutter impl:** `4a5e6ff` (report `1dd82dd`) · **This report:** `41c66f3` · **Date:** 2026-09-19
 **Scope:** the G11 backend dependency only — `migrations/G11_rpc_request_coach_reports.sql`. No Flutter change, no G9/G10.2/G12 file touched. Live access: read-only + rolled-back transactions via the pooler credentials in the untracked `tool/` scripts (never printed); the live database is unchanged (`rpc live=false`, residue 0 after every run).
 
 ## FINAL STATUS
