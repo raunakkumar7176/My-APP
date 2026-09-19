@@ -12,6 +12,7 @@ import '../features/group/screens/group_hub_screen.dart';
 import '../features/group/screens/group_list_screen.dart';
 import '../features/group/screens/group_members_screen.dart';
 import '../features/group/screens/group_settings_screen.dart';
+import '../features/group/screens/group_test_results_screen.dart';
 import '../features/group/screens/group_tests_screen.dart';
 import '../features/home/home_screen.dart';
 import '../features/profile/profile_screen.dart';
@@ -184,6 +185,17 @@ final class AppRouter {
                 builder: (context, state) => GroupTestsScreen(
                   groupId: state.pathParameters['groupId']!,
                 ),
+                routes: [
+                  // G11: group test results.
+                  GoRoute(
+                    path: ':testId/results',
+                    name: 'group-test-results',
+                    builder: (context, state) => GroupTestResultsScreen(
+                      testId: state.pathParameters['testId']!,
+                      groupId: state.pathParameters['groupId']!,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),

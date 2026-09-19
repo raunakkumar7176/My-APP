@@ -13,8 +13,7 @@ import '../widgets/member_tile.dart';
 import '../widgets/outgoing_invitations_section.dart';
 
 /// One group's hub: profile header, roster, and the G1 membership actions.
-/// Later phases (announcements, chat, group tests, leaderboard) attach here;
-/// nothing is stubbed for them yet.
+/// Later phases (leaderboard) attach here; nothing is stubbed for them yet.
 class GroupHubScreen extends StatefulWidget {
   const GroupHubScreen({required this.groupId, this.controller, super.key});
 

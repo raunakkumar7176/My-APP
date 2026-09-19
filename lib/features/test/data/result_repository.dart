@@ -5,6 +5,7 @@ import '../../../core/logging/app_logger.dart';
 import '../../../core/models/result.dart';
 import '../../../core/models/result_batch.dart';
 import '../../../core/services/supabase_service.dart';
+import '../../group/domain/group_test_results.dart';
 import '../domain/test_errors.dart';
 
 /// Results are produced only by the server (`rpc_submit_attempt` /
@@ -22,6 +23,36 @@ abstract interface class ResultRepository {
   /// client never reads `public.result_batches` for this (its SELECT policy
   /// is group-permission based and would hide a standalone owner's batch).
   Future<ResultBatch> generateResults(String testId);
+
+  // ── Group test results (G11) ──
+
+  /// All scored results for a test, visible under RLS. Leaders with
+  /// `VIEW_GROUP_ANALYTICS` see all participants; members see only their
+  /// own (per the `own results` + `analytics holders see group results`
+  /// policies).
+  Future<List<Result>> resultsForTest(String testId);
+
+  /// The current user's AI coach report for a test (if one exists).
+  /// Reads from `ai_reports` under RLS (own reports policy).
+  Future<AiCoachReport?> myAiReport(String testId);
+
+  /// All AI reports for a test (leaders with GENERATE_RESULTS permission
+  /// see all; members see only their own — per `report trigger reads` +
+  /// `own reports` policies).
+  Future<List<AiCoachReport>> allAiReports(String testId);
+
+  /// The test's `result_batches` row (UNIQUE per test) — a plain read under
+  /// the live "trigger sees batches" policy (GENERATE_RESULTS holders; the
+  /// owner via the function bypass). Null when none exists or not visible.
+  /// Opening a screen must never call `generateResults` to learn the status.
+  Future<ResultBatch?> batchForTest(String testId);
+
+  /// Queues AI coach-report generation for a test through the proposed
+  /// `rpc_request_coach_reports(p_test_id)` (migrations/G11_*): server checks
+  /// auth, creator-or-GENERATE_RESULTS, a finished deterministic batch, and
+  /// inserts one `ai_jobs` row (type `coach_reports`) idempotently. No AI
+  /// runs in the request path; a worker processes the queue later.
+  Future<CoachReportJob> requestCoachReports(String testId);
 }
 
 class SupabaseResultRepository implements ResultRepository {
@@ -77,6 +108,83 @@ class SupabaseResultRepository implements ResultRepository {
     AppLogger.rpcShape('rpc_generate_results', response);
     return batchFromRpcResponse(response);
   }, TestErrorContext.generic);
+
+  // ── Group test results (G11) ──
+
+  @override
+  Future<List<Result>> resultsForTest(String testId) => _guard(() async {
+    final rows = await _client
+        .from('results')
+        .select()
+        .eq('test_id', testId)
+        .order('score', ascending: false);
+    AppLogger.rpcShape('results.select(group)', rows);
+    return [
+      for (final r in rows as List) Result.fromJson(r as Map<String, dynamic>),
+    ];
+  }, TestErrorContext.load);
+
+  @override
+  Future<AiCoachReport?> myAiReport(String testId) => _guard(() async {
+    final uid = _client.auth.currentUser?.id;
+    if (uid == null) return null;
+    final row = await _client
+        .from('ai_reports')
+        .select()
+        .eq('test_id', testId)
+        .eq('user_id', uid)
+        .maybeSingle();
+    if (row == null) return null;
+    AppLogger.rpcShape('ai_reports.select', row);
+    return AiCoachReport.fromJson(row);
+  }, TestErrorContext.load);
+
+  @override
+  Future<List<AiCoachReport>> allAiReports(String testId) => _guard(() async {
+    final rows = await _client
+        .from('ai_reports')
+        .select()
+        .eq('test_id', testId)
+        .order('created_at', ascending: false);
+    return [
+      for (final r in rows as List)
+        AiCoachReport.fromJson(r as Map<String, dynamic>),
+    ];
+  }, TestErrorContext.load);
+
+  @override
+  Future<ResultBatch?> batchForTest(String testId) => _guard(() async {
+    // Live: UNIQUE(test_id); SELECT policy "trigger sees batches"
+    // (GENERATE_RESULTS) — anyone else simply gets no row. A read, never
+    // the generating RPC, so opening a screen creates nothing.
+    final row = await _client
+        .from('result_batches')
+        .select()
+        .eq('test_id', testId)
+        .maybeSingle();
+    if (row == null) return null;
+    AppLogger.rpcShape('result_batches.select', row);
+    return ResultBatch.fromJson(row);
+  }, TestErrorContext.load);
+
+  @override
+  Future<CoachReportJob> requestCoachReports(String testId) =>
+      _guard(() async {
+        final response = await _client.rpc(
+          'rpc_request_coach_reports',
+          params: {'p_test_id': testId},
+        );
+        AppLogger.rpcShape('rpc_request_coach_reports', response);
+        final data = response is List && response.isNotEmpty
+            ? response.first
+            : response;
+        if (data is Map && (data['job_id'] ?? data['id']) != null) {
+          return CoachReportJob.fromJson(Map<String, dynamic>.from(data));
+        }
+        throw const DataError(
+          message: 'Coach report request returned an unexpected response.',
+        );
+      }, TestErrorContext.generic);
 
   /// Parses the RPC jsonb (`{batch_id, test_id, status, reports_done,
   /// reports_total, errors, reused}`; a one-element list is tolerated).

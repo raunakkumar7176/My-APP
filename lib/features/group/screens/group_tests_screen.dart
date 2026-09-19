@@ -64,6 +64,16 @@ class _GroupTestsScreenState extends State<GroupTestsScreen> {
     if (mounted) await _c.refresh();
   }
 
+  Future<void> _viewResults(Test t) async {
+    await context.push('/groups/${widget.groupId}/tests/${t.id}/results');
+    if (mounted) await _c.refresh();
+  }
+
+  bool _hasResults(Test t) =>
+      t.status == TestStatus.completed ||
+      t.status == TestStatus.ended ||
+      t.status == TestStatus.evaluated;
+
   Future<void> _manage(Test t) async {
     await GroupTestManageSheet.show(
       context,
@@ -71,6 +81,7 @@ class _GroupTestsScreenState extends State<GroupTestsScreen> {
       test: t,
       onOpen: () => _open(t),
       onEdit: () => _edit(t),
+      onViewResults: _hasResults(t) ? () => _viewResults(t) : null,
     );
   }
 
@@ -245,6 +256,7 @@ class GroupTestManageSheet extends StatefulWidget {
     required this.test,
     required this.onOpen,
     required this.onEdit,
+    this.onViewResults,
     super.key,
   });
 
@@ -252,6 +264,7 @@ class GroupTestManageSheet extends StatefulWidget {
   final Test test;
   final VoidCallback onOpen;
   final VoidCallback onEdit;
+  final VoidCallback? onViewResults;
 
   static Future<void> show(
     BuildContext context, {
@@ -259,6 +272,7 @@ class GroupTestManageSheet extends StatefulWidget {
     required Test test,
     required VoidCallback onOpen,
     required VoidCallback onEdit,
+    VoidCallback? onViewResults,
   }) {
     return showModalBottomSheet<void>(
       context: context,
@@ -268,6 +282,7 @@ class GroupTestManageSheet extends StatefulWidget {
         test: test,
         onOpen: onOpen,
         onEdit: onEdit,
+        onViewResults: onViewResults,
       ),
     );
   }
@@ -515,6 +530,13 @@ class _GroupTestManageSheetState extends State<GroupTestManageSheet> {
                       onPressed: busy ? null : _deleteDraft,
                       icon: const Icon(Icons.delete_outline, size: 18),
                       label: const Text('Delete draft'),
+                    ),
+                  if (widget.onViewResults != null)
+                    OutlinedButton.icon(
+                      key: const Key('manage_view_results'),
+                      onPressed: busy ? null : widget.onViewResults,
+                      icon: const Icon(Icons.bar_chart, size: 18),
+                      label: const Text('Results'),
                     ),
                 ],
               ),

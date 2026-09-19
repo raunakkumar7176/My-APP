@@ -12,6 +12,7 @@ import 'package:my_praperation/features/test/data/attempt_repository.dart';
 import 'package:my_praperation/features/test/data/question_repository.dart';
 import 'package:my_praperation/features/test/data/result_repository.dart';
 import 'package:my_praperation/features/group/domain/group_permission.dart';
+import 'package:my_praperation/features/group/domain/group_test_results.dart';
 import 'package:my_praperation/features/test/data/test_repository.dart';
 import 'package:my_praperation/features/test/models/question_draft.dart';
 
@@ -560,10 +561,127 @@ class FakeResultRepository implements ResultRepository {
   /// real repository so controller tests exercise the same mapping.
   Map<String, dynamic>? rpcResponse;
 
+  // ── G11: group test results. When [groups] and [tests] are attached the
+  // LIVE rules are mirrored:
+  //   results SELECT      → own row OR VIEW_GROUP_ANALYTICS in the test's group
+  //   result_batches SEL  → GENERATE_RESULTS in the test's group
+  //   ai_reports SELECT   → own row OR GENERATE_RESULTS
+  //   rpc_generate_results → creator OR GENERATE_RESULTS, else
+  //                          GENERATE_RESULTS_FORBIDDEN; UNIQUE batch per test
+  //   rpc_request_coach_reports (proposed) → same gate + finished batch;
+  //                          idempotent job per (test, batch)
+  // Without them the old canned behaviour stays.
+  InMemoryGroupRepository? groups;
+  FakeTestRepository? tests;
+  String currentUser = 'u-1';
+  final Map<String, List<Result>> resultsByTest = {};
+  final Map<String, List<AiCoachReport>> reportsByTest = {};
+  final Map<String, ResultBatch> batchByTest = {};
+  final Map<String, CoachReportJob> jobByTest = {};
+  Object? failGenerateWith;
+  Object? failRequestWith;
+
+  String? _groupOf(String testId) => tests?.rows[testId]?.groupId;
+  bool _has(String testId, GroupPermission p) {
+    final g = _groupOf(testId);
+    if (g == null || groups == null) return false;
+    return groups!.hasPermission(g, p);
+  }
+
+  bool _isCreator(String testId) => tests?.rows[testId]?.createdBy == currentUser;
+
   @override
   Future<ResultBatch> generateResults(String testId) async {
     calls.add('generate:$testId');
-    if (batch != null) return batch!;
-    return SupabaseResultRepository.batchFromRpcResponse(rpcResponse);
+    if (failGenerateWith != null) throw failGenerateWith!;
+    if (groups == null || tests == null) {
+      if (batch != null) return batch!;
+      return SupabaseResultRepository.batchFromRpcResponse(rpcResponse);
+    }
+    if (!_isCreator(testId) && !_has(testId, GroupPermission.generateResults)) {
+      throw const DataError(message: 'GENERATE_RESULTS_FORBIDDEN');
+    }
+    final existing = batchByTest[testId];
+    if (existing != null) return existing; // live: UNIQUE(test_id), reused
+    final rows = resultsByTest[testId] ?? const [];
+    final b = ResultBatch(
+      id: 'b-$testId',
+      testId: testId,
+      requestedBy: currentUser,
+      status: BatchStatus.completed,
+      reportsDone: rows.length,
+      reportsTotal: rows.length,
+      completedAt: DateTime(2026, 9, 19, 12),
+    );
+    batchByTest[testId] = b;
+    return b;
+  }
+
+  @override
+  Future<List<Result>> resultsForTest(String testId) async {
+    calls.add('results:$testId');
+    final rows = resultsByTest[testId] ?? const [];
+    if (groups == null) return rows;
+    if (_has(testId, GroupPermission.viewGroupAnalytics)) {
+      return [...rows]..sort((a, b) => (b.score ?? 0).compareTo(a.score ?? 0));
+    }
+    return rows.where((r) => r.userId == currentUser).toList();
+  }
+
+  @override
+  Future<AiCoachReport?> myAiReport(String testId) async {
+    calls.add('myReport:$testId');
+    return (reportsByTest[testId] ?? const [])
+        .where((r) => r.userId == currentUser)
+        .firstOrNull;
+  }
+
+  @override
+  Future<List<AiCoachReport>> allAiReports(String testId) async {
+    calls.add('allReports:$testId');
+    final rows = reportsByTest[testId] ?? const [];
+    if (groups == null) return rows;
+    if (_has(testId, GroupPermission.generateResults)) return rows;
+    return rows.where((r) => r.userId == currentUser).toList();
+  }
+
+  @override
+  Future<ResultBatch?> batchForTest(String testId) async {
+    calls.add('batch:$testId');
+    if (groups == null) return batch;
+    if (!_has(testId, GroupPermission.generateResults)) return null;
+    return batchByTest[testId];
+  }
+
+  @override
+  Future<CoachReportJob> requestCoachReports(String testId) async {
+    calls.add('requestCoach:$testId');
+    if (failRequestWith != null) throw failRequestWith!;
+    if (!_isCreator(testId) && !_has(testId, GroupPermission.generateResults)) {
+      throw const DataError(message: 'GENERATE_RESULTS_FORBIDDEN');
+    }
+    final b = batchByTest[testId];
+    if (b == null || !(b.isCompleted || b.isPartiallyCompleted)) {
+      throw const DataError(message: 'RESULTS_NOT_GENERATED');
+    }
+    final existing = jobByTest[testId];
+    if (existing != null) {
+      return CoachReportJob(
+        jobId: existing.jobId,
+        status: existing.status,
+        reportsDone: existing.reportsDone,
+        reportsTotal: existing.reportsTotal,
+        created: false,
+      );
+    }
+    final job = CoachReportJob(
+      jobId: 'job-$testId',
+      status: 'pending',
+      reportsDone: (reportsByTest[testId] ?? const []).length,
+      reportsTotal: (resultsByTest[testId] ?? const []).length,
+      created: true,
+    );
+    jobByTest[testId] = job;
+    return job;
   }
 }
