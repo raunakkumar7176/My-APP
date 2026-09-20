@@ -445,6 +445,31 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 onTap: () => context.push('/groups'),
               ),
+              const Divider(height: 1),
+              // Calendar V1: routines and scheduled tests by day.
+              ListTile(
+                key: const Key('home_calendar'),
+                leading: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: AppColors.primaryLight.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.calendar_month_outlined,
+                    color: AppColors.primaryLight,
+                  ),
+                ),
+                title: const Text('Calendar'),
+                subtitle: const Text('Your routines and upcoming tests'),
+                trailing: Icon(
+                  Icons.chevron_right,
+                  color: Theme.of(context).colorScheme.onSurface
+                      .withValues(alpha: 0.5),
+                ),
+                onTap: () => context.push('/calendar'),
+              ),
             ],
           ),
         ),

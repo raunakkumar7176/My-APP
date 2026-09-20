@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../core/services/auth_service.dart';
 import '../core/services/profile_service.dart';
+import '../features/calendar/screens/calendar_screen.dart';
 import '../features/auth/auth_screen.dart';
 import '../features/auth/splash_screen.dart';
 import '../features/group/screens/group_create_screen.dart';
@@ -98,6 +99,12 @@ final class AppRouter {
         path: '/profile',
         name: 'profile',
         builder: (context, state) => const ProfileScreen(),
+      ),
+      // Calendar V1: routines + scheduled tests on one month grid (read-only).
+      GoRoute(
+        path: '/calendar',
+        name: 'calendar',
+        builder: (context, state) => const CalendarScreen(),
       ),
       GoRoute(
         path: '/subjects',
