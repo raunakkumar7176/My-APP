@@ -91,6 +91,14 @@ class _TestListingScreenState extends State<TestListingScreen>
     return Scaffold(
       appBar: AppBar(
         title: const Text('Tests'),
+        actions: [
+          IconButton(
+            key: const Key('templates_button'),
+            tooltip: 'Templates',
+            icon: const Icon(Icons.dashboard_outlined),
+            onPressed: () => context.push('/tests/templates'),
+          ),
+        ],
         bottom: TabBar(
           controller: _tabs,
           isScrollable: true,

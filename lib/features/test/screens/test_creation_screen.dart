@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/theme/app_colors.dart';
 import '../../../core/errors/app_error.dart';
+import '../../../core/models/test_template.dart';
 import '../domain/attempt_policy.dart';
 import '../domain/creation_settings.dart';
 import '../domain/test_kind.dart';
@@ -22,6 +23,7 @@ class TestCreationScreen extends StatefulWidget {
     this.controller,
     this.initialSource,
     this.initialGroupId,
+    this.template,
     super.key,
   });
 
@@ -36,6 +38,11 @@ class TestCreationScreen extends StatefulWidget {
 
   /// Present when editing an existing draft (/tests/:id/edit).
   final String? testId;
+
+  /// G19: when present, the wizard is pre-populated from this template.
+  /// The user can modify the configuration before creating the actual test.
+  final TestTemplate? template;
+
   final TestCreationController? controller;
 
   // Syllabus (scope) comes before Source/Questions so a difficulty target
@@ -74,6 +81,8 @@ class _TestCreationScreenState extends State<TestCreationScreen> {
     _c.loadGroups();
     if (widget.testId != null) {
       _c.loadForEdit();
+    } else if (widget.template != null) {
+      _c.loadFromTemplate(widget.template!);
     } else if (widget.initialGroupId != null) {
       _c.presetGroup(widget.initialGroupId!);
     }
@@ -255,7 +264,11 @@ class _TestCreationScreenState extends State<TestCreationScreen> {
     final busy = _c.isBusy;
     return Scaffold(
       appBar: AppBar(
-        title: Text(_c.isPersisted ? 'Edit Test' : 'Create Test'),
+        title: Text(
+          _c.isPersisted
+              ? 'Edit Test'
+              : (widget.template != null ? 'Create from Template' : 'Create Test'),
+        ),
         leading: IconButton(
           icon: const Icon(Icons.close),
           onPressed: busy ? null : () => context.pop(),

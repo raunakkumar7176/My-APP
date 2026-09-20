@@ -14,6 +14,7 @@ import '../domain/publish_readiness.dart';
 import '../domain/test_kind.dart';
 import '../models/question_draft.dart';
 import 'disposable_notifier.dart';
+import '../../../core/models/test_template.dart';
 
 /// Owns the whole create/edit/publish orchestration. Screens render its
 /// state and call its methods; every server rule is re-checked by the RPCs.
@@ -237,6 +238,57 @@ class TestCreationController extends DisposableNotifier {
       settings: t.settings,
     );
     questionConfig = QuestionConfig.fromSettings(t.settings);
+  }
+
+  // ── G19: template preloading ──
+
+  /// Loads the wizard state from a [TestTemplate]'s configuration.
+  /// The user can modify the configuration before creating the actual test.
+  /// Creating a test from a template produces an independent entity;
+  /// template edits never modify the created test.
+  void loadFromTemplate(TestTemplate template) {
+    final config = template.configuration;
+    title = template.title;
+    description = template.description;
+
+    // Resolve kind from configuration.
+    final kindName = config['kind'] as String?;
+    if (kindName != null) {
+      kind = TestKind.values.firstWhere(
+        (k) => k.name == kindName,
+        orElse: () => TestKind.self,
+      );
+    }
+
+    // Group association.
+    groupId = template.groupId ?? config['group_id'] as String?;
+
+    // Numeric settings.
+    durationSec = (config['duration_sec'] as num?)?.toInt();
+    marksPerQuestion = (config['marks_per_question'] as num?)?.toDouble();
+    negativeMarks = (config['negative_marks'] as num?)?.toDouble();
+    maxParticipants = (config['max_participants'] as num?)?.toInt();
+    allowLateJoin = config['allow_late_join'] as bool? ?? false;
+
+    // Code settings.
+    accessCode = config['access_code'] as String?;
+    joinCode = config['join_code'] as String?;
+
+    // Schedule settings.
+    startsAt = config['starts_at'] != null
+        ? DateTime.tryParse(config['starts_at'] as String)
+        : null;
+
+    // Nested settings objects.
+    final settingsMap = config['settings'] as Map<String, dynamic>?;
+    attemptSettings = AttemptSettings.fromSettings(settingsMap);
+    lateJoin = LateJoinSettings.fromTest(
+      allowLateJoin: allowLateJoin,
+      settings: settingsMap,
+    );
+    questionConfig = QuestionConfig.fromSettings(settingsMap);
+
+    notifyListeners();
   }
 
   // ── form mutations ──

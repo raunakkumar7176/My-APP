@@ -25,11 +25,14 @@ import '../features/study/syllabus_detail_screen.dart';
 import '../features/study/syllabus_screen.dart';
 import '../features/test/screens/question_review_screen.dart';
 import '../features/test/screens/test_creation_screen.dart';
+import '../features/test/screens/template_listing_screen.dart';
+import '../features/test/screens/template_form_screen.dart';
 import '../features/test/widgets/question_source_step.dart';
 import '../features/test/screens/test_detail_screen.dart';
 import '../features/test/screens/test_listing_screen.dart';
 import '../features/test/screens/test_result_screen.dart';
 import '../features/test/screens/test_taking_screen.dart';
+import '../../core/models/test_template.dart';
 
 final class AppRouter {
   AppRouter._();
@@ -236,16 +239,38 @@ final class AppRouter {
             name: 'test-listing-drafts',
             builder: (context, state) => const TestListingScreen(initialTab: 3),
           ),
+          // G19: test templates
+          GoRoute(
+            path: 'templates',
+            name: 'template-listing',
+            builder: (context, state) => const TemplateListingScreen(),
+            routes: [
+              GoRoute(
+                path: 'create',
+                name: 'template-create',
+                builder: (context, state) => const TemplateFormScreen(),
+              ),
+              GoRoute(
+                path: ':templateId/edit',
+                name: 'template-edit',
+                builder: (context, state) => TemplateFormScreen(
+                  templateId: state.pathParameters['templateId']!,
+                ),
+              ),
+            ],
+          ),
           GoRoute(
             path: 'create',
             name: 'test-create',
             builder: (context, state) {
               final s = state.uri.queryParameters['source'];
+              final template = state.extra as TestTemplate?;
               return TestCreationScreen(
                 initialGroupId: state.uri.queryParameters['group'],
                 initialSource: QuestionSource.values
                     .cast<QuestionSource?>()
                     .firstWhere((v) => v?.name == s, orElse: () => null),
+                template: template,
               );
             },
           ),
