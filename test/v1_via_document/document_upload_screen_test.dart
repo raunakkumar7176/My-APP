@@ -55,6 +55,10 @@ class _FakeDocumentService implements DocumentService {
       const ExtractedContent(blocks: [], sourceFormat: DocumentFormat.pdf);
 
   @override
+  ExtractedContent extractFromImages(List<Uint8List> pages) =>
+      const ExtractedContent(blocks: [], sourceFormat: DocumentFormat.camera);
+
+  @override
   List<DetectedQuestion> detectQuestions(ExtractedContent content) => detectResult;
 }
 
@@ -101,16 +105,20 @@ void main() {
   ];
 
   group('Idle / error / loading states', () {
-    testWidgets('idle state shows the format chips and a Select File button', (tester) async {
+    testWidgets('idle state shows the format chips and a Choose File button', (tester) async {
       final service = _FakeDocumentService();
       final controller = DocumentUploadController(documentService: service);
       await tester.pumpWidget(host(DocumentUploadScreen(controller: controller)));
 
-      expect(find.text('Import Questions from Document'), findsOneWidget);
+      // Idle state now offers both a camera path (Take Photos) and a file
+      // path (Choose File) since the camera/content-to-test convergence;
+      // there is no longer a dedicated "Import Questions from Document"
+      // headline or "Select File" button.
+      expect(find.text('How do you want to add it?'), findsOneWidget);
       expect(find.text('PDF'), findsOneWidget);
       expect(find.text('DOCX'), findsOneWidget);
       expect(find.text('XLSX'), findsOneWidget);
-      expect(find.text('Select File'), findsOneWidget);
+      expect(find.byKey(const Key('doc_import_choose_file')), findsOneWidget);
     });
 
     testWidgets('pick failure shows the error state with retry', (tester) async {
@@ -118,7 +126,7 @@ void main() {
       final controller = DocumentUploadController(documentService: service);
       await tester.pumpWidget(host(DocumentUploadScreen(controller: controller)));
 
-      await tester.tap(find.text('Select File'));
+      await tester.tap(find.byKey(const Key('doc_import_choose_file')));
       await tester.pumpAndSettle();
 
       expect(find.byIcon(Icons.error_outline), findsOneWidget);
@@ -130,7 +138,7 @@ void main() {
       final controller = DocumentUploadController(documentService: service);
       await tester.pumpWidget(host(DocumentUploadScreen(controller: controller)));
 
-      await tester.tap(find.text('Select File'));
+      await tester.tap(find.byKey(const Key('doc_import_choose_file')));
       await tester.pumpAndSettle();
 
       expect(find.text('No questions detected'), findsOneWidget);
@@ -145,7 +153,7 @@ void main() {
       final service = _FakeDocumentService()..detectResult = questions;
       final controller = DocumentUploadController(documentService: service);
       await tester.pumpWidget(host(DocumentUploadScreen(controller: controller)));
-      await tester.tap(find.text('Select File'));
+      await tester.tap(find.byKey(const Key('doc_import_choose_file')));
       await tester.pumpAndSettle();
       return controller;
     }
@@ -245,7 +253,7 @@ void main() {
       await tester.pumpWidget(MaterialApp.router(routerConfig: router));
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Select File'));
+      await tester.tap(find.byKey(const Key('doc_import_choose_file')));
       await tester.pumpAndSettle();
 
       // Fix both questions via Edit (pick option index 1 as correct) so

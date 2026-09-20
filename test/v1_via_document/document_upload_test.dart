@@ -97,6 +97,15 @@ class FakeDocumentService implements DocumentService {
       sourceFormat: DocumentFormat.pdf,
     );
   }
+
+  @override
+  ExtractedContent extractFromImages(List<Uint8List> pages) {
+    calls.add('extractFromImages');
+    return nextContent ?? const ExtractedContent(
+      blocks: [],
+      sourceFormat: DocumentFormat.camera,
+    );
+  }
 }
 
 void main() {
@@ -131,8 +140,8 @@ void main() {
     test('books is available', () {
       expect(QuestionSource.books.isAvailable, isTrue);
     });
-    test('ai is NOT available', () {
-      expect(QuestionSource.ai.isAvailable, isFalse);
+    test('ai is available (V1 — implemented)', () {
+      expect(QuestionSource.ai.isAvailable, isTrue);
     });
   });
 
