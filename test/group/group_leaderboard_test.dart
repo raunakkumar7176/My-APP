@@ -149,14 +149,19 @@ void main() {
       expect(c.myEntry, isNull);
     });
 
-    test('member loads leaderboard and sees their own entry', () async {
+    test('member receives the full server ranking and their TRUE rank (F-10)', () async {
       final f = _fixture('u-me');
       final c = _ctl(f, 'u-me');
       await c.load();
       expect(c.accessDenied, isFalse);
-      expect(c.entries.length, 1);
-      expect(c.entries.first.isCurrentUser, isTrue);
+      expect(c.entries.length, 2);
+      expect(c.entries.first.userId, 'u-b');
+      expect(c.entries.first.rank, 1);
       expect(c.myEntry?.userId, 'u-me');
+      expect(c.myEntry?.rank, 2);
+      expect(c.entries.first.label, 'Bea'); // server full_name, no profile read
+      // Only the RPC was used: no direct results rows for other users.
+      expect(f.results.calls, ['leaderboard:t-1']);
     });
 
     test('owner sees all results through the function bypass', () async {
@@ -183,6 +188,68 @@ void main() {
       failing.fail = false;
       await c.load();
       expect(c.error, isNull);
+    });
+  });
+
+  group('server path (F-10)', () {
+    test('entries keep the server order and rank; ties share the rank', () {
+      final e = LeaderboardEntry.fromServerRows([
+        {'rank': 1, 'user_id': 'a', 'full_name': 'Ann', 'score': 10, 'max_score': 10, 'percentage': 100, 'accuracy': 100},
+        {'rank': 2, 'user_id': 'b', 'full_name': 'Bob', 'score': 9, 'max_score': 10, 'percentage': 90, 'accuracy': 90},
+        {'rank': 2, 'user_id': 'me', 'full_name': null, 'score': 9, 'max_score': 10, 'percentage': 90, 'accuracy': 90},
+        {'rank': 4, 'user_id': 'd', 'full_name': '', 'score': 8, 'max_score': 10, 'percentage': 80, 'accuracy': 80},
+      ], currentUserId: 'me', labelFor: (u) => 'roster-$u');
+      expect(e.map((x) => x.rank), [1, 2, 2, 4]);
+      expect(e.map((x) => x.label), ['Ann', 'Bob', 'You', 'roster-d']);
+      expect(e[2].isCurrentUser, isTrue);
+      expect(e[0].score, 10.0);
+    });
+
+    test('the controller never reads results rows for ranking but probes permissions for F-10 visibility', () async {
+      final f = _fixture('u-me');
+      final c = _ctl(f, 'u-me');
+      await c.load();
+      expect(f.results.calls.where((x) => x.startsWith('results:')), isEmpty);
+      // F-10: permissionsFor is probed to determine canSeeFullLeaderboard
+      expect(f.groups.calls.where((x) => x.startsWith('permissionsFor')), isNotEmpty);
+      expect(c.canSeeFullLeaderboard, isFalse); // u-me is a member, not owner, no analytics
+    });
+
+    test('participant who is no longer a member still gets rows only via the server rule (mirror)', () async {
+      final f = _fixture('u-b');
+      f.groups.groups['g-1']!.roles.remove('u-b');
+      // Group screen denies (membership guard) — the RPC alone would still serve a participant.
+      final c = _ctl(f, 'u-b');
+      await c.load();
+      expect(c.accessDenied, isTrue);
+      expect(await f.results.leaderboard('t-1'), isNotEmpty);
+    });
+
+    test('stranger gets 0 rows from the RPC (mirror of the remediated function)', () async {
+      final f = _fixture('u-stranger');
+      expect(await f.results.leaderboard('t-1'), isEmpty);
+    });
+
+    test('owner gets canSeeFullLeaderboard = true', () async {
+      final f = _fixture('u-owner');
+      final c = _ctl(f, 'u-owner');
+      await c.load();
+      expect(c.canSeeFullLeaderboard, isTrue);
+      expect(c.isOwner, isTrue);
+    });
+
+    test('member without analytics gets canSeeFullLeaderboard = false', () async {
+      final f = _fixture('u-me');
+      final c = _ctl(f, 'u-me');
+      await c.load();
+      expect(c.canSeeFullLeaderboard, isFalse);
+    });
+
+    test('leader with viewGroupAnalytics gets canSeeFullLeaderboard = true', () async {
+      final f = _fixture('u-lead');
+      final c = _ctl(f, 'u-lead');
+      await c.load();
+      expect(c.canSeeFullLeaderboard, isTrue);
     });
   });
 
@@ -222,7 +289,7 @@ void main() {
       expect(c.entries, isEmpty);
     });
 
-    test('forged user id: no cross-user result leak', () async {
+    test('direct results rows stay RLS-scoped (no cross-user leak outside the RPC)', () async {
       final f = _fixture('u-me');
       final rows = await f.results.resultsForTest('t-1');
       expect(rows.any((r) => r.userId == 'u-b'), isFalse);
@@ -283,7 +350,17 @@ void main() {
       return c;
     }
 
-    testWidgets('leader sees all participants ranked', (tester) async {
+    testWidgets('owner sees full leaderboard with participant count', (tester) async {
+      final c = await pump(tester, user: 'u-owner');
+      expect(find.byKey(const Key('leaderboard_list')), findsOneWidget);
+      expect(find.byKey(const Key('leaderboard_entry_u-b')), findsOneWidget);
+      expect(find.byKey(const Key('leaderboard_entry_u-me')), findsOneWidget);
+      expect(find.byKey(const Key('leaderboard_count')), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('leader with analytics permission sees full leaderboard', (tester) async {
       final c = await pump(tester, user: 'u-lead');
       expect(find.byKey(const Key('leaderboard_list')), findsOneWidget);
       expect(find.byKey(const Key('leaderboard_entry_u-b')), findsOneWidget);
@@ -293,10 +370,17 @@ void main() {
       c.dispose();
     });
 
-    testWidgets('member sees their own entry', (tester) async {
+    testWidgets('member sees only their own result (F-10)', (tester) async {
       final c = await pump(tester, user: 'u-me');
+      expect(find.byKey(const Key('leaderboard_list')), findsOneWidget);
       expect(find.byKey(const Key('leaderboard_entry_u-me')), findsOneWidget);
+      // F-10: member must NOT see other participants' entries
+      expect(find.byKey(const Key('leaderboard_entry_u-b')), findsNothing);
       expect(find.byKey(const Key('my_leaderboard_summary')), findsOneWidget);
+      expect(find.textContaining('Your result:'), findsOneWidget);
+      // F-10: member must NOT see participant count or rank number
+      expect(find.textContaining('ranked participant'), findsNothing);
+      expect(find.textContaining('Your rank:'), findsNothing);
       await tester.pumpWidget(const SizedBox());
       c.dispose();
     });
@@ -337,15 +421,24 @@ void main() {
       await tester.pumpWidget(const SizedBox());
       c.dispose();
     });
+
+    testWidgets('owner: full leaderboard with participant count (no own entry, no summary)', (tester) async {
+      final c = await pump(tester, user: 'u-owner');
+      expect(find.byKey(const Key('leaderboard_count')), findsOneWidget);
+      expect(find.text('2 ranked participants'), findsOneWidget);
+      expect(find.byKey(const Key('my_leaderboard_summary')), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
   });
 }
 
 class _SlowResults extends _Delegating {
   _SlowResults(super.inner);
   @override
-  Future<List<Result>> resultsForTest(String testId) async {
+  Future<List<Map<String, dynamic>>> leaderboard(String testId) async {
     await Future<void>.delayed(const Duration(milliseconds: 10));
-    return inner.resultsForTest(testId);
+    return inner.leaderboard(testId);
   }
 }
 
@@ -353,9 +446,9 @@ class _FailingResults extends _Delegating {
   _FailingResults(super.inner);
   bool fail = true;
   @override
-  Future<List<Result>> resultsForTest(String testId) {
+  Future<List<Map<String, dynamic>>> leaderboard(String testId) {
     if (fail) throw const DataError(message: 'NETWORK_DOWN');
-    return inner.resultsForTest(testId);
+    return inner.leaderboard(testId);
   }
 }
 
@@ -370,6 +463,8 @@ class _Delegating implements ResultRepository {
   Future<ResultBatch> generateResults(String testId) => inner.generateResults(testId);
   @override
   Future<List<Result>> resultsForTest(String testId) => inner.resultsForTest(testId);
+  @override
+  Future<List<Map<String, dynamic>>> leaderboard(String testId) => inner.leaderboard(testId);
   @override
   Future<AiCoachReport?> myAiReport(String testId) => inner.myAiReport(testId);
   @override

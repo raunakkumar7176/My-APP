@@ -6,12 +6,12 @@ import '../../test/domain/test_lifecycle.dart';
 import '../domain/group_test_results.dart';
 import '../state/group_leaderboard_controller.dart';
 
-/// Group test leaderboard (G12). Shows a deterministic ranking of all
-/// participants for a single completed group test. Derived entirely from
-/// stored `results` rows — no AI, no score computation.
+/// Group test leaderboard (G12, F-10 remediation). Shows the server ranking
+/// returned by `rpc_get_leaderboard` for a single group test — no AI, no
+/// client-side ranking, no `results` reads for other users.
 ///
-/// Access: any group member may view the leaderboard (the same data RLS
-/// already authorises). Non-members, removed members, anon, and
+/// Access: the server serves rows to the test creator, members of the test's
+/// group and participants (remediated 2026-09-20). Non-members, removed members, anon, and
 /// cross-group callers are denied by the server.
 class GroupLeaderboardScreen extends StatefulWidget {
   const GroupLeaderboardScreen({
@@ -88,12 +88,16 @@ class _GroupLeaderboardScreenState extends State<GroupLeaderboardScreen> {
     }
     final test = _c.test!;
     final theme = Theme.of(context);
-    final entries = _c.entries;
+    // F-10: ordinary members see only their own result; owners / analytics
+    // holders see the full server-ranked leaderboard.
+    final displayEntries = _c.canSeeFullLeaderboard
+        ? _c.entries
+        : [?_c.myEntry];
     return Scaffold(
       appBar: AppBar(title: Text('${test.title} · Leaderboard')),
       body: RefreshIndicator(
         onRefresh: _c.refresh,
-        child: entries.isEmpty
+        child: displayEntries.isEmpty
             ? ListView(
                 key: const Key('leaderboard_empty_list'),
                 children: [
@@ -128,10 +132,10 @@ class _GroupLeaderboardScreenState extends State<GroupLeaderboardScreen> {
             : ListView.builder(
                 key: const Key('leaderboard_list'),
                 padding: const EdgeInsets.all(16),
-                itemCount: entries.length + 1, // +1 for summary header
+                itemCount: displayEntries.length + 1, // +1 for summary header
                 itemBuilder: (context, index) {
-                  if (index == 0) return _header(theme, test, entries);
-                  final e = entries[index - 1];
+                  if (index == 0) return _header(theme, test, _c.entries);
+                  final e = displayEntries[index - 1];
                   return _entryTile(theme, e);
                 },
               ),
@@ -141,6 +145,7 @@ class _GroupLeaderboardScreenState extends State<GroupLeaderboardScreen> {
 
   Widget _header(ThemeData theme, Test test, List<LeaderboardEntry> entries) {
     final my = _c.myEntry;
+    final fullView = _c.canSeeFullLeaderboard;
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Column(
@@ -152,21 +157,44 @@ class _GroupLeaderboardScreenState extends State<GroupLeaderboardScreen> {
             style: theme.textTheme.bodySmall,
           ),
           const SizedBox(height: 4),
-          Text(
-            '${entries.length} participant${entries.length == 1 ? '' : 's'}',
-            key: const Key('leaderboard_count'),
-            style: theme.textTheme.titleSmall,
-          ),
-          if (my != null) ...[
-            const SizedBox(height: 4),
+          if (fullView) ...[
+            // Owner / analytics holder: full ranking with participant count
+            // and per-entry leaderboard tiles (rendered by the parent list).
             Text(
-              'Your rank: ${my.rank} · ${_num(my.score)} / ${_num(my.maxScore)}'
-              '${my.percentage != null ? ' · ${_num(my.percentage)}%' : ''}',
-              key: const Key('my_leaderboard_summary'),
-              style: theme.textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
+              '${entries.length} ranked participant${entries.length == 1 ? '' : 's'}',
+              key: const Key('leaderboard_count'),
+              style: theme.textTheme.titleSmall,
             ),
+            if (my != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Your rank: ${my.rank} · ${_num(my.score)} / ${_num(my.maxScore)}'
+                '${my.percentage != null ? ' · ${_num(my.percentage)}%' : ''}',
+                key: const Key('my_leaderboard_summary'),
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ] else ...[
+            // Ordinary member: "Your result" only — no rank, no participant
+            // count, no other users' entries (the server RPC already returns
+            // only the caller's row for members).
+            if (my != null)
+              Text(
+                'Your result: ${_num(my.score)} / ${_num(my.maxScore)}'
+                '${my.percentage != null ? ' · ${_num(my.percentage)}%' : ''}',
+                key: const Key('my_leaderboard_summary'),
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              )
+            else
+              Text(
+                'No result recorded for this test.',
+                key: const Key('my_leaderboard_summary'),
+                style: theme.textTheme.bodyMedium,
+              ),
           ],
           const SizedBox(height: 8),
           const Divider(),

@@ -50,3 +50,6 @@ app.*.map.json
 # Local Supabase dart-defines (never commit)
 dart_defines*.json
 dart-defines*.json
+
+# Backend utility scripts (may contain plaintext credentials)
+tool/
