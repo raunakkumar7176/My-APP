@@ -23,6 +23,8 @@ import '../features/study/material_list_screen.dart';
 import '../features/study/subject_list_screen.dart';
 import '../features/study/syllabus_detail_screen.dart';
 import '../features/study/syllabus_screen.dart';
+import '../features/test/screens/question_bank_screen.dart';
+import '../features/test/screens/question_bank_detail_screen.dart';
 import '../features/test/screens/question_review_screen.dart';
 import '../features/test/screens/test_creation_screen.dart';
 import '../features/test/screens/template_listing_screen.dart';
@@ -33,6 +35,7 @@ import '../features/test/screens/test_listing_screen.dart';
 import '../features/test/screens/test_result_screen.dart';
 import '../features/test/screens/test_taking_screen.dart';
 import '../../core/models/test_template.dart';
+import '../../core/models/question_bank_item.dart';
 
 final class AppRouter {
   AppRouter._();
@@ -316,6 +319,30 @@ final class AppRouter {
         name: 'attempt-review',
         builder: (context, state) =>
             QuestionReviewScreen(attemptId: state.pathParameters['attemptId']!),
+      ),
+      // ── Question Bank (R7) ──
+      GoRoute(
+        path: '/question-bank',
+        name: 'question-bank',
+        builder: (context, state) {
+          final extra = state.extra as Map<String, dynamic>?;
+          final selectionMode = extra?['selectionMode'] as bool? ?? false;
+          final onSelectionConfirmed =
+              extra?['onSelectionConfirmed'] as ValueChanged<List<QuestionBankItem>>?;
+          return QuestionBankScreen(
+            selectionMode: selectionMode,
+            onSelectionConfirmed: onSelectionConfirmed,
+          );
+        },
+        routes: [
+          GoRoute(
+            path: ':questionId',
+            name: 'question-bank-detail',
+            builder: (context, state) => QuestionBankDetailScreen(
+              questionId: state.pathParameters['questionId']!,
+            ),
+          ),
+        ],
       ),
     ],
     errorBuilder: (context, state) => Scaffold(

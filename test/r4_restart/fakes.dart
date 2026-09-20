@@ -4,11 +4,13 @@ import 'package:my_praperation/core/errors/app_error.dart';
 import 'package:my_praperation/core/models/attempt.dart';
 import 'package:my_praperation/core/models/group.dart';
 import 'package:my_praperation/core/models/question.dart';
+import 'package:my_praperation/core/models/question_bank_item.dart';
 import 'package:my_praperation/core/models/result.dart';
 import 'package:my_praperation/core/models/result_batch.dart';
 import 'package:my_praperation/core/models/test.dart';
 import 'package:my_praperation/core/models/test_syllabus.dart';
 import 'package:my_praperation/features/test/data/attempt_repository.dart';
+import 'package:my_praperation/features/test/data/question_bank_repository.dart';
 import 'package:my_praperation/features/test/data/question_repository.dart';
 import 'package:my_praperation/features/test/data/result_repository.dart';
 import 'package:my_praperation/features/group/domain/group_permission.dart';
@@ -392,6 +394,248 @@ class FakeQuestionRepository implements QuestionRepository {
   }
 }
 
+/// Fake Question Bank Repository for testing.
+class FakeQuestionBankRepository implements QuestionBankRepository {
+  final Map<String, QuestionBankItem> items = {};
+  final List<String> calls = [];
+  int nextId = 1;
+  int _cloneCount = 0;
+
+  @override
+  Future<QuestionBankPage> list(QuestionBankFilter filter) async {
+    calls.add('list');
+    var filtered = items.values.toList();
+
+    // Apply filters
+    if (filter.search != null && filter.search!.isNotEmpty) {
+      final search = filter.search!.toLowerCase();
+      filtered = filtered
+          .where((item) => item.question.toLowerCase().contains(search))
+          .toList();
+    }
+    if (filter.status != null) {
+      filtered =
+          filtered.where((item) => item.status == filter.status).toList();
+    }
+    if (filter.difficulty != null) {
+      filtered = filtered
+          .where((item) => item.difficulty == filter.difficulty)
+          .toList();
+    }
+    if (filter.language != null) {
+      filtered = filtered
+          .where((item) => item.language == filter.language)
+          .toList();
+    }
+    if (filter.questionType != null) {
+      filtered = filtered
+          .where((item) => item.questionType == filter.questionType)
+          .toList();
+    }
+
+    final offset = filter.offset;
+    final limit = filter.pageSize;
+    final paged = filtered.skip(offset).take(limit).toList();
+
+    return QuestionBankPage(
+      items: paged,
+      total: filtered.length,
+      offset: offset,
+      pageSize: limit,
+    );
+  }
+
+  @override
+  Future<QuestionBankItem?> getById(String id) async {
+    calls.add('getById:$id');
+    return items[id];
+  }
+
+  @override
+  Future<int> getAvailableCount({
+    String? subjectName,
+    String? chapter,
+    String? difficulty,
+    String? language,
+  }) async {
+    calls.add('getAvailableCount');
+    return items.values
+        .where((item) => item.status == 'approved')
+        .length;
+  }
+
+  @override
+  Future<String> create({
+    required String question,
+    required List<QuestionBankOption> options,
+    required int correctOption,
+    String explanation = '',
+    String? subjectId,
+    String subjectName = '',
+    String chapter = '',
+    String? topicNodeId,
+    String difficulty = 'medium',
+    String language = 'en',
+    String questionType = 'mcq',
+    String source = 'manual',
+  }) async {
+    calls.add('create:$question');
+    final id = 'qb-${nextId++}';
+    items[id] = QuestionBankItem(
+      id: id,
+      question: question,
+      options: options,
+      correctOption: correctOption,
+      explanation: explanation,
+      subjectId: subjectId,
+      subjectName: subjectName,
+      chapter: chapter,
+      topicNodeId: topicNodeId,
+      difficulty: difficulty,
+      language: language,
+      questionType: questionType,
+      source: source,
+      createdAt: DateTime.now(),
+    );
+    return id;
+  }
+
+  @override
+  Future<void> update({
+    required String id,
+    String? question,
+    List<QuestionBankOption>? options,
+    int? correctOption,
+    String? explanation,
+    String? subjectId,
+    String? subjectName,
+    String? chapter,
+    String? topicNodeId,
+    String? difficulty,
+    String? language,
+    String? questionType,
+    String? status,
+  }) async {
+    calls.add('update:$id');
+    final existing = items[id];
+    if (existing == null) throw const DataError(message: 'Question not found');
+
+    items[id] = QuestionBankItem(
+      id: existing.id,
+      question: question ?? existing.question,
+      options: options ?? existing.options,
+      correctOption: correctOption ?? existing.correctOption,
+      explanation: explanation ?? existing.explanation,
+      subjectId: subjectId ?? existing.subjectId,
+      subjectName: subjectName ?? existing.subjectName,
+      chapter: chapter ?? existing.chapter,
+      topicNodeId: topicNodeId ?? existing.topicNodeId,
+      difficulty: difficulty ?? existing.difficulty,
+      language: language ?? existing.language,
+      questionType: questionType ?? existing.questionType,
+      source: existing.source,
+      createdBy: existing.createdBy,
+      timesUsed: existing.timesUsed,
+      status: status ?? existing.status,
+      createdAt: existing.createdAt,
+    );
+  }
+
+  @override
+  Future<void> archive(String id) async {
+    calls.add('archive:$id');
+    final existing = items[id];
+    if (existing == null) throw const DataError(message: 'Question not found');
+
+    items[id] = QuestionBankItem(
+      id: existing.id,
+      question: existing.question,
+      options: existing.options,
+      correctOption: existing.correctOption,
+      explanation: existing.explanation,
+      subjectId: existing.subjectId,
+      subjectName: existing.subjectName,
+      chapter: existing.chapter,
+      topicNodeId: existing.topicNodeId,
+      difficulty: existing.difficulty,
+      language: existing.language,
+      questionType: existing.questionType,
+      source: existing.source,
+      createdBy: existing.createdBy,
+      timesUsed: existing.timesUsed,
+      status: 'archived',
+      createdAt: existing.createdAt,
+      archivedAt: DateTime.now(),
+    );
+  }
+
+  @override
+  Future<void> restore(String id) async {
+    calls.add('restore:$id');
+    final existing = items[id];
+    if (existing == null) throw const DataError(message: 'Question not found');
+
+    items[id] = QuestionBankItem(
+      id: existing.id,
+      question: existing.question,
+      options: existing.options,
+      correctOption: existing.correctOption,
+      explanation: existing.explanation,
+      subjectId: existing.subjectId,
+      subjectName: existing.subjectName,
+      chapter: existing.chapter,
+      topicNodeId: existing.topicNodeId,
+      difficulty: existing.difficulty,
+      language: existing.language,
+      questionType: existing.questionType,
+      source: existing.source,
+      createdBy: existing.createdBy,
+      timesUsed: existing.timesUsed,
+      status: 'pending_review',
+      createdAt: existing.createdAt,
+      archivedAt: null,
+    );
+  }
+
+  @override
+  Future<List<QuestionBankItem>> checkDuplicates(String questionText) async {
+    calls.add('checkDuplicates');
+    final normalizedKey = questionText
+        .toLowerCase()
+        .trim()
+        .replaceAll(RegExp(r'\s+'), ' ');
+
+    return items.values
+        .where((item) =>
+            item.question.toLowerCase().trim().replaceAll(RegExp(r'\s+'), ' ') ==
+            normalizedKey)
+        .toList();
+  }
+
+  @override
+  Future<int> cloneToTest({
+    required String testId,
+    required List<String> bankIds,
+    int marksPerQuestion = 1,
+  }) async {
+    calls.add('cloneToTest:$testId');
+    var count = 0;
+    for (final bankId in bankIds) {
+      final item = items[bankId];
+      if (item != null && item.status == 'approved') {
+        count++;
+      }
+    }
+    _cloneCount += count;
+    return count;
+  }
+
+  /// Helper to seed test data.
+  void seed(QuestionBankItem item) {
+    items[item.id] = item;
+  }
+}
+
 /// The R4 test feature only reads [myGroups]; the full Group Hub behaviour
 /// lives in `test/group/fakes.dart`.
 class FakeGroupRepository extends InMemoryGroupRepository {
@@ -626,6 +870,48 @@ class FakeResultRepository implements ResultRepository {
       return [...rows]..sort((a, b) => (b.score ?? 0).compareTo(a.score ?? 0));
     }
     return rows.where((r) => r.userId == currentUser).toList();
+  }
+
+  /// Mirrors the remediated live `rpc_get_leaderboard`: rows for the test
+  /// creator, a member of the test's group, or a participant (own result);
+  /// everyone else gets 0 rows. Ranking is the server's (`score DESC`,
+  /// competition ranks); `full_name` comes from the roster names.
+  @override
+  Future<List<Map<String, dynamic>>> leaderboard(String testId) async {
+    calls.add('leaderboard:$testId');
+    final rows = resultsByTest[testId] ?? const [];
+    if (groups != null) {
+      final g = _groupOf(testId);
+      final member = g != null &&
+          (groups!.groups[g]?.roles.containsKey(currentUser) ?? false);
+      final participant = rows.any((r) => r.userId == currentUser);
+      if (!_isCreator(testId) && !member && !participant) return const [];
+    }
+    final sorted = [...rows]..sort((a, b) => (b.score ?? double.negativeInfinity).compareTo(a.score ?? double.negativeInfinity));
+    var rank = 0;
+    double? prev;
+    return [
+      for (var i = 0; i < sorted.length; i++)
+        {
+          'rank': (() {
+            final s = sorted[i].score ?? double.negativeInfinity;
+            if (prev == null || s != prev) {
+              rank = i + 1;
+              prev = s;
+            }
+            return rank;
+          })(),
+          'user_id': sorted[i].userId,
+          'full_name': groups?.profileNames[sorted[i].userId],
+          'avatar_url': null,
+          'student_code': null,
+          'score': sorted[i].score,
+          'max_score': sorted[i].maxScore,
+          'percentage': sorted[i].percentage,
+          'accuracy': sorted[i].accuracy,
+          'submitted_at': sorted[i].computedAt?.toIso8601String(),
+        },
+    ];
   }
 
   @override

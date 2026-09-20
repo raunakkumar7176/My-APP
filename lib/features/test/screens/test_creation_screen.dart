@@ -10,6 +10,8 @@ import '../domain/test_kind.dart';
 import '../state/test_creation_controller.dart';
 import '../widgets/basic_details_step.dart';
 import '../widgets/configuration_step.dart';
+import '../../../core/models/question_bank_item.dart';
+import '../data/question_bank_repository.dart';
 import '../widgets/question_source_step.dart';
 import '../widgets/questions_step.dart';
 import '../widgets/review_step.dart';
@@ -90,6 +92,30 @@ class _TestCreationScreenState extends State<TestCreationScreen> {
 
   void _onChanged() {
     if (mounted) setState(() {});
+  }
+
+  Future<void> _handleBankQuestionsSelected(
+    List<QuestionBankItem> selectedItems,
+  ) async {
+    if (selectedItems.isEmpty || _c.persistedTest == null) return;
+
+    try {
+      final repo = SupabaseQuestionBankRepository();
+      final count = await repo.cloneToTest(
+        testId: _c.persistedTest!.id,
+        bankIds: selectedItems.map((item) => item.id).toList(),
+        marksPerQuestion: _c.marksPerQuestion?.toInt() ?? 1,
+      );
+
+      if (!mounted) return;
+      _snack('$count question${count == 1 ? '' : 's'} added from bank');
+
+      // Reload server questions to show the cloned ones
+      await _c.loadForEdit();
+    } catch (e) {
+      if (!mounted) return;
+      _snack('Failed to add questions from bank', error: true);
+    }
   }
 
   @override
@@ -366,6 +392,7 @@ class _TestCreationScreenState extends State<TestCreationScreen> {
         return QuestionSourceStep(
           selected: _source,
           onChanged: (s) => setState(() => _source = s),
+          onBankQuestionsSelected: _handleBankQuestionsSelected,
         );
       case 4:
         return QuestionsStep(

@@ -1,8 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
-/// Where the test's questions come from. Only [manual] has a pipeline in
-/// this build; the others are real product concepts shown truthfully as
-/// "Not configured" (no fake extraction, no AI calls, no book content).
+import '../../../core/models/question_bank_item.dart';
+import '../screens/question_bank_screen.dart';
+import '../state/question_bank_controller.dart';
+
+/// Where the test's questions come from.
+/// - [manual]: Write questions yourself
+/// - [document]: Extract from PDF/Word/Excel (not yet implemented)
+/// - [ai]: AI-generated questions (not yet implemented)
+/// - [books]: Select from the question bank (R7 - implemented)
 enum QuestionSource { manual, document, ai, books }
 
 extension QuestionSourceInfo on QuestionSource {
@@ -33,7 +40,7 @@ extension QuestionSourceInfo on QuestionSource {
   }
 
   /// True only when a real backend pipeline exists in this build.
-  bool get isAvailable => this == QuestionSource.manual;
+  bool get isAvailable => this == QuestionSource.manual || this == QuestionSource.books;
 
   IconData get icon {
     switch (this) {
@@ -70,11 +77,16 @@ class QuestionSourceStep extends StatelessWidget {
   const QuestionSourceStep({
     required this.selected,
     required this.onChanged,
+    this.onBankQuestionsSelected,
     super.key,
   });
 
   final QuestionSource selected;
   final ValueChanged<QuestionSource> onChanged;
+
+  /// Called when user selects questions from the bank.
+  /// Only invoked when [QuestionSource.books] is selected and questions are chosen.
+  final ValueChanged<List<QuestionBankItem>>? onBankQuestionsSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -104,7 +116,14 @@ class QuestionSourceStep extends StatelessWidget {
               child: RadioListTile<QuestionSource>(
                 value: s,
                 groupValue: selected,
-                onChanged: (v) => v == null ? null : onChanged(v),
+                onChanged: (v) {
+                  if (v == null) return;
+                  onChanged(v);
+                  // If books selected, open question bank for selection
+                  if (v == QuestionSource.books) {
+                    _openQuestionBank(context);
+                  }
+                },
                 secondary: Icon(s.icon),
                 title: Row(
                   children: [
@@ -141,5 +160,19 @@ class QuestionSourceStep extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _openQuestionBank(BuildContext context) async {
+    final result = await context.push<List<QuestionBankItem>>(
+      '/question-bank',
+      extra: {
+        'selectionMode': true,
+        'onSelectionConfirmed': onBankQuestionsSelected,
+      },
+    );
+
+    if (result != null && result.isNotEmpty && onBankQuestionsSelected != null) {
+      onBankQuestionsSelected!(result);
+    }
   }
 }
