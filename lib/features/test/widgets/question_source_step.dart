@@ -2,13 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/models/question_bank_item.dart';
-import '../screens/question_bank_screen.dart';
-import '../state/question_bank_controller.dart';
+import '../models/question_draft.dart';
+import '../screens/ai_generation_screen.dart';
 
 /// Where the test's questions come from.
 /// - [manual]: Write questions yourself
-/// - [document]: Extract from PDF/Word/Excel (not yet implemented)
-/// - [ai]: AI-generated questions (not yet implemented)
+/// - [document]: Extract from PDF/Word/Excel (V1 — implemented)
+/// - [ai]: AI-generated questions (V1 — implemented)
 /// - [books]: Select from the question bank (R7 - implemented)
 enum QuestionSource { manual, document, ai, books }
 
@@ -40,7 +40,10 @@ extension QuestionSourceInfo on QuestionSource {
   }
 
   /// True only when a real backend pipeline exists in this build.
-  bool get isAvailable => this == QuestionSource.manual || this == QuestionSource.books;
+  bool get isAvailable =>
+      this == QuestionSource.manual ||
+      this == QuestionSource.document ||
+      this == QuestionSource.books;
 
   IconData get icon {
     switch (this) {
@@ -78,6 +81,14 @@ class QuestionSourceStep extends StatelessWidget {
     required this.selected,
     required this.onChanged,
     this.onBankQuestionsSelected,
+    this.onDocumentQuestionsSelected,
+    this.onAiQuestionsSelected,
+    this.groupId,
+    this.testMode = 'self',
+    this.subject = '',
+    this.topic = '',
+    this.chapter = '',
+    this.marksPerQuestion = 1,
     super.key,
   });
 
@@ -87,6 +98,30 @@ class QuestionSourceStep extends StatelessWidget {
   /// Called when user selects questions from the bank.
   /// Only invoked when [QuestionSource.books] is selected and questions are chosen.
   final ValueChanged<List<QuestionBankItem>>? onBankQuestionsSelected;
+
+  /// Called when user confirms questions from a document import.
+  final ValueChanged<List<QuestionDraft>>? onDocumentQuestionsSelected;
+
+  /// Called when user completes AI generation and review.
+  final ValueChanged<List<QuestionDraft>>? onAiQuestionsSelected;
+
+  /// Group context for document upload (for group-scoped storage).
+  final String? groupId;
+
+  /// Test mode for AI generation context.
+  final String testMode;
+
+  /// Pre-filled subject for AI generation.
+  final String subject;
+
+  /// Pre-filled topic for AI generation.
+  final String topic;
+
+  /// Pre-filled chapter for AI generation.
+  final String chapter;
+
+  /// Marks per question for AI generation.
+  final double marksPerQuestion;
 
   @override
   Widget build(BuildContext context) {
@@ -119,9 +154,12 @@ class QuestionSourceStep extends StatelessWidget {
                 onChanged: (v) {
                   if (v == null) return;
                   onChanged(v);
-                  // If books selected, open question bank for selection
                   if (v == QuestionSource.books) {
                     _openQuestionBank(context);
+                  } else if (v == QuestionSource.document) {
+                    _openDocumentImport(context);
+                  } else if (v == QuestionSource.ai) {
+                    _openAiGeneration(context);
                   }
                 },
                 secondary: Icon(s.icon),
@@ -171,8 +209,45 @@ class QuestionSourceStep extends StatelessWidget {
       },
     );
 
-    if (result != null && result.isNotEmpty && onBankQuestionsSelected != null) {
+    if (result != null &&
+        result.isNotEmpty &&
+        onBankQuestionsSelected != null) {
       onBankQuestionsSelected!(result);
+    }
+  }
+
+  Future<void> _openDocumentImport(BuildContext context) async {
+    final drafts = await context.push<List<QuestionDraft>>(
+      '/tests/create/document-import',
+      extra: {
+        'groupId': groupId,
+      },
+    );
+
+    if (drafts != null &&
+        drafts.isNotEmpty &&
+        onDocumentQuestionsSelected != null) {
+      onDocumentQuestionsSelected!(drafts);
+    }
+  }
+
+  Future<void> _openAiGeneration(BuildContext context) async {
+    final result = await context.push<AiGenerationComplete>(
+      '/tests/create/ai-generate',
+      extra: AiGenerationPrefill(
+        subject: subject,
+        topic: topic,
+        chapter: chapter,
+        groupId: groupId,
+        testMode: testMode,
+        marksPerQuestion: marksPerQuestion,
+      ),
+    );
+
+    if (result != null &&
+        result.questions.isNotEmpty &&
+        onAiQuestionsSelected != null) {
+      onAiQuestionsSelected!(result.questions);
     }
   }
 }

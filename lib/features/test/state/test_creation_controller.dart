@@ -3,6 +3,7 @@ import '../../../core/logging/app_logger.dart';
 import '../../../core/models/group.dart';
 import '../../../core/models/question.dart';
 import '../../../core/models/test.dart';
+import '../../../core/models/test_template.dart';
 import '../../../core/services/auth_service.dart';
 import '../../group/data/group_repository.dart';
 import '../data/question_repository.dart';
@@ -13,8 +14,8 @@ import '../domain/creation_settings.dart';
 import '../domain/publish_readiness.dart';
 import '../domain/test_kind.dart';
 import '../models/question_draft.dart';
+import '../widgets/question_source_step.dart';
 import 'disposable_notifier.dart';
-import '../../../core/models/test_template.dart';
 
 /// Owns the whole create/edit/publish orchestration. Screens render its
 /// state and call its methods; every server rule is re-checked by the RPCs.
@@ -102,6 +103,9 @@ class TestCreationController extends DisposableNotifier {
   final List<String> syllabusNodeIds = [];
   final List<String> _serverSyllabusNodeIds = [];
   List<Group> groups = const [];
+
+  /// Current question source selection (default: manual).
+  QuestionSource questionSource = QuestionSource.manual;
 
   Test? _persisted;
   bool _loading = false;
@@ -295,6 +299,7 @@ class TestCreationController extends DisposableNotifier {
 
   void setTitle(String v) => _set(() => title = v);
   void setDescription(String v) => _set(() => description = v);
+  void setQuestionSource(QuestionSource v) => _set(() => questionSource = v);
 
   /// G10: start the wizard as a Group Test for [groupId] (creation only).
   void presetGroup(String groupId) => _set(() {
@@ -517,6 +522,7 @@ class TestCreationController extends DisposableNotifier {
       config: _persisted?.config,
       accessCode: clean(accessCode),
       joinCode: clean(joinCode),
+      creationMethod: questionSource.creationMethod,
     );
   }
 
@@ -550,7 +556,7 @@ class TestCreationController extends DisposableNotifier {
           await _questions.approve(questionId);
         } on AppError catch (e) {
           AppLogger.error('Approve new question failed: ${e.message}');
-          throw DataError(
+          throw const DataError(
             message:
                 'A question was saved but could not be approved. '
                 'Approve it from the Review step, then publish.',

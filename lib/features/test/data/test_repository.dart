@@ -26,6 +26,7 @@ class TestWriteInput {
     this.config,
     this.accessCode,
     this.joinCode,
+    this.creationMethod = 'manual',
   });
 
   final String title;
@@ -44,6 +45,9 @@ class TestWriteInput {
   final String? accessCode;
   final String? joinCode;
 
+  /// The creation method for this test: 'manual', 'upload', 'ai', or 'mixed'.
+  final String creationMethod;
+
   /// `rpc_create_test` params (`p_test_mode` etc.). Null fields are omitted so
   /// server defaults apply.
   Map<String, dynamic> toCreateParams() => {
@@ -53,7 +57,7 @@ class TestWriteInput {
     if (marksPerQuestion != null) 'p_marks_per_question': marksPerQuestion,
     if (negativeMarks != null) 'p_negative_marks': negativeMarks,
     if (testMode != null) 'p_test_mode': testMode,
-    'p_creation_method': 'manual',
+    'p_creation_method': creationMethod,
     if (groupId != null) 'p_group_id': groupId,
     if (startsAt != null) 'p_starts_at': startsAt!.toUtc().toIso8601String(),
     if (endsAt != null) 'p_ends_at': endsAt!.toUtc().toIso8601String(),

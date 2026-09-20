@@ -33,6 +33,7 @@ import '../features/test/screens/question_bank_detail_screen.dart';
 import '../features/test/screens/question_review_screen.dart';
 import '../features/test/screens/test_creation_screen.dart';
 import '../features/test/screens/document_upload_screen.dart';
+import '../features/test/screens/ai_generation_screen.dart';
 import '../features/test/screens/template_listing_screen.dart';
 import '../features/test/screens/template_form_screen.dart';
 import '../features/test/widgets/question_source_step.dart';
@@ -297,6 +298,14 @@ final class AppRouter {
               return DocumentUploadScreen(
                 groupId: extra?['groupId'] as String?,
               );
+            },
+          ),
+          GoRoute(
+            path: 'create/ai-generate',
+            name: 'ai-generate',
+            builder: (context, state) {
+              final prefill = state.extra as AiGenerationPrefill?;
+              return AiGenerationScreen(prefill: prefill);
             },
           ),
           GoRoute(
