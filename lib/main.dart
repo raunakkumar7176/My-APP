@@ -17,6 +17,7 @@ void main() {
     AppLogger.info('Starting application...');
 
     final config = AppConfig.fromEnvironment();
+    AppConfig.initialize(config);
     AppLogger.info('Environment: ${config.environment.name}');
 
     try {
