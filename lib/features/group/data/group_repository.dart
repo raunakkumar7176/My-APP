@@ -162,12 +162,12 @@ abstract interface class GroupRepository {
   /// is embedded that RLS would withhold.
   Future<List<GroupInvitation>> myInvitations();
 
-  /// `fn_accept_group_invitation(p_invite_id)` — the server checks the caller
+  /// `fn_accept_group_invitation(p_invitation_id)` — the server checks the caller
   /// is the invitee and the row is pending, inserts the membership itself,
   /// and raises `INVITE_NOT_FOUND` otherwise. No client-side table write.
   Future<void> acceptInvitation(String invitationId);
 
-  /// `fn_decline_group_invitation(p_invite_id)` — same guard; `INVITE_NOT_FOUND`.
+  /// `fn_decline_group_invitation(p_invitation_id)` — same guard; `INVITE_NOT_FOUND`.
   Future<void> declineInvitation(String invitationId);
 
   /// Outgoing / managed invitations of one group (exact `group_id`, all
@@ -620,7 +620,7 @@ class SupabaseGroupRepository implements GroupRepository {
       _guard(GroupErrorContext.invitation, () async {
         await _client.rpc(
           'fn_accept_group_invitation',
-          params: {'p_invite_id': invitationId},
+          params: {'p_invitation_id': invitationId},
         );
       });
 
@@ -629,7 +629,7 @@ class SupabaseGroupRepository implements GroupRepository {
       _guard(GroupErrorContext.invitation, () async {
         await _client.rpc(
           'fn_decline_group_invitation',
-          params: {'p_invite_id': invitationId},
+          params: {'p_invitation_id': invitationId},
         );
       });
 
