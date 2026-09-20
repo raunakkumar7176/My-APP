@@ -7,6 +7,7 @@ import '../../core/models/subject.dart';
 import '../../core/services/auth_service.dart';
 import '../../core/services/profile_service.dart';
 import '../../core/services/subject_service.dart';
+import '../routine/widgets/today_routine_card.dart';
 
 final class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -143,6 +144,8 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             _buildProfileHeader(user),
             const SizedBox(height: 24),
+            _buildRoutineSection(),
+            const SizedBox(height: 24),
             _buildCreateTestSection(),
             const SizedBox(height: 24),
             _buildTestsSection(),
@@ -236,6 +239,17 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildRoutineSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TodayRoutineCard(
+          onViewAll: () => context.push('/routine'),
+        ),
+      ],
     );
   }
 

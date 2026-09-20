@@ -24,10 +24,15 @@ import '../features/study/material_list_screen.dart';
 import '../features/study/subject_list_screen.dart';
 import '../features/study/syllabus_detail_screen.dart';
 import '../features/study/syllabus_screen.dart';
+import '../features/routine/screens/routine_list_screen.dart';
+import '../features/routine/screens/routine_create_screen.dart';
+import '../features/routine/screens/routine_detail_screen.dart';
+import '../features/routine/screens/routine_history_screen.dart';
 import '../features/test/screens/question_bank_screen.dart';
 import '../features/test/screens/question_bank_detail_screen.dart';
 import '../features/test/screens/question_review_screen.dart';
 import '../features/test/screens/test_creation_screen.dart';
+import '../features/test/screens/document_upload_screen.dart';
 import '../features/test/screens/template_listing_screen.dart';
 import '../features/test/screens/template_form_screen.dart';
 import '../features/test/widgets/question_source_step.dart';
@@ -285,6 +290,16 @@ final class AppRouter {
             },
           ),
           GoRoute(
+            path: 'create/document-import',
+            name: 'document-import',
+            builder: (context, state) {
+              final extra = state.extra as Map<String, dynamic>?;
+              return DocumentUploadScreen(
+                groupId: extra?['groupId'] as String?,
+              );
+            },
+          ),
+          GoRoute(
             path: ':testId',
             name: 'test-detail',
             builder: (context, state) =>
@@ -326,6 +341,43 @@ final class AppRouter {
         name: 'attempt-review',
         builder: (context, state) =>
             QuestionReviewScreen(attemptId: state.pathParameters['attemptId']!),
+      ),
+      // ── Routine V1 ──
+      GoRoute(
+        path: '/routine',
+        name: 'routine-list',
+        builder: (context, state) => const RoutineListScreen(),
+        routes: [
+          GoRoute(
+            path: 'create',
+            name: 'routine-create',
+            builder: (context, state) => const RoutineCreateScreen(),
+          ),
+          // Static segment must precede ':routineId' so it is not captured.
+          GoRoute(
+            path: 'history',
+            name: 'routine-history',
+            builder: (context, state) => RoutineHistoryScreen(
+              routineId: state.uri.queryParameters['routine'],
+            ),
+          ),
+          GoRoute(
+            path: ':routineId',
+            name: 'routine-detail',
+            builder: (context, state) => RoutineDetailScreen(
+              routineId: state.pathParameters['routineId']!,
+            ),
+            routes: [
+              GoRoute(
+                path: 'edit',
+                name: 'routine-edit',
+                builder: (context, state) => RoutineCreateScreen(
+                  routineId: state.pathParameters['routineId']!,
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
       // ── Question Bank (R7) ──
       GoRoute(
