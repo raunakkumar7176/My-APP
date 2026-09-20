@@ -569,7 +569,12 @@ class SupabaseDocumentService implements DocumentService {
   @override
   List<DetectedQuestion> detectQuestions(ExtractedContent content) {
     final questions = <DetectedQuestion>[];
-    final allText = content.blocks.map((b) => b.text).join('\n');
+    // Trailing "\n\n" guarantees the option-line lookahead below always has
+    // a newline to match after the last option of the last question —
+    // without it, a question's final option is silently dropped whenever
+    // nothing follows it (end of document, or right before the next
+    // question with no blank line between).
+    final allText = '${content.blocks.map((b) => b.text).join('\n')}\n\n';
 
     // Strategy 1: Look for numbered questions with ABCD options.
     questions.addAll(_detectNumberedMcq(allText, content.sourceFormat));
@@ -611,13 +616,20 @@ class SupabaseDocumentService implements DocumentService {
     final questions = <DetectedQuestion>[];
 
     // Match question number + text, followed by option lines.
+    //
+    // NOTE: end-of-input is `$` here (no `multiline`, so it only matches the
+    // true end of the string) — NOT `\Z`. Dart's RegExp is the ECMAScript
+    // flavor, which has no `\Z` escape; it silently falls back to a literal
+    // "Z", so a lookahead branch written as `\Z` never matches and the last
+    // option of a question with nothing after it (end of document, or right
+    // before the next question with no blank line) was silently dropped.
     final questionPattern = RegExp(
-      r'(?:^|\n)\s*(\d+)[.\)]\s*(.+?)(?=\n\s*(?:[A-Da-d][.\)]|\n\n|\Z))',
+      r'(?:^|\n)\s*(\d+)[.\)]\s*(.+?)(?=\n\s*(?:[A-Da-d][.\)]|\n\n|$))',
       dotAll: true,
     );
 
     final optionPattern = RegExp(
-      r'(?:^|\n)\s*([A-Da-d])[.\)]\s*(.+?)(?=\n\s*(?:[A-Da-d][.\)]|\d+[.\)]|\n\n|\Z))',
+      r'(?:^|\n)\s*([A-Da-d])[.\)]\s*(.+?)(?=\n\s*(?:[A-Da-d][.\)]|\d+[.\)]|\n\n|$))',
       dotAll: true,
     );
 
@@ -632,7 +644,13 @@ class SupabaseDocumentService implements DocumentService {
 
       // Find options between this question and the next.
       final start = qMatch.end;
-      final end = (i + 1 < qMatches.length) ? qMatches[i + 1].start : text.length;
+      // +1 keeps the newline that precedes the next question (or the
+      // trailing "\n\n" this method's caller appends) inside the option
+      // section, so the last option's lookahead always has a `\n` to match
+      // instead of silently dropping it at the boundary.
+      final end = (i + 1 < qMatches.length)
+          ? qMatches[i + 1].start + 1
+          : text.length;
       final optionSection = text.substring(start, end);
 
       final options = <String>[];

@@ -15,10 +15,14 @@ import '../widgets/question_editor.dart';
 class DocumentUploadScreen extends StatefulWidget {
   const DocumentUploadScreen({
     this.groupId,
+    this.controller,
     super.key,
   });
 
   final String? groupId;
+
+  /// Injection point for tests; production constructs its own.
+  final DocumentUploadController? controller;
 
   @override
   State<DocumentUploadScreen> createState() => _DocumentUploadScreenState();
@@ -26,20 +30,20 @@ class DocumentUploadScreen extends StatefulWidget {
 
 class _DocumentUploadScreenState extends State<DocumentUploadScreen> {
   late final DocumentUploadController _c;
+  late final bool _ownsController;
 
   @override
   void initState() {
     super.initState();
-    _c = DocumentUploadController(
-      groupId: widget.groupId,
-    );
+    _ownsController = widget.controller == null;
+    _c = widget.controller ?? DocumentUploadController(groupId: widget.groupId);
     _c.addListener(_onChanged);
   }
 
   @override
   void dispose() {
     _c.removeListener(_onChanged);
-    _c.dispose();
+    if (_ownsController) _c.dispose();
     super.dispose();
   }
 
@@ -304,14 +308,17 @@ class _DocumentUploadScreenState extends State<DocumentUploadScreen> {
                 Padding(
                   padding: const EdgeInsets.only(top: 4),
                   child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Icon(Icons.warning_amber, size: 16, color: AppColors.warning),
                       const SizedBox(width: 6),
-                      Text(
-                        '$invalidCount question${invalidCount == 1 ? '' : 's'} need attention — '
-                        'tap Edit to fix (e.g. set the correct answer, the document never sets one automatically).',
-                        key: const Key('doc_import_invalid_notice'),
-                        style: theme.textTheme.bodySmall?.copyWith(color: AppColors.warning),
+                      Expanded(
+                        child: Text(
+                          '$invalidCount question${invalidCount == 1 ? '' : 's'} need attention — '
+                          'tap Edit to fix (e.g. set the correct answer, the document never sets one automatically).',
+                          key: const Key('doc_import_invalid_notice'),
+                          style: theme.textTheme.bodySmall?.copyWith(color: AppColors.warning),
+                        ),
                       ),
                     ],
                   ),

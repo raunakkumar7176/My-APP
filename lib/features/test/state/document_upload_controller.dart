@@ -206,14 +206,30 @@ class DocumentUploadController extends DisposableNotifier {
   void removeQuestion(int index) {
     if (index < 0 || index >= _detectedQuestions.length) return;
     _detectedQuestions.removeAt(index);
-    _editedQuestions.remove(index);
-    _selectedIndices.remove(index);
-    // Adjust indices.
-    _selectedIndices.removeWhere((i) => i > index);
-    _selectedIndices.addAll(
-      _selectedIndices.where((i) => i > index).map((i) => i - 1),
-    );
-    _selectedIndices.sort();
+
+    // Re-key everything past `index` down by one in a single pass — doing
+    // the removal and the shift as two separate list mutations (as this
+    // used to) reads the "shift" data from a list the "removal" step had
+    // already destroyed, silently deselecting every question after the
+    // removed one instead of shifting its selection down.
+    final newEdited = <int, QuestionDraft>{
+      for (final e in _editedQuestions.entries)
+        if (e.key != index) (e.key > index ? e.key - 1 : e.key): e.value,
+    };
+    _editedQuestions
+      ..clear()
+      ..addAll(newEdited);
+
+    final newSelected =
+        {
+          for (final i in _selectedIndices)
+            if (i != index) (i > index ? i - 1 : i),
+        }.toList()
+          ..sort();
+    _selectedIndices
+      ..clear()
+      ..addAll(newSelected);
+
     notifyListeners();
   }
 
