@@ -16,10 +16,13 @@ dependencies:
   http: ^1.2.2
   pdf: ^3.13.0
   printing: ^5.15.0
-  file_picker: ^8.1.7
+  file_picker: ^13.1.0
   archive: ^4.0.9
   path: ^1.9.0
   xml: ^7.0.1
+  image_picker: ^1.2.3
+  image: ^4.10.1
+  shared_preferences: ^2.5.3
 
 dev_dependencies:
   flutter_test:

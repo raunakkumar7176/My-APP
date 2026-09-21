@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/constants/theme/app_theme.dart';
+import '../core/services/theme_service.dart';
 import 'app_config.dart';
 import 'app_router.dart';
 
@@ -11,13 +12,18 @@ final class App extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp.router(
-      title: config.appName,
-      debugShowCheckedModeBanner: config.isDev,
-      theme: AppTheme.light,
-      darkTheme: AppTheme.dark,
-      themeMode: ThemeMode.system,
-      routerConfig: AppRouter.router,
+    return ListenableBuilder(
+      listenable: ThemeService.instance,
+      builder: (context, _) {
+        return MaterialApp.router(
+          title: config.appName,
+          debugShowCheckedModeBanner: config.isDev,
+          theme: AppTheme.light,
+          darkTheme: AppTheme.dark,
+          themeMode: ThemeService.instance.mode,
+          routerConfig: AppRouter.router,
+        );
+      },
     );
   }
 }

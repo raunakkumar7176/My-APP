@@ -8,6 +8,7 @@ import 'core/errors/error_handler.dart';
 import 'core/logging/app_logger.dart';
 import 'core/services/auth_service.dart';
 import 'core/services/supabase_service.dart';
+import 'core/services/theme_service.dart';
 
 void main() {
   runZonedGuarded(() async {
@@ -26,6 +27,7 @@ void main() {
     } catch (e) {
       AppLogger.error('Failed to initialize services: $e');
     }
+    await ThemeService.initialize();
 
     runApp(App(config: config));
   }, ErrorHandler.handleZoneError);

@@ -17,8 +17,12 @@ import '../features/group/screens/group_notifications_screen.dart';
 import '../features/group/screens/group_settings_screen.dart';
 import '../features/group/screens/group_test_results_screen.dart';
 import '../features/group/screens/group_tests_screen.dart';
-import '../features/home/home_screen.dart';
+import '../features/leaderboard/leaderboard_hub_screen.dart';
+import '../features/notifications/notifications_hub_screen.dart';
+import '../features/performance/performance_screen.dart';
 import '../features/profile/profile_screen.dart';
+import '../features/settings/settings_screen.dart';
+import 'app_shell.dart';
 import '../features/study/material_detail_screen.dart';
 import '../features/study/material_list_screen.dart';
 import '../features/study/subject_list_screen.dart';
@@ -32,6 +36,7 @@ import '../features/test/screens/question_bank_screen.dart';
 import '../features/test/screens/question_bank_detail_screen.dart';
 import '../features/test/screens/question_review_screen.dart';
 import '../features/test/screens/test_creation_screen.dart';
+import '../features/test/screens/camera_capture_screen.dart';
 import '../features/test/screens/document_upload_screen.dart';
 import '../features/test/screens/ai_generation_screen.dart';
 import '../features/test/screens/template_listing_screen.dart';
@@ -99,12 +104,35 @@ final class AppRouter {
       GoRoute(
         path: '/home',
         name: 'home',
-        builder: (context, state) => const HomeScreen(),
+        builder: (context, state) => const AppShell(),
       ),
       GoRoute(
         path: '/profile',
         name: 'profile',
         builder: (context, state) => const ProfileScreen(),
+      ),
+      GoRoute(
+        path: '/performance',
+        name: 'performance',
+        builder: (context, state) => Scaffold(
+          appBar: AppBar(title: const Text('Performance')),
+          body: const PerformanceScreen(),
+        ),
+      ),
+      GoRoute(
+        path: '/notifications',
+        name: 'notifications',
+        builder: (context, state) => const NotificationsHubScreen(),
+      ),
+      GoRoute(
+        path: '/leaderboard',
+        name: 'leaderboard',
+        builder: (context, state) => const LeaderboardHubScreen(),
+      ),
+      GoRoute(
+        path: '/settings',
+        name: 'settings',
+        builder: (context, state) => const SettingsScreen(),
       ),
       // Calendar V1: routines + scheduled tests on one month grid (read-only).
       GoRoute(
@@ -307,6 +335,13 @@ final class AppRouter {
               final prefill = state.extra as AiGenerationPrefill?;
               return AiGenerationScreen(prefill: prefill);
             },
+          ),
+          // Shared multi-page camera capture (Phase 3) — used by both Via
+          // Document/File and Create by AI's "Take Photos" entry point.
+          GoRoute(
+            path: 'create/camera-capture',
+            name: 'camera-capture',
+            builder: (context, state) => const CameraCaptureScreen(),
           ),
           GoRoute(
             path: ':testId',
