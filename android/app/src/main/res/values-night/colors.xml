@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Standard dark surface tone: the native layer runs before Dart starts,
+         so it can only follow the OS dark-mode setting, not ThemeService. -->
+    <color name="launch_background">#FF121212</color>
+</resources>

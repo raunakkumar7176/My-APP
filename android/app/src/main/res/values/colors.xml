@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Matches the Flutter-side auth surface's Neu.base background, so the
+         native launch screen hands off to the Dart splash with no color jump. -->
+    <color name="launch_background">#FFEEF2F7</color>
+</resources>
