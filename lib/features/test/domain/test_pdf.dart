@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
+import '../../../core/models/answer.dart';
 import '../../../core/models/question.dart';
 import '../../../core/models/result.dart';
 import '../../../core/models/result_analytics.dart';
@@ -259,6 +260,119 @@ abstract final class TestPdf {
       ),
     );
     return doc.save();
+  }
+
+  /// OMR-style answer sheet: one bubble row per question, dynamically sized
+  /// to the test's actual question/option counts (never hardcoded to 100).
+  /// Shows only what the student actually marked — [Answer.selectedOption] —
+  /// never a correct/incorrect mark, because the backend never exposes
+  /// `correct_option` to the client (see the class doc comment); marking
+  /// correctness here would fabricate data the server has not certified.
+  /// The Correct/Wrong/Unanswered summary is the server's own aggregate
+  /// counts from [result], not a per-bubble judgement.
+  static Future<Uint8List> answerSheet({
+    required Test test,
+    required TestKind kind,
+    required List<Question> questions,
+    required Map<String, Answer> answers,
+    Result? result,
+    DateTime? startedAt,
+    DateTime? submittedAt,
+    String? studentName,
+  }) async {
+    if (questions.isEmpty) {
+      throw StateError('No questions to print.');
+    }
+    final doc = pw.Document(title: '${test.title} — Answer Sheet', author: 'My Preparation');
+    final maxOptions = questions.fold<int>(
+      0,
+      (m, q) => (q.options?.length ?? 0) > m ? q.options!.length : m,
+    );
+    final letters = maxOptions == 0 ? 4 : maxOptions;
+
+    doc.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(32),
+        footer: (ctx) => pw.Align(
+          alignment: pw.Alignment.centerRight,
+          child: pw.Text(
+            'Page ${ctx.pageNumber} / ${ctx.pagesCount}',
+            style: const pw.TextStyle(fontSize: 9),
+          ),
+        ),
+        build: (ctx) => [
+          pw.Text('Answer Sheet', style: _h1),
+          pw.SizedBox(height: 6),
+          if (studentName != null) _kv('Student', studentName),
+          _kv('Test', test.title),
+          _kv('Test type', kind.label),
+          _kv('Total questions', '${questions.length}'),
+          if (submittedAt != null) _kv('Date', _dateTime(submittedAt)),
+          if (startedAt != null && submittedAt != null)
+            _kv('Time taken', _elapsed(submittedAt.difference(startedAt))),
+          if (result != null) ...[
+            pw.SizedBox(height: 10),
+            pw.Row(
+              children: [
+                pw.Text('Correct: ${result.correctCount ?? '--'}', style: _bold),
+                pw.SizedBox(width: 16),
+                pw.Text('Wrong: ${result.wrongCount ?? '--'}', style: _bold),
+                pw.SizedBox(width: 16),
+                pw.Text('Unanswered: ${result.unansweredCount ?? '--'}', style: _bold),
+              ],
+            ),
+          ],
+          pw.SizedBox(height: 14),
+          pw.Divider(),
+          pw.SizedBox(height: 6),
+          for (var i = 0; i < questions.length; i++)
+            _bubbleRow(i + 1, questions[i], answers[questions[i].id], letters),
+        ],
+      ),
+    );
+    return doc.save();
+  }
+
+  static pw.Widget _bubbleRow(int n, Question q, Answer? answer, int letters) {
+    final selected = answer?.selectedOption;
+    return pw.Padding(
+      padding: const pw.EdgeInsets.only(bottom: 6),
+      child: pw.Row(
+        children: [
+          pw.SizedBox(width: 30, child: pw.Text('$n.', style: _bold)),
+          for (var i = 0; i < letters; i++)
+            pw.Padding(
+              padding: const pw.EdgeInsets.only(right: 8),
+              child: pw.Container(
+                width: 18,
+                height: 18,
+                decoration: pw.BoxDecoration(
+                  shape: pw.BoxShape.circle,
+                  border: pw.Border.all(color: PdfColors.grey700, width: 0.8),
+                  color: selected == i ? PdfColors.grey800 : null,
+                ),
+                alignment: pw.Alignment.center,
+                child: pw.Text(
+                  String.fromCharCode(65 + i),
+                  style: pw.TextStyle(
+                    fontSize: 9,
+                    color: selected == i ? PdfColors.white : PdfColors.grey700,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  static String _elapsed(Duration d) {
+    final h = d.inHours;
+    final m = d.inMinutes % 60;
+    final s = d.inSeconds % 60;
+    if (h > 0) return '${h}h ${m}m';
+    return '${m}m ${s}s';
   }
 
   static pw.Widget _kv(String k, String v) => pw.Padding(

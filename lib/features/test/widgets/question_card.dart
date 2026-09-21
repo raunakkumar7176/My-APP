@@ -58,18 +58,19 @@ class QuestionCard extends StatelessWidget {
   }
 
   Widget _buildHeader(BuildContext context, bool isMarked) {
+    final theme = Theme.of(context);
     return Row(
       children: [
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
           decoration: BoxDecoration(
-            color: AppColors.primaryLight.withValues(alpha: 0.1),
+            color: theme.colorScheme.primary.withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(6),
           ),
           child: Text(
             'Q $questionNumber / $totalQuestions',
-            style: Theme.of(context).textTheme.labelLarge?.copyWith(
-              color: AppColors.primaryLight,
+            style: theme.textTheme.labelLarge?.copyWith(
+              color: theme.colorScheme.primary,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -83,8 +84,7 @@ class QuestionCard extends StatelessWidget {
           ),
           child: Text(
             '${question.marks} mark${question.marks != 1 ? 's' : ''}',
-            style: Theme.of(context).textTheme.labelSmall
-                ?.copyWith(color: AppColors.success),
+            style: theme.textTheme.labelSmall?.copyWith(color: AppColors.success),
           ),
         ),
         const Spacer(),
@@ -94,7 +94,7 @@ class QuestionCard extends StatelessWidget {
               isMarked ? Icons.bookmark : Icons.bookmark_border,
               color: isMarked
                   ? AppColors.warning
-                  : AppColors.textSecondaryLight,
+                  : theme.colorScheme.onSurface.withValues(alpha: 0.5),
             ),
             onPressed: onMarkReview,
             tooltip: 'Mark for review',
@@ -117,16 +117,17 @@ class QuestionCard extends StatelessWidget {
     required QuestionOption option,
     required bool isSelected,
   }) {
+    final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Material(
         color: isSelected
-            ? AppColors.primaryLight.withValues(alpha: 0.08)
-            : AppColors.surfaceLight,
+            ? theme.colorScheme.primary.withValues(alpha: 0.08)
+            : theme.colorScheme.surfaceContainerLowest,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(10),
           side: BorderSide(
-            color: isSelected ? AppColors.primaryLight : Colors.grey.shade300,
+            color: isSelected ? theme.colorScheme.primary : theme.colorScheme.outlineVariant,
             width: isSelected ? 2 : 1,
           ),
         ),
@@ -137,18 +138,14 @@ class QuestionCard extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             child: Row(
               children: [
-                _buildRadioIndicator(isSelected),
+                _buildRadioIndicator(context, isSelected),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
                     option.text,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: isSelected
-                          ? AppColors.primaryLight
-                          : AppColors.textPrimaryLight,
-                      fontWeight: isSelected
-                          ? FontWeight.w500
-                          : FontWeight.w400,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: isSelected ? theme.colorScheme.primary : theme.colorScheme.onSurface,
+                      fontWeight: isSelected ? FontWeight.w500 : FontWeight.w400,
                     ),
                   ),
                 ),
@@ -160,20 +157,21 @@ class QuestionCard extends StatelessWidget {
     );
   }
 
-  Widget _buildRadioIndicator(bool isSelected) {
+  Widget _buildRadioIndicator(BuildContext context, bool isSelected) {
+    final theme = Theme.of(context);
     return Container(
       width: 22,
       height: 22,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         border: Border.all(
-          color: isSelected ? AppColors.primaryLight : Colors.grey.shade400,
+          color: isSelected ? theme.colorScheme.primary : theme.colorScheme.outline,
           width: 2,
         ),
-        color: isSelected ? AppColors.primaryLight : Colors.transparent,
+        color: isSelected ? theme.colorScheme.primary : Colors.transparent,
       ),
       child: isSelected
-          ? const Icon(Icons.check, size: 14, color: Colors.white)
+          ? Icon(Icons.check, size: 14, color: theme.colorScheme.onPrimary)
           : null,
     );
   }
@@ -182,23 +180,24 @@ class QuestionCard extends StatelessWidget {
   /// `rpc_save_answers` only accepts an option index, so typed-answer
   /// questions cannot be answered or scored yet. Say so instead of faking it.
   Widget _buildUnsupported(BuildContext context) {
+    final theme = Theme.of(context);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        border: Border.all(color: Colors.orange.shade300),
+        border: Border.all(color: AppColors.warning.withValues(alpha: 0.5)),
         borderRadius: BorderRadius.circular(10),
-        color: Colors.orange.shade50,
+        color: AppColors.warning.withValues(alpha: 0.08),
       ),
       child: Row(
         children: [
-          const Icon(Icons.info_outline, size: 18),
+          Icon(Icons.info_outline, size: 18, color: theme.colorScheme.onSurface),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               'Typed answers are not supported on this backend yet. '
               'This question cannot be answered or scored.',
-              style: Theme.of(context).textTheme.bodySmall,
+              style: theme.textTheme.bodySmall,
             ),
           ),
         ],

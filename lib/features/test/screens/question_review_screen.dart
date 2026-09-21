@@ -4,6 +4,8 @@ import 'package:printing/printing.dart';
 
 import '../../../core/constants/theme/app_colors.dart';
 import '../../../core/errors/app_error.dart';
+import '../../../core/services/auth_service.dart';
+import '../../../core/services/profile_service.dart';
 import '../state/results_controller.dart';
 import '../widgets/question_review_card.dart';
 
@@ -70,6 +72,28 @@ class _QuestionReviewScreenState extends State<QuestionReviewScreen> {
     }
   }
 
+  static String _studentName() {
+    final profile = ProfileService.currentProfile?.fullName.trim();
+    if (profile != null && profile.isNotEmpty) return profile;
+    return AuthService.currentUser?.email ?? 'Student';
+  }
+
+  Future<void> _downloadAnswerSheet() async {
+    try {
+      final bytes = await _c.buildAnswerSheetPdf(studentName: _studentName());
+      if (!mounted) return;
+      await Printing.sharePdf(
+        bytes: bytes,
+        filename: '${_c.test?.title ?? 'test'} - answer sheet.pdf',
+      );
+    } on AppError catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message), backgroundColor: AppColors.error),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final loading = _c.isLoading || (_c.isBusy && !_c.reviewLoaded);
@@ -85,12 +109,19 @@ class _QuestionReviewScreenState extends State<QuestionReviewScreen> {
         actions: [
           // Question paper for the student, from the already-loaded safe
           // questions (post-submission; never contains the answer key).
-          if (_c.reviewLoaded && _c.questions.isNotEmpty)
+          if (_c.reviewLoaded && _c.questions.isNotEmpty) ...[
+            IconButton(
+              key: const Key('download_answer_sheet'),
+              tooltip: 'Download answer sheet',
+              icon: const Icon(Icons.grid_on_outlined),
+              onPressed: _downloadAnswerSheet,
+            ),
             IconButton(
               tooltip: 'Download question paper',
               icon: const Icon(Icons.picture_as_pdf_outlined),
               onPressed: _downloadQuestionPaper,
             ),
+          ],
         ],
       ),
       body: loading

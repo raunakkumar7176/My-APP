@@ -7,6 +7,10 @@ import '../domain/test_kind.dart';
 import '../domain/test_lifecycle.dart';
 import 'disposable_notifier.dart';
 
+/// Client-side sort over the already-loaded, RLS-scoped lists — never a
+/// server query, so it never widens what the user can see.
+enum TestSortOrder { newestFirst, oldestFirst, titleAZ }
+
 /// Loads the tests visible to the user and buckets them with the shared
 /// lifecycle rules. Screens only read [testsFor] / [drafts] and call
 /// [load] / [refresh].
@@ -59,6 +63,15 @@ class TestListingController extends DisposableNotifier {
     notifyListeners();
   }
 
+  TestSortOrder _sortOrder = TestSortOrder.newestFirst;
+  TestSortOrder get sortOrder => _sortOrder;
+
+  void setSortOrder(TestSortOrder order) {
+    if (order == _sortOrder) return;
+    _sortOrder = order;
+    notifyListeners();
+  }
+
   /// Drafts matching the current filters (the unfiltered list is [draftsAll]).
   List<Test> get drafts => _applyFilters(_drafts);
   List<Test> get draftsAll => _drafts;
@@ -96,16 +109,31 @@ class TestListingController extends DisposableNotifier {
   List<Test> _applyFilters(List<Test> source) {
     final q = _query.trim().toLowerCase();
     final k = _kindFilter;
-    if (q.isEmpty && k == null) return source;
-    return [
-      for (final t in source)
-        if ((k == null ||
-                BackendMapping.fromBackend(t.testMode, t.settings) == k) &&
-            (q.isEmpty ||
-                t.title.toLowerCase().contains(q) ||
-                (t.description ?? '').toLowerCase().contains(q)))
-          t,
-    ];
+    final filtered = (q.isEmpty && k == null)
+        ? List<Test>.from(source)
+        : [
+            for (final t in source)
+              if ((k == null ||
+                      BackendMapping.fromBackend(t.testMode, t.settings) == k) &&
+                  (q.isEmpty ||
+                      t.title.toLowerCase().contains(q) ||
+                      (t.description ?? '').toLowerCase().contains(q)))
+                t,
+          ];
+    return _applySort(filtered);
+  }
+
+  List<Test> _applySort(List<Test> source) {
+    final sorted = List<Test>.from(source);
+    switch (_sortOrder) {
+      case TestSortOrder.newestFirst:
+        sorted.sort((a, b) => (b.createdAt ?? DateTime(0)).compareTo(a.createdAt ?? DateTime(0)));
+      case TestSortOrder.oldestFirst:
+        sorted.sort((a, b) => (a.createdAt ?? DateTime(0)).compareTo(b.createdAt ?? DateTime(0)));
+      case TestSortOrder.titleAZ:
+        sorted.sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
+    }
+    return sorted;
   }
 
   Future<void> load() async {

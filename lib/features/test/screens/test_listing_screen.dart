@@ -160,34 +160,53 @@ class _TestListingScreenState extends State<TestListingScreen>
             ),
           ),
         ),
-        SizedBox(
-          height: 48,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            children: [
-              Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: FilterChip(
-                  key: const Key('kind_chip_all'),
-                  label: const Text('All'),
-                  selected: selected == null,
-                  onSelected: (_) => _controller.setKindFilter(null),
+        Row(
+          children: [
+            Expanded(
+              child: SizedBox(
+                height: 48,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: FilterChip(
+                        key: const Key('kind_chip_all'),
+                        label: const Text('All'),
+                        selected: selected == null,
+                        onSelected: (_) => _controller.setKindFilter(null),
+                      ),
+                    ),
+                    for (final k in TestKind.creatable)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: FilterChip(
+                          key: Key('kind_chip_${k.name}'),
+                          label: Text(k.label),
+                          selected: selected == k,
+                          onSelected: (on) =>
+                              _controller.setKindFilter(on ? k : null),
+                        ),
+                      ),
+                  ],
                 ),
               ),
-              for (final k in TestKind.creatable)
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: FilterChip(
-                    key: Key('kind_chip_${k.name}'),
-                    label: Text(k.label),
-                    selected: selected == k,
-                    onSelected: (on) =>
-                        _controller.setKindFilter(on ? k : null),
-                  ),
-                ),
-            ],
-          ),
+            ),
+            PopupMenuButton<TestSortOrder>(
+              key: const Key('listing_sort_button'),
+              tooltip: 'Sort',
+              icon: const Icon(Icons.sort),
+              initialValue: _controller.sortOrder,
+              onSelected: _controller.setSortOrder,
+              itemBuilder: (context) => const [
+                PopupMenuItem(value: TestSortOrder.newestFirst, child: Text('Newest first')),
+                PopupMenuItem(value: TestSortOrder.oldestFirst, child: Text('Oldest first')),
+                PopupMenuItem(value: TestSortOrder.titleAZ, child: Text('Title A–Z')),
+              ],
+            ),
+            const SizedBox(width: 8),
+          ],
         ),
       ],
     );

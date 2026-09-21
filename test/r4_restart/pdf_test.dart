@@ -131,6 +131,67 @@ void main() {
     });
   });
 
+  group('TestPdf.answerSheet', () {
+    test('one bubble row per question, dynamic to the actual option count', () async {
+      const q2 = Question(
+        id: 'q-2',
+        testId: 't-1',
+        ordinal: 2,
+        question: 'Largest planet?',
+        options: [
+          QuestionOption(id: 'a', text: 'Earth'),
+          QuestionOption(id: 'b', text: 'Jupiter'),
+        ],
+        difficulty: DifficultyLevel.easy,
+        marks: 1,
+        status: 'approved',
+        questionType: QuestionType.mcqSingle,
+      );
+      final bytes = await TestPdf.answerSheet(
+        test: _test,
+        kind: TestKind.self,
+        questions: const [_q, q2],
+        answers: const {
+          'q-1': Answer(attemptId: 'a-1', questionId: 'q-1', selectedOption: 1),
+        },
+        result: const Result(
+          id: 'r-1',
+          attemptId: 'a-1',
+          testId: 't-1',
+          userId: 'u-1',
+          correctCount: 1,
+          wrongCount: 0,
+          unansweredCount: 1,
+        ),
+        startedAt: DateTime(2026, 9, 17, 9),
+        submittedAt: DateTime(2026, 9, 17, 9, 20),
+        studentName: 'Raunak',
+      );
+      expect(_isPdf(bytes), isTrue);
+      expect(bytes.length, greaterThan(500));
+    });
+
+    test('refuses an empty question list', () async {
+      await expectLater(
+        TestPdf.answerSheet(
+          test: _test,
+          kind: TestKind.self,
+          questions: const [],
+          answers: const {},
+        ),
+        throwsA(isA<StateError>()),
+      );
+    });
+
+    test('never shows correctness — only what the student marked', () {
+      // No correct-option data exists on Question/Answer for this builder to
+      // consume even if it wanted to; confirmed at the model level.
+      expect(_q.toJson().containsKey('correct_option'), isFalse);
+      const answer = Answer(attemptId: 'a-1', questionId: 'q-1', selectedOption: 0);
+      expect(answer.toRpcJson().containsKey('is_correct'), isFalse);
+    });
+  });
+
   group('controllers', () {
     test(
       'detail: question paper uses the safe RPC and fails honestly when empty',
@@ -208,6 +269,7 @@ void main() {
       ); // review not loaded
       await c.loadReview();
       expect(_isPdf(await c.buildQuestionPaperPdf()), isTrue);
+      expect(_isPdf(await c.buildAnswerSheetPdf(studentName: 'S')), isTrue);
     });
   });
 }

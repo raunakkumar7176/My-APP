@@ -245,6 +245,33 @@ class ResultsController extends DisposableNotifier {
     }
   }
 
+  /// OMR-style answer sheet for the student's own marked bubbles, from the
+  /// already-loaded review questions/answers — no new fetch, no correctness
+  /// judgement (the backend never exposes `correct_option`).
+  Future<Uint8List> buildAnswerSheetPdf({String? studentName}) async {
+    final t = _test;
+    if (t == null) throw const DataError(message: 'Test not loaded.');
+    if (_questionsList.isEmpty) {
+      throw const DataError(message: 'Questions are not loaded yet.');
+    }
+    try {
+      final attempt = currentEntry?.attempt;
+      return await TestPdf.answerSheet(
+        test: t,
+        kind: kind,
+        questions: _questionsList,
+        answers: _answersById,
+        result: _result,
+        startedAt: attempt?.startedAt,
+        submittedAt: attempt?.submittedAt ?? currentEntry?.completedAt,
+        studentName: studentName,
+      );
+    } catch (e, st) {
+      AppLogger.error('Answer sheet PDF failed: $e', stackTrace: st);
+      throw const DataError(message: 'Could not generate the answer sheet.');
+    }
+  }
+
   /// Explicit re-attempt (the only client path that asks for attempt N+1;
   /// the server enforces the limit) and parks the launch for taking.
   Future<({String attemptId, String testId})> reattempt() async {

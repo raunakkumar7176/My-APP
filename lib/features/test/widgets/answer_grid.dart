@@ -21,11 +21,12 @@ class AnswerGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerLowest,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -36,7 +37,7 @@ class AnswerGrid extends StatelessWidget {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: Colors.grey.shade300,
+                color: theme.colorScheme.outlineVariant,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -73,7 +74,11 @@ class AnswerGrid extends StatelessWidget {
       runSpacing: 6,
       children: [
         _legendItem(context, 'Answered', AppColors.success),
-        _legendItem(context, 'Unanswered', AppColors.textSecondaryLight),
+        _legendItem(
+          context,
+          'Unanswered',
+          Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4),
+        ),
         _legendItem(context, 'Marked', AppColors.warning),
       ],
     );
@@ -95,6 +100,7 @@ class AnswerGrid extends StatelessWidget {
   }
 
   Widget _buildCell(BuildContext context, int index) {
+    final theme = Theme.of(context);
     final isCurrent = index == currentQuestionIndex;
     final questionId = questionIds[index];
     final answer = answers[questionId];
@@ -107,14 +113,14 @@ class AnswerGrid extends StatelessWidget {
         bgColor = AppColors.success;
         fgColor = Colors.white;
       case AnswerStatus.unanswered:
-        bgColor = Colors.grey.shade200;
-        fgColor = AppColors.textPrimaryLight;
+        bgColor = theme.colorScheme.surfaceContainerHighest;
+        fgColor = theme.colorScheme.onSurface;
       case AnswerStatus.markedReview:
         bgColor = AppColors.warning;
         fgColor = Colors.white;
       case AnswerStatus.markedAndAnswered:
-        bgColor = AppColors.primaryLight;
-        fgColor = Colors.white;
+        bgColor = theme.colorScheme.primary;
+        fgColor = theme.colorScheme.onPrimary;
     }
 
     return GestureDetector(
@@ -125,7 +131,7 @@ class AnswerGrid extends StatelessWidget {
           color: bgColor,
           shape: BoxShape.circle,
           border: isCurrent
-              ? Border.all(color: AppColors.primaryLight, width: 3)
+              ? Border.all(color: theme.colorScheme.primary, width: 3)
               : null,
         ),
         alignment: Alignment.center,

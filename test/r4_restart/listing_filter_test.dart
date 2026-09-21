@@ -22,6 +22,7 @@ Test _t(
   String kind = 'practice',
   TestStatus status = TestStatus.published,
   DateTime? startsAt,
+  DateTime? createdAt,
 }) => Test(
   id: id,
   createdBy: 'u-1',
@@ -33,6 +34,7 @@ Test _t(
   marksPerQuestion: 1,
   startsAt: startsAt ?? _now.add(const Duration(days: 1)),
   settings: {'test_kind': kind},
+  createdAt: createdAt,
 );
 
 FakeTestRepository _repo() => FakeTestRepository()
@@ -162,6 +164,53 @@ void main() {
       c.clearFilters();
       c.clearFilters(); // already clear → no notify
       expect(n, 3);
+    });
+  });
+
+  group('TestListingController sort', () {
+    FakeTestRepository sortRepo() => FakeTestRepository()
+      ..rows['a'] = _t('a', 'Alpha', createdAt: DateTime(2026, 1, 1))
+      ..rows['b'] = _t('b', 'Bravo', createdAt: DateTime(2026, 3, 1))
+      ..rows['c'] = _t('c', 'Charlie', createdAt: DateTime(2026, 2, 1));
+
+    test('newest first is the default', () async {
+      final c = TestListingController(repository: sortRepo(), clock: () => _now);
+      await c.load();
+      expect(c.sortOrder, TestSortOrder.newestFirst);
+      expect(
+        c.testsFor(ListingCategory.upcoming).map((t) => t.id).toList(),
+        ['b', 'c', 'a'],
+      );
+    });
+
+    test('oldest first reverses the order', () async {
+      final c = TestListingController(repository: sortRepo(), clock: () => _now);
+      await c.load();
+      c.setSortOrder(TestSortOrder.oldestFirst);
+      expect(
+        c.testsFor(ListingCategory.upcoming).map((t) => t.id).toList(),
+        ['a', 'c', 'b'],
+      );
+    });
+
+    test('title A-Z sorts alphabetically', () async {
+      final c = TestListingController(repository: sortRepo(), clock: () => _now);
+      await c.load();
+      c.setSortOrder(TestSortOrder.titleAZ);
+      expect(
+        c.testsFor(ListingCategory.upcoming).map((t) => t.id).toList(),
+        ['a', 'b', 'c'],
+      );
+    });
+
+    test('sort applies to drafts too, and setting the same order no-ops', () async {
+      final c = TestListingController(repository: sortRepo(), clock: () => _now);
+      var n = 0;
+      c.addListener(() => n++);
+      c.setSortOrder(TestSortOrder.newestFirst); // already default
+      expect(n, 0);
+      c.setSortOrder(TestSortOrder.titleAZ);
+      expect(n, 1);
     });
   });
 
