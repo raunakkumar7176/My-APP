@@ -102,6 +102,140 @@ class RoutineController extends DisposableNotifier {
   List<Routine> scheduledOn(int weekday) =>
       RoutineSchedule.scheduledOn(_allRoutines, weekday);
 
+  // ── Selected-date browsing (day view with prev/today/next navigation) ──
+  //
+  // Independent of [todayItems]/[loadToday] above (kept untouched so every
+  // existing caller — the dashboard card, existing tests — is unaffected).
+  // Defaults to today and reuses the same repository call, just for an
+  // arbitrary user-zone date instead of always "today".
+
+  DateTime? _selectedDate;
+  List<RoutineWithLog> _selectedItems = [];
+  bool _loadingSelected = false;
+  String? _selectedError;
+
+  /// The day currently being viewed (user-zone, date-only). Defaults to
+  /// today until [loadSelectedDate] is called with another date.
+  DateTime get selectedDate => _selectedDate ?? clock.today();
+
+  bool get isSelectedToday => CalendarDates.sameDay(selectedDate, clock.today());
+
+  List<RoutineWithLog> get selectedItems => List.unmodifiable(_selectedItems);
+  bool get isLoadingSelected => _loadingSelected;
+  String? get selectedError => _selectedError;
+
+  int get selectedCompletedCount =>
+      _selectedItems.where((i) => i.isCompleted).length;
+  int get selectedTotalCount => _selectedItems.length;
+  double get selectedCompletionPercentage =>
+      selectedTotalCount == 0 ? 0 : selectedCompletedCount / selectedTotalCount;
+
+  /// Sum of logged minutes across the selected date's items (0 for items
+  /// with no log yet, e.g. skipped or not-yet-completed).
+  int get selectedLoggedMinutes =>
+      _selectedItems.fold(0, (sum, i) => sum + (i.log?.durationMinutes ?? 0));
+
+  /// The item whose `[start, end)` wall-clock window contains the current
+  /// moment — only meaningful (non-null) while viewing today.
+  RoutineWithLog? get currentItem {
+    if (!isSelectedToday) return null;
+    final now = clock.toUserWall(_now());
+    final nowMin = now.hour * 60 + now.minute;
+    for (final i in _selectedItems) {
+      final s = RoutineSchedule.toMinutes(i.routine.startTime);
+      final e = RoutineSchedule.toMinutes(i.routine.endTime);
+      if (s == null || e == null) continue;
+      if (nowMin >= s && nowMin < e) return i;
+    }
+    return null;
+  }
+
+  /// The next pending item on the selected date by start time — time-aware
+  /// (first not-yet-started item) only while viewing today, else simply the
+  /// earliest pending item of that day.
+  RoutineWithLog? get selectedUpNext {
+    final pending = [
+      for (final i in _selectedItems) if (!i.isCompleted && !i.isSkipped) i,
+    ]..sort((a, b) => a.routine.startTime.compareTo(b.routine.startTime));
+    if (pending.isEmpty) return null;
+    if (!isSelectedToday) return pending.first;
+    final now = clock.toUserWall(_now());
+    final nowMin = now.hour * 60 + now.minute;
+    for (final i in pending) {
+      if ((RoutineSchedule.toMinutes(i.routine.startTime) ?? 0) >= nowMin) {
+        return i;
+      }
+    }
+    return pending.first;
+  }
+
+  /// Loads the given date (defaults to the currently selected/today date).
+  Future<void> loadSelectedDate([DateTime? date]) async {
+    final d = date ?? selectedDate;
+    _selectedDate = d;
+    if (_loadingSelected) return;
+    _loadingSelected = true;
+    _selectedError = null;
+    notifyListeners();
+    try {
+      _selectedItems = await _repository.getToday(
+        date: CalendarDates.iso(d),
+        weekday: CalendarDates.liveWeekday(d),
+      );
+    } on AppError catch (e) {
+      _selectedError = e.message;
+      AppLogger.error('RoutineController.loadSelectedDate: $e');
+    } catch (e, st) {
+      _selectedError = "Failed to load that day's routine";
+      AppLogger.error(
+        'RoutineController.loadSelectedDate unexpected: $e',
+        stackTrace: st,
+      );
+    } finally {
+      _loadingSelected = false;
+      if (!isDisposed) notifyListeners();
+    }
+  }
+
+  Future<void> selectPreviousDay() =>
+      loadSelectedDate(CalendarDates.addDays(selectedDate, -1));
+
+  Future<void> selectNextDay() =>
+      loadSelectedDate(CalendarDates.addDays(selectedDate, 1));
+
+  Future<void> selectToday() => loadSelectedDate(clock.today());
+
+  /// Marks completion for an item on the currently selected date (which may
+  /// not be today) and reloads that date's items.
+  Future<void> markSelectedComplete(String routineId, {int? durationMinutes}) =>
+      _logForSelected(routineId, 'COMPLETED', durationMinutes: durationMinutes);
+
+  Future<void> markSelectedIncomplete(String routineId) =>
+      _logForSelected(routineId, 'PENDING');
+
+  Future<void> skipSelectedRoutine(String routineId) =>
+      _logForSelected(routineId, 'SKIPPED');
+
+  Future<void> _logForSelected(
+    String routineId,
+    String status, {
+    int? durationMinutes,
+  }) async {
+    try {
+      await _repository.upsertLog(
+        routineId: routineId,
+        logDate: CalendarDates.iso(selectedDate),
+        status: status,
+        durationMinutes: durationMinutes,
+      );
+      revision.value++;
+      await loadSelectedDate();
+    } catch (e) {
+      AppLogger.error('RoutineController.$status (selected): $e');
+      rethrow;
+    }
+  }
+
   // ── Loading ──
 
   Future<void> loadToday() async {

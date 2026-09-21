@@ -446,4 +446,81 @@ void main() {
       expect(controller.scheduledOn(2).map((r) => r.id), ['daily']);
     });
   });
+
+  group('selected-date day view', () {
+    test('defaults to today and loadSelectedDate() with no args loads it', () async {
+      repo.seed(id: 'mon', title: 'Monday task');
+      expect(controller.selectedDate, DateTime.utc(2026, 9, 21));
+      expect(controller.isSelectedToday, isTrue);
+      await controller.loadSelectedDate();
+      expect(controller.selectedItems.map((i) => i.routine.id), ['mon']);
+    });
+
+    test('selectPreviousDay / selectNextDay / selectToday navigate real dates', () async {
+      repo.seed(id: 'wk', weekdays: [1, 2, 3, 4, 5]); // Mon-Fri
+      repo.seed(id: 'sat', weekdays: [6]);
+      await controller.loadSelectedDate(); // Monday
+      expect(controller.selectedItems.map((i) => i.routine.id), ['wk']);
+
+      await controller.selectNextDay(); // Tuesday
+      expect(controller.selectedDate, DateTime.utc(2026, 9, 22));
+      expect(controller.isSelectedToday, isFalse);
+      expect(controller.selectedItems.map((i) => i.routine.id), ['wk']);
+
+      await controller.selectPreviousDay();
+      await controller.selectPreviousDay(); // Sunday
+      expect(controller.selectedDate, DateTime.utc(2026, 9, 20));
+      expect(
+        controller.selectedItems,
+        isEmpty,
+        reason: 'neither routine is scheduled on Sunday (live weekday 0)',
+      );
+
+      await controller.selectToday();
+      expect(controller.selectedDate, DateTime.utc(2026, 9, 21));
+      expect(controller.isSelectedToday, isTrue);
+    });
+
+    test('currentItem is the item whose window contains now, only for today', () async {
+      // now = 01:30 IST.
+      repo.seed(id: 'now', startTime: '01:00', endTime: '02:00');
+      repo.seed(id: 'later', startTime: '03:00', endTime: '04:00');
+      await controller.loadSelectedDate();
+      expect(controller.currentItem?.routine.id, 'now');
+      expect(controller.selectedUpNext?.routine.id, 'later');
+
+      await controller.selectNextDay();
+      expect(controller.currentItem, isNull, reason: 'not viewing today anymore');
+    });
+
+    test('selectedCompletedCount / selectedLoggedMinutes reflect logged items', () async {
+      repo.seed(id: 'a', startTime: '01:00', endTime: '02:00');
+      repo.seed(id: 'b', startTime: '03:00', endTime: '04:00');
+      await controller.loadSelectedDate();
+      await controller.markSelectedComplete('a', durationMinutes: 45);
+      expect(controller.selectedCompletedCount, 1);
+      expect(controller.selectedTotalCount, 2);
+      expect(controller.selectedLoggedMinutes, 45);
+
+      await controller.markSelectedIncomplete('a');
+      expect(controller.selectedCompletedCount, 0);
+      expect(controller.selectedLoggedMinutes, 0);
+    });
+
+    test('markSelectedComplete logs against the selected date, not always today', () async {
+      repo.seed(id: 'wk', weekdays: [1, 2, 3, 4, 5]);
+      await controller.loadSelectedDate();
+      await controller.selectNextDay(); // Tuesday 2026-09-22
+      await controller.markSelectedComplete('wk');
+      expect(repo.logs['wk:2026-09-22']?.completed, isTrue);
+      expect(repo.logs['wk:2026-09-21'], isNull);
+    });
+
+    test('loadSelectedDate reports repository failure via selectedError', () async {
+      repo.failTodayWith = const DataError(message: 'offline');
+      await controller.loadSelectedDate();
+      expect(controller.selectedError, 'offline');
+      expect(controller.selectedItems, isEmpty);
+    });
+  });
 }

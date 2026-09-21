@@ -101,6 +101,28 @@ void main() {
       expect(find.text('Maths · Algebra · Practice'), findsOneWidget);
     });
 
+    testWidgets('day view: week strip, progress card and current-activity highlight', (tester) async {
+      // now = 2026-09-21 01:30 IST (Monday).
+      repo.seed(id: 'now', title: 'Live now', startTime: '01:00', endTime: '02:00');
+      repo.seed(id: 'later', title: 'Later today', startTime: '03:00', endTime: '04:00');
+      await tester.pumpWidget(host(RoutineListScreen(controller: controller)));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('routine_week_strip')), findsOneWidget);
+      expect(find.byKey(const Key('routine_week_day_2026-09-21')), findsOneWidget);
+      expect(find.byKey(const Key('routine_day_progress')), findsOneWidget);
+      expect(find.byKey(const Key('routine_current_activity')), findsOneWidget);
+      expect(find.textContaining('Now: Live now'), findsOneWidget);
+      expect(find.byKey(const Key('routine_card_now')), findsOneWidget);
+      expect(find.byKey(const Key('routine_card_later')), findsOneWidget);
+
+      // Browsing to the next day drops the current-activity highlight and
+      // loads that date's own items (same [wk]-style routine, real data).
+      await tester.tap(find.byKey(const Key('routine_week_day_2026-09-22')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('routine_current_activity')), findsNothing);
+    });
+
     testWidgets('error → retry → list', (tester) async {
       repo.failListWith = const DataError(message: 'Network error');
       await tester.pumpWidget(host(RoutineListScreen(controller: controller)));
