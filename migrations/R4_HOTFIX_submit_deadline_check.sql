@@ -1,4 +1,10 @@
 -- ============================================================
+-- SUPERSEDED — do NOT apply this file.
+-- Replaced by migrations/FINAL_AUDIT_fix_rpc_submit_attempt_deadline.sql,
+-- which is built against live-audited facts (deadline_at is NOT NULL,
+-- live search_path is 'public', explicit >= boundary) rather than this
+-- file's static-analysis guesses. Kept only for history.
+-- ============================================================
 -- R4 BACKEND HOTFIX — rpc_submit_attempt has no deadline check
 -- (found by static code audit 2026-09-21, NOT yet proven live — see
 --  preflight below; this is a code-review finding, not a reproduced bug)
