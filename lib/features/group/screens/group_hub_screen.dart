@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/theme/app_colors.dart';
+import '../../../core/models/group.dart';
 import '../data/notification_repository.dart';
 import '../state/group_hub_controller.dart';
 import '../widgets/group_announcements_section.dart';
@@ -222,37 +223,7 @@ class _GroupHubScreenState extends State<GroupHubScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            Row(
-              children: [
-                GroupAvatar(
-                  name: group.name,
-                  logoUrl: group.logoUrl,
-                  radius: 28,
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        group.name,
-                        style: Theme.of(context).textTheme.titleLarge,
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${_c.memberCount} ${_c.memberCount == 1 ? 'member' : 'members'} · '
-                        '${_c.myRole.label} · ${_c.privacy.label}',
-                        key: const Key('group_header_meta'),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            if ((group.description ?? '').trim().isNotEmpty) ...[
-              const SizedBox(height: 12),
-              Text(group.description!.trim()),
-            ],
+            _headerCard(context, group),
             const SizedBox(height: 24),
             // G14: one Manage surface, rows gated by server-reported
             // permissions (owner bypass); renders nothing for a plain member.
@@ -333,6 +304,99 @@ class _GroupHubScreenState extends State<GroupHubScreen> {
               ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Header card: avatar, name, the exact "N members · Role · Privacy" line
+  /// (kept verbatim under `group_header_meta` — existing tests assert its
+  /// text), description, and a small strip of real counts only (pending
+  /// join requests / unread notifications) when the caller can see them.
+  Widget _headerCard(BuildContext context, Group group) {
+    final theme = Theme.of(context);
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                GroupAvatar(name: group.name, logoUrl: group.logoUrl, radius: 28),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(group.name, style: theme.textTheme.titleLarge),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${_c.memberCount} ${_c.memberCount == 1 ? 'member' : 'members'} · '
+                        '${_c.myRole.label} · ${_c.privacy.label}',
+                        key: const Key('group_header_meta'),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            if ((group.description ?? '').trim().isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text(group.description!.trim()),
+            ],
+            if (_c.canManageMembers && _c.pendingRequestCount > 0 ||
+                _c.hasUnreadNotifications) ...[
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  if (_c.canManageMembers && _c.pendingRequestCount > 0)
+                    _statChip(
+                      theme,
+                      Icons.person_add_alt_1_outlined,
+                      '${_c.pendingRequestCount} pending request'
+                      '${_c.pendingRequestCount == 1 ? '' : 's'}',
+                    ),
+                  if (_c.hasUnreadNotifications)
+                    _statChip(
+                      theme,
+                      Icons.notifications_outlined,
+                      '${_c.unreadNotifications} unread',
+                    ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _statChip(ThemeData theme, IconData icon, String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.secondaryContainer,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: theme.colorScheme.onSecondaryContainer),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.onSecondaryContainer,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
       ),
     );
   }

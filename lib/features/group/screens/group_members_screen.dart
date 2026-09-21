@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/theme/app_colors.dart';
+import '../../../core/models/group.dart';
+import '../../../core/models/group_member.dart';
 import '../domain/group_role.dart';
 import '../state/group_hub_controller.dart';
 import '../widgets/member_tile.dart';
@@ -189,25 +191,71 @@ class _GroupMembersScreenState extends State<GroupMembersScreen> {
                         ),
                       ],
                     )
-                  : ListView.builder(
+                  : ListView(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
-                      itemCount: members.length,
-                      itemBuilder: (_, i) => MemberTile(
-                        member: members[i],
-                        controller: _c,
-                        onTap: () => MemberDetailSheet.show(
-                          context,
-                          member: members[i],
-                          groupName: group.name,
-                          isMe: members[i].userId == _c.currentUserId,
-                        ),
-                      ),
+                      children: _groupedMemberWidgets(context, group, members),
                     ),
             ),
           ),
         ],
       ),
     );
+  }
+
+  /// Sections in role-authority order (owner → leader → moderator → member),
+  /// each headed by "ROLE (count)" — matching the reference layout. When a
+  /// role filter is active only one section renders, which is exactly the
+  /// same rows [MemberTile]-for-[MemberTile] as the previous flat list; no
+  /// member is added, removed, or reordered within its role.
+  List<Widget> _groupedMemberWidgets(
+    BuildContext context,
+    Group group,
+    List<GroupMember> members,
+  ) {
+    final theme = Theme.of(context);
+    final sections = <GroupRole, List<GroupMember>>{};
+    for (final m in members) {
+      sections.putIfAbsent(GroupRole.fromDb(m.role), () => []).add(m);
+    }
+
+    final widgets = <Widget>[];
+    for (final role in [
+      GroupRole.owner,
+      GroupRole.leader,
+      GroupRole.moderator,
+      GroupRole.member,
+    ]) {
+      final roleMembers = sections[role];
+      if (roleMembers == null || roleMembers.isEmpty) continue;
+      widgets.add(
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 12, 4, 4),
+          child: Text(
+            '${role.label.toUpperCase()} (${roleMembers.length})',
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+              letterSpacing: 0.5,
+            ),
+          ),
+        ),
+      );
+      for (final m in roleMembers) {
+        widgets.add(
+          MemberTile(
+            key: ValueKey('member_tile_${m.userId}'),
+            member: m,
+            controller: _c,
+            onTap: () => MemberDetailSheet.show(
+              context,
+              member: m,
+              groupName: group.name,
+              isMe: m.userId == _c.currentUserId,
+            ),
+          ),
+        );
+      }
+    }
+    return widgets;
   }
 
   Widget _message(String title, String body, {Widget? action}) {

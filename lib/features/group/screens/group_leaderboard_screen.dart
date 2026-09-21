@@ -132,10 +132,10 @@ class _GroupLeaderboardScreenState extends State<GroupLeaderboardScreen> {
             : ListView.builder(
                 key: const Key('leaderboard_list'),
                 padding: const EdgeInsets.all(16),
-                itemCount: displayEntries.length + 1, // +1 for summary header
+                itemCount: _restEntries(displayEntries).length + 1,
                 itemBuilder: (context, index) {
                   if (index == 0) return _header(theme, test, _c.entries);
-                  final e = displayEntries[index - 1];
+                  final e = _restEntries(displayEntries)[index - 1];
                   return _entryTile(theme, e);
                 },
               ),
@@ -143,9 +143,21 @@ class _GroupLeaderboardScreenState extends State<GroupLeaderboardScreen> {
     );
   }
 
+  /// The podium is a purely additive visual on top of the header — every
+  /// entry (including ranks 1-3) still appears exactly once in the
+  /// scrollable list below it, unchanged from before this widget existed.
+  List<LeaderboardEntry> _restEntries(List<LeaderboardEntry> displayEntries) =>
+      displayEntries;
+
+  List<LeaderboardEntry> _podiumEntries(List<LeaderboardEntry> entries) {
+    if (!_c.canSeeFullLeaderboard) return const [];
+    return [for (final e in entries) if (e.rank <= 3) e];
+  }
+
   Widget _header(ThemeData theme, Test test, List<LeaderboardEntry> entries) {
     final my = _c.myEntry;
     final fullView = _c.canSeeFullLeaderboard;
+    final podium = _podiumEntries(entries);
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Column(
@@ -157,6 +169,10 @@ class _GroupLeaderboardScreenState extends State<GroupLeaderboardScreen> {
             style: theme.textTheme.bodySmall,
           ),
           const SizedBox(height: 4),
+          if (podium.isNotEmpty) ...[
+            _podium(theme, podium),
+            const SizedBox(height: 12),
+          ],
           if (fullView) ...[
             // Owner / analytics holder: full ranking with participant count
             // and per-entry leaderboard tiles (rendered by the parent list).
@@ -200,6 +216,85 @@ class _GroupLeaderboardScreenState extends State<GroupLeaderboardScreen> {
           const Divider(),
         ],
       ),
+    );
+  }
+
+  /// Top-3 podium, rank 2 / 1 / 3 left-to-right, matching the reference
+  /// layout — purely a display arrangement of the same server-ranked
+  /// [entries] the list below already shows; nothing is re-ranked.
+  Widget _podium(ThemeData theme, List<LeaderboardEntry> podium) {
+    LeaderboardEntry? byRank(int r) =>
+        podium.where((e) => e.rank == r).firstOrNull;
+    final first = byRank(1);
+    final second = byRank(2);
+    final third = byRank(3);
+
+    Widget slot(LeaderboardEntry? e, {required double avatarSize, required bool center}) {
+      if (e == null) return const Expanded(child: SizedBox());
+      final medal = switch (e.rank) {
+        1 => '🥇',
+        2 => '🥈',
+        3 => '🥉',
+        _ => '',
+      };
+      return Expanded(
+        child: Container(
+          key: Key('podium_${e.userId}'),
+          margin: EdgeInsets.only(top: center ? 0 : 12),
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: e.isCurrentUser
+                ? theme.colorScheme.primaryContainer.withValues(alpha: 0.3)
+                : theme.colorScheme.surfaceContainerLowest,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: theme.colorScheme.shadow.withValues(alpha: 0.05),
+                blurRadius: 4,
+              ),
+            ],
+          ),
+          child: Column(
+            children: [
+              Text(medal, style: TextStyle(fontSize: center ? 26 : 20)),
+              CircleAvatar(
+                radius: avatarSize,
+                backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.12),
+                child: Text(
+                  e.label.isNotEmpty ? e.label[0].toUpperCase() : '?',
+                  style: TextStyle(
+                    color: theme.colorScheme.primary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                e.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w600),
+              ),
+              Text(
+                '${_num(e.score)}${e.percentage != null ? ' · ${_num(e.percentage)}%' : ''}',
+                style: theme.textTheme.bodySmall,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        slot(second, avatarSize: 20, center: false),
+        const SizedBox(width: 8),
+        slot(first, avatarSize: 26, center: true),
+        const SizedBox(width: 8),
+        slot(third, avatarSize: 20, center: false),
+      ],
     );
   }
 
