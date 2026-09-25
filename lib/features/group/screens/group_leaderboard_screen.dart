@@ -120,8 +120,10 @@ class _GroupLeaderboardScreenState extends State<GroupLeaderboardScreen> {
                         const SizedBox(height: 8),
                         Text(
                           GroupResultsAccess.isResultsPhase(test.status)
-                              ? 'Results have not been generated yet. A group manager must generate results first.'
-                              : 'This test is not over yet; the leaderboard is available once results are generated.',
+                              ? 'Result will be available after publication.\n'
+                                    'परिणाम प्रकाशित होने के बाद उपलब्ध होगा।'
+                              : 'This test is not over yet; the leaderboard is available once results are published.',
+                          key: const Key('leaderboard_not_published_note'),
                           textAlign: TextAlign.center,
                         ),
                       ],
@@ -377,7 +379,9 @@ class _GroupLeaderboardScreenState extends State<GroupLeaderboardScreen> {
               const SizedBox(height: 16),
               action ??
                   FilledButton(
-                    onPressed: () => context.go('/groups/${widget.groupId}/tests'),
+                    onPressed: () => context.canPop()
+                        ? context.pop()
+                        : context.go('/groups/${widget.groupId}/tests'),
                     child: const Text('Back to group tests'),
                   ),
             ],

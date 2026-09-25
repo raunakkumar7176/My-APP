@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/constants/theme/app_colors.dart';
 import '../../../core/errors/app_error.dart';
 import '../../../core/models/answer.dart';
+import '../domain/test_integrity_monitor.dart';
 import '../domain/test_kind.dart';
 import '../state/attempt_controller.dart';
 import '../widgets/answer_grid.dart';
@@ -35,7 +36,10 @@ class TestTakingScreen extends StatefulWidget {
 class _TestTakingScreenState extends State<TestTakingScreen> {
   late final AttemptController _c;
   late final bool _owns;
+  late final TestIntegrityMonitor _integrity;
   final _pages = PageController();
+  bool _warnedOnce = false;
+  bool _handledAutoSubmit = false;
 
   @override
   void initState() {
@@ -50,6 +54,7 @@ class _TestTakingScreenState extends State<TestTakingScreen> {
         );
     _c.addListener(_onChanged);
     _c.load();
+    _integrity = TestIntegrityMonitor(controller: _c)..start();
   }
 
   void _onChanged() {
@@ -58,11 +63,47 @@ class _TestTakingScreenState extends State<TestTakingScreen> {
     if (_pages.hasClients && _pages.page?.round() != _c.currentIndex) {
       _pages.jumpToPage(_c.currentIndex);
     }
+    if (!_warnedOnce && _c.isInteractive) {
+      _warnedOnce = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _showIntegrityWarning());
+    }
+    if (!_handledAutoSubmit && _c.integrityAutoSubmitted) {
+      _handledAutoSubmit = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _handleIntegrityAutoSubmit());
+    }
+  }
+
+  void _showIntegrityWarning() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        key: Key('integrity_warning_banner'),
+        content: Text(
+          'Test से बाहर जाने पर integrity violation दर्ज हो सकता है.',
+        ),
+        duration: Duration(seconds: 4),
+      ),
+    );
+  }
+
+  void _handleIntegrityAutoSubmit() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        key: Key('integrity_auto_submit_banner'),
+        content: Text('Integrity limit reached. Your test has been automatically submitted.'),
+        backgroundColor: AppColors.error,
+        duration: Duration(seconds: 5),
+      ),
+    );
+    context.pushReplacement(
+        '/attempts/${_c.attempt?.id ?? widget.attemptId}/result');
   }
 
   @override
   void dispose() {
     _c.removeListener(_onChanged);
+    _integrity.stop();
     _pages.dispose();
     if (_owns) _c.dispose();
     super.dispose();
@@ -74,7 +115,8 @@ class _TestTakingScreenState extends State<TestTakingScreen> {
       // reads it by attempt id either way.
       await _c.submit(timedOut: timedOut);
       if (!mounted) return;
-      context.go('/attempts/${_c.attempt?.id ?? widget.attemptId}/result');
+      context.pushReplacement(
+          '/attempts/${_c.attempt?.id ?? widget.attemptId}/result');
     } on AppError catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -132,7 +174,11 @@ class _TestTakingScreenState extends State<TestTakingScreen> {
 
   Future<void> _onLeave() async {
     if (!_c.isInteractive) {
-      context.go('/tests');
+      if (context.canPop()) {
+        context.pop();
+      } else {
+        context.go('/tests');
+      }
       return;
     }
     final unsaved = _c.hasUnsavedAnswers;
@@ -177,7 +223,11 @@ class _TestTakingScreenState extends State<TestTakingScreen> {
         final ok = await _c.retrySave();
         if (!mounted) return;
         if (ok) {
-          context.go('/tests');
+          if (context.canPop()) {
+            context.pop();
+          } else {
+            context.go('/tests');
+          }
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -232,7 +282,8 @@ class _TestTakingScreenState extends State<TestTakingScreen> {
         title: 'This attempt is no longer active',
         body: 'It has already been submitted.',
         action: FilledButton(
-          onPressed: () => context.go('/attempts/${_c.attempt!.id}/result'),
+          onPressed: () => context.push(
+              '/attempts/${_c.attempt!.id}/result'),
           child: const Text('View Result'),
         ),
       );
@@ -250,7 +301,13 @@ class _TestTakingScreenState extends State<TestTakingScreen> {
             'The server did not provide a deadline for this attempt. '
             'Please go back and start again.',
         action: FilledButton(
-          onPressed: () => context.go('/tests'),
+          onPressed: () {
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go('/tests');
+            }
+          },
           child: const Text('Back to Tests'),
         ),
       );

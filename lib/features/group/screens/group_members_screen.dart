@@ -273,7 +273,9 @@ class _GroupMembersScreenState extends State<GroupMembersScreen> {
               const SizedBox(height: 16),
               action ??
                   FilledButton(
-                    onPressed: () => context.go('/groups'),
+                    onPressed: () => context.canPop()
+                        ? context.pop()
+                        : context.go('/groups'),
                     child: const Text('Back to Groups'),
                   ),
             ],

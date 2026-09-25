@@ -366,6 +366,7 @@ class _QuestionBankScreenState extends State<QuestionBankScreen> {
 
         final item = _controller.items[index];
         return QuestionBankItemCard(
+          key: ValueKey(item.id),
           item: item,
           isSelected: _controller.selectedIds.contains(item.id),
           selectionMode: _controller.selectionMode,

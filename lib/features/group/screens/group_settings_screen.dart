@@ -270,7 +270,11 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
       children: [
         Row(
           children: [
-            Icon(Icons.gavel_outlined, size: 20, color: theme.colorScheme.outline),
+            Icon(
+              Icons.gavel_outlined,
+              size: 20,
+              color: theme.colorScheme.outline,
+            ),
             const SizedBox(width: 8),
             Text('Group rules', style: theme.textTheme.titleSmall),
             const SizedBox(width: 8),
@@ -343,7 +347,11 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
       children: [
         Row(
           children: [
-            Icon(Icons.people_outlined, size: 20, color: theme.colorScheme.outline),
+            Icon(
+              Icons.people_outlined,
+              size: 20,
+              color: theme.colorScheme.outline,
+            ),
             const SizedBox(width: 8),
             Text('Members', style: theme.textTheme.titleSmall),
             const Spacer(),
@@ -380,11 +388,13 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
       children: [
         Row(
           children: [
-            Icon(Icons.logout, size: 20, color: AppColors.error),
+            const Icon(Icons.logout, size: 20, color: AppColors.error),
             const SizedBox(width: 8),
             Text(
               'Danger zone',
-              style: theme.textTheme.titleSmall?.copyWith(color: AppColors.error),
+              style: theme.textTheme.titleSmall?.copyWith(
+                color: AppColors.error,
+              ),
             ),
           ],
         ),
@@ -394,7 +404,10 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
             key: const Key('settings_leave_button'),
             onPressed: _c.isBusy ? null : _leaveGroup,
             icon: const Icon(Icons.logout, color: AppColors.error),
-            label: const Text('Leave group', style: TextStyle(color: AppColors.error)),
+            label: const Text(
+              'Leave group',
+              style: TextStyle(color: AppColors.error),
+            ),
             style: OutlinedButton.styleFrom(
               side: const BorderSide(color: AppColors.error),
             ),

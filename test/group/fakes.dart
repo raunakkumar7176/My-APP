@@ -23,6 +23,7 @@ import 'package:my_praperation/core/models/group_rule.dart';
 import 'package:my_praperation/core/models/profile_match.dart';
 import 'package:my_praperation/features/group/data/group_repository.dart';
 import 'package:my_praperation/features/group/data/notification_repository.dart';
+import 'package:my_praperation/features/notifications/data/notification_feed_repository.dart';
 import 'package:my_praperation/features/group/domain/group_controls.dart';
 import 'package:my_praperation/features/group/domain/group_errors.dart';
 import 'package:my_praperation/features/group/domain/group_permission.dart';
@@ -51,6 +52,9 @@ class FakeGroup {
   final List<GroupAnnouncement> announcements = [];
   final List<GroupMessage> messages = [];
   DateTime createdAt = DateTime(2026, 9, 1);
+
+  /// Mirrors `message_reads.last_read_at`: userId -> last-read timestamp.
+  final Map<String, DateTime> lastReadAt = {};
 }
 
 class InMemoryGroupRepository implements GroupRepository {
@@ -1118,11 +1122,156 @@ class InMemoryGroupRepository implements GroupRepository {
     }
     seedMessage(groupId: groupId, senderId: senderId, body: b);
   }
+
+  // ── Realtime (fake): tests drive events manually via the simulate*
+  // methods below instead of a real Supabase channel. ──
+  final List<_FakeMessageSubscription> _messageSubs = [];
+
+  @override
+  GroupMessageSubscription subscribeToMessages({
+    required String groupId,
+    required void Function(GroupMessage message) onInsert,
+    required void Function(GroupMessage message) onUpdate,
+    void Function(bool connected)? onConnectionChange,
+  }) {
+    calls.add('subscribeToMessages:$groupId');
+    final sub = _FakeMessageSubscription(
+      groupId: groupId,
+      onInsert: onInsert,
+      onUpdate: onUpdate,
+      onConnectionChange: onConnectionChange,
+      onCancel: (s) => _messageSubs.remove(s),
+    );
+    _messageSubs.add(sub);
+    onConnectionChange?.call(true); // fake channels "connect" immediately
+    return sub;
+  }
+
+  /// Test helper: delivers a fake realtime INSERT to every active
+  /// subscription on [groupId], as the real Supabase channel would.
+  void simulateRealtimeInsert(String groupId, GroupMessage message) {
+    for (final sub in _messageSubs) {
+      if (sub.groupId == groupId) sub.onInsert(message);
+    }
+  }
+
+  /// Test helper: delivers a fake realtime UPDATE (e.g. a soft-delete).
+  void simulateRealtimeUpdate(String groupId, GroupMessage message) {
+    for (final sub in _messageSubs) {
+      if (sub.groupId == groupId) sub.onUpdate(message);
+    }
+  }
+
+  /// Test helper: simulates a disconnect/reconnect for [groupId]'s channel.
+  void simulateConnectionChange(String groupId, bool connected) {
+    for (final sub in _messageSubs) {
+      if (sub.groupId == groupId) sub.onConnectionChange?.call(connected);
+    }
+  }
+
+  int get activeSubscriptionCount => _messageSubs.length;
+
+  @override
+  Future<void> deleteGroup(String groupId) async {
+    calls.add('deleteGroup:$groupId');
+    _maybeFail();
+    final g = groups[groupId];
+    if (g == null || g.ownerId != currentUser) {
+      throw _notAuthorized(GroupErrorContext.update);
+    }
+    final others = g.roles.entries.where((e) => e.key != currentUser).length;
+    if (others > 0) {
+      throw const DataError(message: 'GROUP_HAS_OTHER_MEMBERS');
+    }
+    groups.remove(groupId);
+  }
+
+  // ── Chat unread state (0027 RPCs) ──
+
+  @override
+  Future<Map<String, int>> unreadCounts(List<String> groupIds) async {
+    calls.add('unreadCounts:${groupIds.join(',')}');
+    final out = <String, int>{};
+    for (final id in groupIds) {
+      final g = groups[id];
+      if (g == null || !g.roles.containsKey(currentUser)) continue;
+      final lastRead = g.lastReadAt[currentUser];
+      final unread = g.messages.where((m) {
+        if (m.senderId == currentUser) return false;
+        if (m.isDeleted) return false;
+        if (lastRead == null) return true;
+        return m.createdAt.isAfter(lastRead);
+      }).length;
+      if (unread > 0) out[id] = unread;
+    }
+    return out;
+  }
+
+  @override
+  Future<void> markGroupRead(String groupId) async {
+    calls.add('markGroupRead:$groupId');
+    final g = groups[groupId];
+    if (g == null || !g.roles.containsKey(currentUser)) {
+      throw _notAuthorized(GroupErrorContext.load);
+    }
+    g.lastReadAt[currentUser] = DateTime.now();
+  }
+
+  @override
+  Future<Map<String, GroupLatestMessage>> latestMessages(
+    List<String> groupIds,
+  ) async {
+    calls.add('latestMessages:${groupIds.join(',')}');
+    final out = <String, GroupLatestMessage>{};
+    for (final id in groupIds) {
+      final g = groups[id];
+      if (g == null || !g.roles.containsKey(currentUser) || g.messages.isEmpty) {
+        continue;
+      }
+      final latest = g.messages.reduce(
+        (a, b) => a.createdAt.isAfter(b.createdAt) ? a : b,
+      );
+      out[id] = GroupLatestMessage(
+        groupId: id,
+        id: latest.id,
+        body: latest.isDeleted ? null : latest.body,
+        createdAt: latest.createdAt,
+        senderId: latest.senderId,
+        senderName: profileNames[latest.senderId] ?? 'Member',
+        isDeleted: latest.isDeleted,
+      );
+    }
+    return out;
+  }
+}
+
+class _FakeMessageSubscription implements GroupMessageSubscription {
+  _FakeMessageSubscription({
+    required this.groupId,
+    required this.onInsert,
+    required this.onUpdate,
+    required this.onCancel,
+    this.onConnectionChange,
+  });
+
+  final String groupId;
+  final void Function(GroupMessage message) onInsert;
+  final void Function(GroupMessage message) onUpdate;
+  final void Function(bool connected)? onConnectionChange;
+  final void Function(_FakeMessageSubscription) onCancel;
+  bool cancelled = false;
+
+  @override
+  Future<void> cancel() async {
+    cancelled = true;
+    onCancel(this);
+  }
 }
 
 /// G16 — in-memory `NotificationRepository` mirroring the live rules:
-///   * notifications RLS → SELECT / UPDATE own rows only (`user_id = uid`);
-///     no INSERT or DELETE policy for clients (rows come from triggers);
+///   * notifications RLS → SELECT / UPDATE / DELETE own rows only (`user_id = uid`);
+///     no INSERT policy for clients (rows come from triggers);
+///     DELETE policy added in 0055 (BUG-1 fix);
 ///   * read state is `read_at`; unread == `read_at IS NULL`;
 ///   * group scope is `data->>'group_id'`;
 ///   * group_mutes → own rows only (FOR ALL), PK (user_id, group_id).
@@ -1260,6 +1409,161 @@ class FakeNotificationRepository implements NotificationRepository {
       if (u == exclude) continue;
       if (mutes['$u:$groupId'] == true) continue;
       seed(userId: u, groupId: groupId, category: category, type: type, title: title, body: body, extra: extra);
+    }
+  }
+}
+
+/// BUG-1 FIX — in-memory `NotificationFeedRepository` mirroring the live
+/// rules for the global notification feed:
+///   * SELECT / UPDATE / DELETE own rows only (`user_id = uid`)
+///   * read state is `read_at`; unread == `read_at IS NULL`
+///   * no INSERT policy for clients (rows come from triggers)
+///   * keyset pagination on `created_at`, page size 30
+class FakeNotificationFeedRepository implements NotificationFeedRepository {
+  FakeNotificationFeedRepository({this.currentUser = 'u-me'});
+
+  String currentUser;
+  final List<AppNotification> rows = [];
+  final List<String> calls = [];
+  Object? failNextWith;
+  int _seq = 0;
+
+  /// Seeds one row into the fake.
+  AppNotification seed({
+    required String userId,
+    String category = 'GROUP_MESSAGE',
+    String title = 'Test notification',
+    String body = 'body',
+    DateTime? createdAt,
+    DateTime? readAt,
+    Map<String, dynamic> data = const {},
+  }) {
+    _seq++;
+    final n = AppNotification(
+      id: 'fn-${_seq.toString().padLeft(3, '0')}',
+      userId: userId,
+      category: category,
+      title: title,
+      body: body,
+      data: data,
+      createdAt: createdAt ?? DateTime(2026, 9, 1).add(Duration(minutes: _seq)),
+      readAt: readAt,
+      priority: 'medium',
+    );
+    rows.add(n);
+    return n;
+  }
+
+  void _maybeFail() {
+    final f = failNextWith;
+    if (f != null) {
+      failNextWith = null;
+      throw f;
+    }
+  }
+
+  Iterable<AppNotification> get _ownRows =>
+      rows.where((n) => n.userId == currentUser);
+
+  @override
+  Future<List<AppNotification>> feed({
+    int limit = notificationFeedPageSize,
+    DateTime? before,
+  }) async {
+    calls.add('feed:$limit:${before?.toIso8601String() ?? ''}');
+    _maybeFail();
+    final list = _ownRows
+        .where((n) => before == null || n.createdAt.isBefore(before))
+        .toList()
+      ..sort((a, b) {
+        final c = b.createdAt.compareTo(a.createdAt);
+        return c != 0 ? c : b.id.compareTo(a.id);
+      });
+    return list.take(limit).toList();
+  }
+
+  @override
+  Future<int> totalUnreadCount() async {
+    calls.add('totalUnreadCount');
+    _maybeFail();
+    return _ownRows.where((n) => !n.isRead).length;
+  }
+
+  @override
+  Future<int> unreadCountByCategory(NotificationCategory category) async {
+    calls.add('unreadCountByCategory:${category.label}');
+    _maybeFail();
+    return _ownRows
+        .where((n) => n.category == category.label && !n.isRead)
+        .length;
+  }
+
+  @override
+  Future<bool> markRead(String notificationId) async {
+    calls.add('markRead:$notificationId');
+    _maybeFail();
+    final i = rows.indexWhere(
+      (n) => n.id == notificationId && n.userId == currentUser && !n.isRead,
+    );
+    if (i < 0) return false;
+    rows[i] = rows[i].copyWith(readAt: DateTime(2026, 9, 2));
+    return true;
+  }
+
+  @override
+  Future<int> markAllRead() async {
+    calls.add('markAllRead');
+    _maybeFail();
+    var n = 0;
+    for (var i = 0; i < rows.length; i++) {
+      final r = rows[i];
+      if (r.userId == currentUser && !r.isRead) {
+        rows[i] = r.copyWith(readAt: DateTime(2026, 9, 2));
+        n++;
+      }
+    }
+    return n;
+  }
+
+  @override
+  Future<int> markAllReadForCategory(NotificationCategory category) async {
+    calls.add('markAllReadForCategory:${category.label}');
+    _maybeFail();
+    var n = 0;
+    for (var i = 0; i < rows.length; i++) {
+      final r = rows[i];
+      if (r.userId == currentUser &&
+          r.category == category.label &&
+          !r.isRead) {
+        rows[i] = r.copyWith(readAt: DateTime(2026, 9, 2));
+        n++;
+      }
+    }
+    return n;
+  }
+
+  @override
+  Future<bool> dismiss(String notificationId) async {
+    calls.add('dismiss:$notificationId');
+    _maybeFail();
+    final i = rows.indexWhere(
+      (n) => n.id == notificationId && n.userId == currentUser,
+    );
+    if (i < 0) return false; // RLS: 0 rows for another user's row
+    rows.removeAt(i);
+    return true;
+  }
+
+  @override
+  Future<AppNotification?> getById(String notificationId) async {
+    calls.add('getById:$notificationId');
+    _maybeFail();
+    try {
+      return rows.firstWhere(
+        (n) => n.id == notificationId && n.userId == currentUser,
+      );
+    } on StateError {
+      return null;
     }
   }
 }

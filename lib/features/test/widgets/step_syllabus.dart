@@ -110,41 +110,61 @@ class _StepSyllabusState extends State<StepSyllabus> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final totalSelected =
+        widget.serverSelectedNodeIds.length + widget.selectedNodeIds.length;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // ── Header ──
         Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Syllabus',
-                style: Theme.of(context).textTheme.titleLarge
-                    ?.copyWith(fontWeight: FontWeight.w600),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Syllabus',
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  if (totalSelected > 0)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '$totalSelected topic${totalSelected == 1 ? '' : 's'}',
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: theme.colorScheme.onPrimaryContainer,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                ],
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 4),
               Text(
                 'Select syllabus topics covered by this test.',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurface
-                      .withValues(alpha: 0.6),
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
-              if (widget.selectedNodeIds.isNotEmpty ||
-                  widget.serverSelectedNodeIds.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Text(
-                  '${widget.serverSelectedNodeIds.length + widget.selectedNodeIds.length} topic(s) selected',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: AppColors.primaryLight,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
             ],
           ),
         ),
+
+        // ── Body ──
         Expanded(child: _buildBody()),
       ],
     );
@@ -171,16 +191,18 @@ class _StepSyllabusState extends State<StepSyllabus> {
           child: _selectedSubject == null
               ? _buildEmpty('Select a subject to view syllabus')
               : _isLoadingNodes
-              ? const Center(child: CircularProgressIndicator())
-              : _allNodes.isEmpty
-              ? _buildEmpty('No syllabus available for this subject')
-              : _buildNodeTree(),
+                  ? const Center(child: CircularProgressIndicator())
+                  : _allNodes.isEmpty
+                      ? _buildEmpty('No syllabus available for this subject')
+                      : _buildNodeTree(),
         ),
       ],
     );
   }
 
   Widget _buildError() {
+    final theme = Theme.of(context);
+
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -191,8 +213,9 @@ class _StepSyllabusState extends State<StepSyllabus> {
             const SizedBox(height: 12),
             Text(
               _error!,
-              style: Theme.of(context).textTheme.bodyMedium
-                  ?.copyWith(color: AppColors.error),
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: AppColors.error,
+              ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
@@ -207,6 +230,8 @@ class _StepSyllabusState extends State<StepSyllabus> {
   }
 
   Widget _buildEmpty(String message) {
+    final theme = Theme.of(context);
+
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -216,13 +241,12 @@ class _StepSyllabusState extends State<StepSyllabus> {
             Icon(
               Icons.topic_outlined,
               size: 48,
-              color: Theme.of(context).colorScheme.onSurface
-                  .withValues(alpha: 0.3),
+              color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
             ),
             const SizedBox(height: 12),
             Text(
               message,
-              style: Theme.of(context).textTheme.bodyLarge,
+              style: theme.textTheme.bodyLarge,
               textAlign: TextAlign.center,
             ),
           ],
@@ -276,6 +300,7 @@ class _StepSyllabusState extends State<StepSyllabus> {
     final isServerSelected = widget.serverSelectedNodeIds.contains(node.id);
     final isSelected = isLocalSelected || isServerSelected;
     final hasChildren = children.isNotEmpty;
+    final theme = Theme.of(context);
 
     return Column(
       children: [
@@ -286,11 +311,10 @@ class _StepSyllabusState extends State<StepSyllabus> {
             padding: EdgeInsets.only(left: depth * 16.0),
             child: Text(
               node.name,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              style: theme.textTheme.bodyMedium?.copyWith(
                 fontWeight: hasChildren ? FontWeight.w600 : FontWeight.w400,
                 color: isServerSelected
-                    ? Theme.of(context).colorScheme.onSurface
-                          .withValues(alpha: 0.5)
+                    ? theme.colorScheme.onSurfaceVariant
                     : null,
               ),
             ),
@@ -302,24 +326,22 @@ class _StepSyllabusState extends State<StepSyllabus> {
                     isServerSelected
                         ? '${node.classLevel} (existing)'
                         : node.classLevel!,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurface
-                          .withValues(alpha: 0.6),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
                     ),
                   ),
                 )
               : isServerSelected
-              ? Padding(
-                  padding: EdgeInsets.only(left: depth * 16.0),
-                  child: Text(
-                    '(existing)',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurface
-                          .withValues(alpha: 0.6),
-                    ),
-                  ),
-                )
-              : null,
+                  ? Padding(
+                      padding: EdgeInsets.only(left: depth * 16.0),
+                      child: Text(
+                        '(existing)',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    )
+                  : null,
           dense: true,
           controlAffinity: ListTileControlAffinity.leading,
         ),

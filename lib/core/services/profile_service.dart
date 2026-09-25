@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../errors/app_error.dart';
@@ -129,6 +130,36 @@ final class ProfileService {
     }
   }
 
+  /// Persists a new (or cleared, via null) avatar URL. Separate from
+  /// [updateProfile] so the avatar upload/delete flow — which already
+  /// wrote the Storage object before calling this — only ever touches the
+  /// one column it needs to.
+  static Future<void> setAvatarUrl(String? avatarUrl) async {
+    final userId = SupabaseService.client.auth.currentUser?.id;
+    if (userId == null) {
+      throw const AuthError(message: 'You must be signed in to update your profile.');
+    }
+    if (_currentProfile == null) {
+      throw const DataError(message: 'No profile loaded. Please reload.');
+    }
+
+    try {
+      await _db.update({'avatar_url': avatarUrl}).eq('id', userId);
+      _currentProfile = _currentProfile!.copyWith(
+        avatarUrl: avatarUrl,
+        clearAvatar: avatarUrl == null,
+      );
+      AppLogger.info('Profile avatar_url updated.');
+    } on PostgrestException catch (e) {
+      AppLogger.error('Avatar URL update PostgrestException: ${e.message}');
+      throw DataError(message: _mapProfileErrorMessage(e.message));
+    } catch (e) {
+      if (e is AppError) rethrow;
+      AppLogger.error('Avatar URL update unexpected error: $e');
+      throw const DataError(message: 'Failed to update your photo. Please try again.');
+    }
+  }
+
   static void _updateStatus(ProfileStatus status) {
     _currentStatus = status;
     _statusController.add(status);
@@ -156,5 +187,14 @@ final class ProfileService {
 
   static void dispose() {
     _statusController.close();
+  }
+
+  /// Seeds [currentProfile] directly, bypassing Supabase — for widget/unit
+  /// tests that need a loaded profile without a real backend. Matches the
+  /// existing [SupabaseService.setClientForTesting] convention.
+  @visibleForTesting
+  static void setProfileForTesting(Profile? profile) {
+    _currentProfile = profile;
+    _currentStatus = profile != null ? ProfileStatus.loaded : ProfileStatus.initial;
   }
 }

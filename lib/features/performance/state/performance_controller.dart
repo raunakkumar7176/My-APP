@@ -154,10 +154,16 @@ class PerformanceController extends DisposableNotifier {
         return bAt.compareTo(aAt);
       });
 
+    final scanned = previous.take(_maxTestsScanned).toList();
+    final rowsPerTest = await Future.wait([
+      for (final t in scanned) _results.mineForTest(t.id),
+    ]);
     final out = <RecentTestResult>[];
-    for (final t in previous.take(_maxTestsScanned)) {
-      final rows = await _results.mineForTest(t.id);
-      if (rows.isNotEmpty) out.add(RecentTestResult(test: t, result: rows.first));
+    for (var i = 0; i < scanned.length; i++) {
+      final rows = rowsPerTest[i];
+      if (rows.isNotEmpty) {
+        out.add(RecentTestResult(test: scanned[i], result: rows.first));
+      }
     }
     out.sort((a, b) {
       final aAt = a.result.computedAt ?? DateTime(0);

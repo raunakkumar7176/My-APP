@@ -35,6 +35,7 @@ class GroupAvatar extends StatelessWidget {
         url,
         width: radius * 2,
         height: radius * 2,
+        cacheWidth: (radius * 2 * MediaQuery.devicePixelRatioOf(context)).round(),
         fit: BoxFit.cover,
         errorBuilder: (_, _, _) => initial,
         loadingBuilder: (_, child, progress) =>

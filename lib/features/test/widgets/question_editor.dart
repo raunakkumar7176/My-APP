@@ -164,18 +164,27 @@ class _QuestionEditorState extends State<QuestionEditor> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // ── Question Type ──
                 _buildQuestionTypeDropdown(),
                 const SizedBox(height: 16),
+
+                // ── Question Text ──
                 _buildQuestionTextField(),
                 if (_showValidation && _questionController.text.trim().isEmpty)
                   _buildErrorText('Question text is required'),
                 const SizedBox(height: 16),
+
+                // ── Options ──
                 if (_isMcqType) ...[
                   _buildOptionsSection(),
                   const SizedBox(height: 16),
                 ],
+
+                // ── Difficulty ──
                 _buildDifficultyDropdown(),
                 const SizedBox(height: 16),
+
+                // ── Marks ──
                 _buildMarksFields(),
                 if (_showValidation) ...[
                   if (int.tryParse(_marksController.text) == null ||
@@ -183,6 +192,8 @@ class _QuestionEditorState extends State<QuestionEditor> {
                     _buildErrorText('Valid marks are required'),
                 ],
                 const SizedBox(height: 16),
+
+                // ── Explanation ──
                 _buildExplanationField(),
               ],
             ),
@@ -246,6 +257,7 @@ class _QuestionEditorState extends State<QuestionEditor> {
         errorText: _showValidation && _questionController.text.trim().isEmpty
             ? 'Question text is required'
             : null,
+        prefixIcon: const Icon(Icons.help_outline, size: 20),
       ),
       maxLines: 3,
       textCapitalization: TextCapitalization.sentences,
@@ -254,6 +266,8 @@ class _QuestionEditorState extends State<QuestionEditor> {
   }
 
   Widget _buildOptionsSection() {
+    final theme = Theme.of(context);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -262,8 +276,9 @@ class _QuestionEditorState extends State<QuestionEditor> {
           children: [
             Text(
               'Options',
-              style: Theme.of(context).textTheme.titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w600),
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
             ),
             TextButton.icon(
               onPressed: _addOption,
@@ -278,8 +293,9 @@ class _QuestionEditorState extends State<QuestionEditor> {
             padding: const EdgeInsets.only(bottom: 8),
             child: Text(
               'At least ${QuestionDraft.minOptions} options required, all filled in, with one correct answer',
-              style: Theme.of(context).textTheme.bodySmall
-                  ?.copyWith(color: Theme.of(context).colorScheme.error),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.error,
+              ),
             ),
           ),
         ...List.generate(_options.length, (index) {
@@ -368,6 +384,7 @@ class _QuestionEditorState extends State<QuestionEditor> {
       decoration: const InputDecoration(
         labelText: 'Explanation (Optional)',
         hintText: 'Explain the correct answer',
+        prefixIcon: Icon(Icons.lightbulb_outline, size: 20),
       ),
       maxLines: 3,
       textCapitalization: TextCapitalization.sentences,
@@ -379,8 +396,9 @@ class _QuestionEditorState extends State<QuestionEditor> {
       padding: const EdgeInsets.only(top: 4),
       child: Text(
         message,
-        style: Theme.of(context).textTheme.bodySmall
-            ?.copyWith(color: Theme.of(context).colorScheme.error),
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: Theme.of(context).colorScheme.error,
+        ),
       ),
     );
   }

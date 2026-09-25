@@ -180,7 +180,7 @@ void main() {
             serverQuestions: serverQuestions,
             onLocalQuestionsChanged: (_) {},
             onDeleteServerQuestion: (_) async {},
-            onUpdateServerQuestion: (_, __) async {},
+            onUpdateServerQuestion: (_, _) async {},
           ),
         ),
       );
@@ -204,7 +204,7 @@ void main() {
             serverQuestions: const [],
             onLocalQuestionsChanged: (_) {},
             onDeleteServerQuestion: (_) async {},
-            onUpdateServerQuestion: (_, __) async {},
+            onUpdateServerQuestion: (_, _) async {},
           ),
         ),
       );
@@ -240,7 +240,7 @@ void main() {
             serverQuestions: serverQuestions,
             onLocalQuestionsChanged: (_) {},
             onDeleteServerQuestion: (_) async {},
-            onUpdateServerQuestion: (_, __) async {},
+            onUpdateServerQuestion: (_, _) async {},
           ),
         ),
       );
@@ -271,7 +271,7 @@ void main() {
             serverQuestions: serverQuestions,
             onLocalQuestionsChanged: (_) {},
             onDeleteServerQuestion: (_) async {},
-            onUpdateServerQuestion: (_, __) async {},
+            onUpdateServerQuestion: (_, _) async {},
           ),
         ),
       );
@@ -301,7 +301,7 @@ void main() {
             serverQuestions: const [],
             onLocalQuestionsChanged: (_) {},
             onDeleteServerQuestion: (_) async {},
-            onUpdateServerQuestion: (_, __) async {},
+            onUpdateServerQuestion: (_, _) async {},
           ),
         ),
       );
@@ -330,7 +330,7 @@ void main() {
             serverQuestions: const [],
             onLocalQuestionsChanged: (q) => capturedQuestions = q,
             onDeleteServerQuestion: (_) async {},
-            onUpdateServerQuestion: (_, __) async {},
+            onUpdateServerQuestion: (_, _) async {},
           ),
         ),
       );

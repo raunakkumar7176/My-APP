@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/models/question_bank_item.dart';
 import '../models/question_draft.dart';
 import '../screens/ai_generation_screen.dart';
+import 'section_card.dart';
 
 /// Where the test's questions come from.
 /// - [manual]: Write questions yourself
@@ -18,7 +19,7 @@ extension QuestionSourceInfo on QuestionSource {
       case QuestionSource.manual:
         return 'Manual';
       case QuestionSource.document:
-        return 'Via Document';
+        return 'Smart Document & AI Intake';
       case QuestionSource.ai:
         return 'AI Generated';
       case QuestionSource.books:
@@ -31,7 +32,7 @@ extension QuestionSourceInfo on QuestionSource {
       case QuestionSource.manual:
         return 'Write questions yourself in the Questions step.';
       case QuestionSource.document:
-        return 'PDF / Word / Excel → extracted content → questions → review → approval.';
+        return 'Upload PDF / Word / TXT / Image → auto-detects MCQs or synthesizes via Gemini AI.';
       case QuestionSource.ai:
         return 'Subject, concept, count, difficulty and language → generated questions → review before publish.';
       case QuestionSource.books:
@@ -43,6 +44,7 @@ extension QuestionSourceInfo on QuestionSource {
   bool get isAvailable =>
       this == QuestionSource.manual ||
       this == QuestionSource.document ||
+      this == QuestionSource.ai ||
       this == QuestionSource.books;
 
   IconData get icon {
@@ -50,7 +52,7 @@ extension QuestionSourceInfo on QuestionSource {
       case QuestionSource.manual:
         return Icons.edit_note;
       case QuestionSource.document:
-        return Icons.upload_file_outlined;
+        return Icons.document_scanner_outlined;
       case QuestionSource.ai:
         return Icons.auto_awesome_outlined;
       case QuestionSource.books:
@@ -137,47 +139,38 @@ class QuestionSourceStep extends StatelessWidget {
               fontWeight: FontWeight.w600,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 4),
           Text(
             'Choose how questions get into this test.',
             style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+              color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
-          const SizedBox(height: 16),
-          for (final s in QuestionSource.values)
-            Card(
-              key: Key('source_${s.name}'),
-              child: RadioListTile<QuestionSource>(
-                value: s,
-                groupValue: selected,
-                onChanged: (v) {
-                  if (v == null) return;
-                  onChanged(v);
-                  if (v == QuestionSource.books) {
-                    _openQuestionBank(context);
-                  } else if (v == QuestionSource.document) {
-                    _openDocumentImport(context);
-                  } else if (v == QuestionSource.ai) {
-                    _openAiGeneration(context);
-                  }
-                },
-                secondary: Icon(s.icon),
-                title: Row(
-                  children: [
-                    Expanded(child: Text(s.label)),
-                    if (!s.isAvailable)
-                      Chip(
-                        label: const Text('Not configured'),
-                        visualDensity: VisualDensity.compact,
-                        backgroundColor:
-                            theme.colorScheme.surfaceContainerHighest,
-                      ),
-                  ],
+          const SizedBox(height: 20),
+
+          // ── Source Selection ──
+          SectionCard(
+            title: 'Select Source',
+            children: [
+              for (final s in QuestionSource.values)
+                _SourceTile(
+                  source: s,
+                  isSelected: s == selected,
+                  onSelect: () {
+                    onChanged(s);
+                    if (s == QuestionSource.books) {
+                      _openQuestionBank(context);
+                    } else if (s == QuestionSource.document) {
+                      _openDocumentImport(context);
+                    } else if (s == QuestionSource.ai) {
+                      _openAiGeneration(context);
+                    }
+                  },
                 ),
-                subtitle: Text(s.description),
-              ),
-            ),
+            ],
+          ),
+
+          // ── Unavailable Source Banner ──
           if (!selected.isAvailable) ...[
             const SizedBox(height: 12),
             MaterialBanner(
@@ -219,9 +212,7 @@ class QuestionSourceStep extends StatelessWidget {
   Future<void> _openDocumentImport(BuildContext context) async {
     final drafts = await context.push<List<QuestionDraft>>(
       '/tests/create/document-import',
-      extra: {
-        'groupId': groupId,
-      },
+      extra: {'groupId': groupId},
     );
 
     if (drafts != null &&
@@ -232,15 +223,36 @@ class QuestionSourceStep extends StatelessWidget {
   }
 
   Future<void> _openAiGeneration(BuildContext context) async {
+    final choice = await showModalBottomSheet<_AiSourceChoice>(
+      context: context,
+      builder: (ctx) => const _AiSourceChooser(),
+    );
+    if (choice == null || !context.mounted) return;
+
+    switch (choice) {
+      case _AiSourceChoice.topic:
+        await _pushAiGeneration(context, const AiGenerationPrefill());
+      case _AiSourceChoice.camera:
+      case _AiSourceChoice.file:
+        await _openDocumentImport(context);
+    }
+  }
+
+  Future<void> _pushAiGeneration(
+    BuildContext context,
+    AiGenerationPrefill base,
+  ) async {
     final result = await context.push<AiGenerationComplete>(
       '/tests/create/ai-generate',
       extra: AiGenerationPrefill(
-        subject: subject,
-        topic: topic,
-        chapter: chapter,
+        subject: subject.isNotEmpty ? subject : base.subject,
+        topic: topic.isNotEmpty ? topic : base.topic,
+        chapter: chapter.isNotEmpty ? chapter : base.chapter,
         groupId: groupId,
         testMode: testMode,
         marksPerQuestion: marksPerQuestion,
+        sourceText: base.sourceText,
+        sourceLabel: base.sourceLabel,
       ),
     );
 
@@ -249,5 +261,172 @@ class QuestionSourceStep extends StatelessWidget {
         onAiQuestionsSelected != null) {
       onAiQuestionsSelected!(result.questions);
     }
+  }
+}
+
+enum _AiSourceChoice { camera, file, topic }
+
+class _SourceTile extends StatelessWidget {
+  const _SourceTile({
+    required this.source,
+    required this.isSelected,
+    required this.onSelect,
+  });
+
+  final QuestionSource source;
+  final bool isSelected;
+  final VoidCallback onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: isSelected
+            ? colorScheme.primaryContainer.withValues(alpha: 0.3)
+            : colorScheme.surfaceContainerLowest,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+          side: BorderSide(
+            color: isSelected
+                ? colorScheme.primary
+                : colorScheme.outlineVariant,
+            width: isSelected ? 1.5 : 1,
+          ),
+        ),
+        child: InkWell(
+          onTap: source.isAvailable ? onSelect : null,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? colorScheme.primary.withValues(alpha: 0.15)
+                        : colorScheme.surfaceContainerHigh,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    source.icon,
+                    size: 22,
+                    color: isSelected
+                        ? colorScheme.primary
+                        : colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              source.label,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                fontWeight: isSelected
+                                    ? FontWeight.w600
+                                    : FontWeight.w400,
+                              ),
+                            ),
+                          ),
+                          if (!source.isAvailable)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: colorScheme.surfaceContainerHighest,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                'N/A',
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        source.description,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Icon(
+                  isSelected
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_unchecked,
+                  size: 20,
+                  color: isSelected ? colorScheme.primary : colorScheme.outline,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AiSourceChooser extends StatelessWidget {
+  const _AiSourceChooser();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'How should AI get the topic?',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 12),
+            ListTile(
+              key: const Key('ai_source_camera'),
+              leading: const Icon(Icons.camera_alt_outlined),
+              title: const Text('Take Photos'),
+              onTap: () => Navigator.of(context).pop(_AiSourceChoice.camera),
+            ),
+            ListTile(
+              key: const Key('ai_source_file'),
+              leading: const Icon(Icons.file_upload_outlined),
+              title: const Text('Choose File'),
+              onTap: () => Navigator.of(context).pop(_AiSourceChoice.file),
+            ),
+            ListTile(
+              key: const Key('ai_source_topic'),
+              leading: const Icon(Icons.edit_outlined),
+              title: const Text('Enter Topic'),
+              onTap: () => Navigator.of(context).pop(_AiSourceChoice.topic),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

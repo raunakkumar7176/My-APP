@@ -98,6 +98,131 @@ void main() {
     });
   });
 
+  group('Legacy DOC extraction (heuristic, real bytes, no Supabase)', () {
+    test('printable ASCII runs are recovered as blocks, honestly, not fabricated', () {
+      // A real .doc is OLE-structured binary; this mimics the shape enough
+      // to prove the heuristic finds readable runs and skips binary noise.
+      final builder = BytesBuilder();
+      builder.add([0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]); // OLE magic
+      builder.add(List.filled(20, 0x00)); // binary padding
+      builder.add('1. What is the capital of Italy?'.codeUnits);
+      builder.add([0x00, 0x00, 0x00]);
+      builder.add('A. Rome'.codeUnits);
+      builder.add([0x00]);
+      builder.add('B. Milan'.codeUnits);
+
+      final content = service.extractFromBytes(builder.toBytes(), 'quiz.doc');
+      expect(content.sourceFormat, DocumentFormat.doc);
+      final joined = content.blocks.map((b) => b.text).join('\n');
+      expect(joined, contains('capital of Italy'));
+      expect(joined, contains('A. Rome'));
+    });
+
+    test('pure binary noise yields no fabricated text', () {
+      final bytes = Uint8List.fromList(List.filled(50, 0x01));
+      final content = service.extractFromBytes(bytes, 'binary.doc');
+      expect(content.blocks, isEmpty);
+    });
+  });
+
+  group('Image extraction (JPG/PNG uploaded as a file, real bytes)', () {
+    test('a JPG file yields one unread page block, honestly, not OCR-guessed', () {
+      final bytes = Uint8List.fromList([0xFF, 0xD8, 0xFF, 0xE0, 0, 0, 0, 0]);
+      final content = service.extractFromBytes(bytes, 'photo.jpg');
+      expect(content.sourceFormat, DocumentFormat.image);
+      expect(content.blocks.length, 1);
+      expect(content.blocks.first.text, isEmpty);
+    });
+
+    test('a PNG file yields one unread page block', () {
+      final bytes = Uint8List.fromList([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+      final content = service.extractFromBytes(bytes, 'photo.png');
+      expect(content.sourceFormat, DocumentFormat.image);
+      expect(content.blocks.length, 1);
+    });
+  });
+
+  group('File signature validation (magic bytes, never trust extension alone)', () {
+    test('a real PDF passes validation', () {
+      final file = PickedFile(
+        path: '/tmp/real.pdf',
+        name: 'real.pdf',
+        size: 20,
+        bytes: Uint8List.fromList('%PDF-1.4\n%%EOF        '.codeUnits),
+      );
+      expect(() => service.validateFile(file), returnsNormally);
+    });
+
+    test('an .exe renamed to .pdf is rejected despite the correct extension', () {
+      final file = PickedFile(
+        path: '/tmp/fake.pdf',
+        name: 'fake.pdf',
+        size: 20,
+        bytes: Uint8List.fromList([0x4D, 0x5A, 0x90, 0x00, 0x03, 0x00, 0x00, 0x00]), // MZ (PE exe)
+      );
+      expect(
+        () => service.validateFile(file),
+        throwsA(
+          isA<ValidationError>().having(
+            (e) => e.message,
+            'message',
+            contains("doesn't look like a valid"),
+          ),
+        ),
+      );
+    });
+
+    test('a real JPG passes validation', () {
+      final file = PickedFile(
+        path: '/tmp/real.jpg',
+        name: 'real.jpg',
+        size: 8,
+        bytes: Uint8List.fromList([0xFF, 0xD8, 0xFF, 0xE0, 0, 0, 0, 0]),
+      );
+      expect(() => service.validateFile(file), returnsNormally);
+    });
+
+    test('a real PNG passes validation', () {
+      final file = PickedFile(
+        path: '/tmp/real.png',
+        name: 'real.png',
+        size: 8,
+        bytes: Uint8List.fromList([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]),
+      );
+      expect(() => service.validateFile(file), returnsNormally);
+    });
+
+    test('a text file renamed to .png is rejected', () {
+      final file = PickedFile(
+        path: '/tmp/fake.png',
+        name: 'fake.png',
+        size: 20,
+        bytes: Uint8List.fromList('this is plain text!!'.codeUnits),
+      );
+      expect(() => service.validateFile(file), throwsA(isA<ValidationError>()));
+    });
+
+    test('a real DOCX (zip signature) passes validation', () {
+      final file = PickedFile(
+        path: '/tmp/real.docx',
+        name: 'real.docx',
+        size: 8,
+        bytes: Uint8List.fromList([0x50, 0x4B, 0x03, 0x04, 0, 0, 0, 0]),
+      );
+      expect(() => service.validateFile(file), returnsNormally);
+    });
+
+    test('a real DOC (OLE signature) passes validation', () {
+      final file = PickedFile(
+        path: '/tmp/real.doc',
+        name: 'real.doc',
+        size: 8,
+        bytes: Uint8List.fromList([0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]),
+      );
+      expect(() => service.validateFile(file), returnsNormally);
+    });
+  });
+
   group('DOCX extraction (real minimal zip)', () {
     String documentXml(List<String> paragraphs) {
       final body = paragraphs

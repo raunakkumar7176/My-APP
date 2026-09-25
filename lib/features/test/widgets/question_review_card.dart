@@ -194,10 +194,12 @@ class QuestionReviewCard extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
           color: isSelected
-              ? AppColors.primaryLight.withValues(alpha: 0.08)
+              ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.08)
               : Colors.transparent,
           border: Border.all(
-            color: isSelected ? AppColors.primaryLight : Colors.grey.shade300,
+            color: isSelected
+                ? Theme.of(context).colorScheme.primary
+                : Theme.of(context).colorScheme.outlineVariant,
           ),
           borderRadius: BorderRadius.circular(8),
         ),
@@ -206,7 +208,10 @@ class QuestionReviewCard extends StatelessWidget {
             Icon(
               isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
               size: 18,
-              color: isSelected ? AppColors.primaryLight : Colors.grey,
+              color: isSelected
+                  ? Theme.of(context).colorScheme.primary
+                  : Theme.of(context).colorScheme.onSurfaceVariant
+                        .withValues(alpha: 0.6),
             ),
             const SizedBox(width: 10),
             Expanded(
@@ -214,8 +219,8 @@ class QuestionReviewCard extends StatelessWidget {
                 option.text,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: isSelected
-                      ? AppColors.primaryLight
-                      : AppColors.textPrimaryLight,
+                      ? Theme.of(context).colorScheme.primary
+                      : Theme.of(context).colorScheme.onSurface,
                 ),
               ),
             ),
@@ -230,13 +235,13 @@ class QuestionReviewCard extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.grey.shade100,
+        color: Theme.of(context).colorScheme.surfaceContainer,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
         'Not answered',
         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-          color: AppColors.textSecondaryLight,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
           fontStyle: FontStyle.italic,
         ),
       ),

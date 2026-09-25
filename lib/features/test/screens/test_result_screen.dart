@@ -82,7 +82,8 @@ class _TestResultScreenState extends State<TestResultScreen> {
     try {
       final launch = await _c.reattempt();
       if (!mounted) return;
-      context.go('/attempts/${launch.attemptId}/take?test=${launch.testId}');
+      context.pushReplacement(
+          '/attempts/${launch.attemptId}/take?test=${launch.testId}');
     } on AppError catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -122,7 +123,13 @@ class _TestResultScreenState extends State<TestResultScreen> {
                 const SizedBox(height: 12),
                 FilledButton(onPressed: _c.load, child: const Text('Retry')),
                 TextButton(
-                  onPressed: () => context.go('/tests'),
+                  onPressed: () {
+                    if (context.canPop()) {
+                      context.pop();
+                    } else {
+                      context.go('/tests');
+                    }
+                  },
                   child: const Text('Back to Tests'),
                 ),
               ],
@@ -141,7 +148,13 @@ class _TestResultScreenState extends State<TestResultScreen> {
         title: Text(_c.test?.title ?? 'Result'),
         leading: IconButton(
           icon: const Icon(Icons.close),
-          onPressed: () => context.go('/tests'),
+          onPressed: () {
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go('/tests');
+            }
+          },
         ),
       ),
       body: ListView(
@@ -228,6 +241,39 @@ class _TestResultScreenState extends State<TestResultScreen> {
             const SizedBox(height: 12),
             TopicAnalysisCard(items: _c.topicBreakdown),
           ],
+          if (_c.topicBreakdown.any(
+            (t) => t.accuracy < 60 && t.attempted > 0,
+          )) ...[
+            const SizedBox(height: 12),
+            Card(
+              color: Theme.of(context).colorScheme.primaryContainer,
+              child: ListTile(
+                leading: Icon(
+                  Icons.auto_stories_rounded,
+                  color: Theme.of(context).colorScheme.onPrimaryContainer,
+                ),
+                title: Text(
+                  'Recommended Concept Revision',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(context).colorScheme.onPrimaryContainer,
+                  ),
+                ),
+                subtitle: Text(
+                  'We identified areas with accuracy under 60%. Review theory and formulas in My Study.',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onPrimaryContainer
+                        .withValues(alpha: 0.8),
+                  ),
+                ),
+                trailing: Icon(
+                  Icons.arrow_forward_rounded,
+                  color: Theme.of(context).colorScheme.onPrimaryContainer,
+                ),
+                onTap: () => context.push('/study'),
+              ),
+            ),
+          ],
           if (_c.attemptHistory.length > 1) ...[
             const SizedBox(height: 12),
             _AttemptSummaryCard(
@@ -282,7 +328,13 @@ class _TestResultScreenState extends State<TestResultScreen> {
             const SizedBox(height: 8),
           ],
           TextButton(
-            onPressed: () => context.go('/tests'),
+            onPressed: () {
+              if (context.canPop()) {
+                context.pop();
+              } else {
+                context.go('/tests');
+              }
+            },
             child: const Text('Back to Tests'),
           ),
         ],
@@ -320,8 +372,9 @@ class _TestResultScreenState extends State<TestResultScreen> {
       : (v % 1 == 0 ? v.toInt().toString() : v.toStringAsFixed(1));
 
   static String _delta(double? current, double? previous) {
-    if (current == null || previous == null)
+    if (current == null || previous == null) {
       return 'Previous attempt available';
+    }
     final d = current - previous;
     if (d.abs() < 0.05) return 'Same as your previous attempt';
     return d > 0

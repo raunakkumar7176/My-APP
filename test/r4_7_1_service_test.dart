@@ -5,55 +5,114 @@ import 'package:my_praperation/core/models/attempt.dart';
 import 'package:my_praperation/core/models/result.dart';
 
 void main() {
-  group('Answer model (LIVE contract 2026-09-16: selected_option int, marked_for_review)', () {
-    test('fromRow parses the live answers row', () {
-      final a = Answer.fromRow({
+  group('Answer model', () {
+    test('fromJson parses all fields', () {
+      final answer = Answer.fromJson({
         'attempt_id': 'a-1',
         'question_id': 'q-1',
-        'selected_option': 2,
-        'marked_for_review': true,
-        'updated_at': '2026-09-16T10:00:00Z',
+        'selected_option_id': 'opt-2',
+        'text_answer': null,
+        'is_marked_for_review': true,
+        'is_answered': true,
       });
-      expect(a.selectedOption, 2);
-      expect(a.markedForReview, isTrue);
-      expect(a.isAnswered, isTrue);
-      expect(a.updatedAt, isNotNull);
+
+      expect(answer.attemptId, 'a-1');
+      expect(answer.questionId, 'q-1');
+      expect(answer.selectedOptionId, 'opt-2');
+      expect(answer.textAnswer, isNull);
+      expect(answer.isMarkedForReview, true);
+      expect(answer.isAnswered, true);
     });
 
-    test('fromRow: null selected_option means unanswered; flags default false', () {
-      final a = Answer.fromRow({'attempt_id': 'a-1', 'question_id': 'q-1'});
-      expect(a.selectedOption, isNull);
-      expect(a.isAnswered, isFalse);
-      expect(a.markedForReview, isFalse);
-    });
-
-    test('toRpcJson sends exactly the fields rpc_save_answers validates', () {
-      const a = Answer(attemptId: 'a-1', questionId: 'q-1', selectedOption: 0, markedForReview: true);
-      expect(a.toRpcJson(), {
+    test('fromJson defaults booleans to false when null', () {
+      final answer = Answer.fromJson({
+        'attempt_id': 'a-1',
         'question_id': 'q-1',
-        'selected_option': 0,
-        'marked_for_review': true,
+        'selected_option_id': null,
+        'text_answer': null,
+        'is_marked_for_review': null,
+        'is_answered': null,
       });
-      // No legacy / non-existent columns, never an answer key.
-      expect(a.toRpcJson().keys, isNot(contains('selected_option_id')));
-      expect(a.toRpcJson().keys, isNot(contains('text_answer')));
-      expect(a.toRpcJson().keys, isNot(contains('is_answered')));
-      expect(a.toRpcJson().keys, isNot(contains('correct_option')));
+
+      expect(answer.isMarkedForReview, false);
+      expect(answer.isAnswered, false);
     });
 
-    test('withSelection can clear (null) and withMarkedForReview toggles', () {
-      const a = Answer(attemptId: 'a', questionId: 'q', selectedOption: 1);
-      expect(a.withSelection(null).isAnswered, isFalse);
-      expect(a.withSelection(3).selectedOption, 3);
-      expect(a.withMarkedForReview(true).markedForReview, isTrue);
-      expect(a.withMarkedForReview(true).selectedOption, 1, reason: 'selection kept');
+    test('toJson produces correct keys', () {
+      const answer = Answer(
+        attemptId: 'a-1',
+        questionId: 'q-1',
+        selectedOptionId: 'opt-1',
+        isMarkedForReview: true,
+        isAnswered: true,
+      );
+
+      final json = answer.toJson();
+      expect(json['attempt_id'], 'a-1');
+      expect(json['question_id'], 'q-1');
+      expect(json['selected_option_id'], 'opt-1');
+      expect(json['is_marked_for_review'], true);
+      expect(json['is_answered'], true);
     });
 
-    test('equality ignores updated_at', () {
-      final a1 = Answer.fromRow({'attempt_id': 'a', 'question_id': 'q', 'selected_option': 1,
-          'updated_at': '2026-09-16T10:00:00Z'});
-      const a2 = Answer(attemptId: 'a', questionId: 'q', selectedOption: 1);
+    test('toJson does not contain correct_option', () {
+      const answer = Answer(attemptId: 'a-1', questionId: 'q-1');
+
+      final json = answer.toJson();
+      expect(json.containsKey('correct_option'), false);
+    });
+
+    test('fromJson/toJson roundtrip preserves all fields', () {
+      const original = Answer(
+        attemptId: 'a-1',
+        questionId: 'q-1',
+        selectedOptionId: 'opt-3',
+        textAnswer: 'hello',
+        isMarkedForReview: true,
+        isAnswered: true,
+      );
+
+      final restored = Answer.fromJson(original.toJson());
+      expect(restored, original);
+    });
+
+    test('copyWith overrides provided fields', () {
+      const answer = Answer(
+        attemptId: 'a-1',
+        questionId: 'q-1',
+        selectedOptionId: 'opt-1',
+      );
+
+      final updated = answer.copyWith(
+        selectedOptionId: 'opt-2',
+        isMarkedForReview: true,
+      );
+
+      expect(updated.selectedOptionId, 'opt-2');
+      expect(updated.isMarkedForReview, true);
+      expect(updated.attemptId, 'a-1');
+      expect(updated.questionId, 'q-1');
+    });
+
+    test('copyWith keeps original when no args', () {
+      const answer = Answer(
+        attemptId: 'a-1',
+        questionId: 'q-1',
+        selectedOptionId: 'opt-1',
+        isAnswered: true,
+      );
+
+      final copy = answer.copyWith();
+      expect(copy, answer);
+    });
+
+    test('equality works correctly', () {
+      const a1 = Answer(attemptId: 'a', questionId: 'q', selectedOptionId: 'o');
+      const a2 = Answer(attemptId: 'a', questionId: 'q', selectedOptionId: 'o');
+      const a3 = Answer(attemptId: 'a', questionId: 'q', selectedOptionId: 'x');
+
       expect(a1, a2);
+      expect(a1 == a3, false);
     });
   });
 
@@ -143,41 +202,44 @@ void main() {
       expect(submitted.isInProgress, false);
     });
 
-    test('isSubmitted returns true for submitted, auto_submitted, and scored', () {
-      final submitted = Attempt(
-        id: 'a',
-        testId: 't',
-        userId: 'u',
-        status: AttemptStatus.submitted,
-        startedAt: DateTime.now(),
-      );
-      final autoSubmitted = Attempt(
-        id: 'a',
-        testId: 't',
-        userId: 'u',
-        status: AttemptStatus.autoSubmitted,
-        startedAt: DateTime.now(),
-      );
-      final scored = Attempt(
-        id: 'a',
-        testId: 't',
-        userId: 'u',
-        status: AttemptStatus.scored,
-        startedAt: DateTime.now(),
-      );
-      final inProgress = Attempt(
-        id: 'a',
-        testId: 't',
-        userId: 'u',
-        status: AttemptStatus.inProgress,
-        startedAt: DateTime.now(),
-      );
+    test(
+      'isSubmitted returns true for submitted, auto_submitted, and scored',
+      () {
+        final submitted = Attempt(
+          id: 'a',
+          testId: 't',
+          userId: 'u',
+          status: AttemptStatus.submitted,
+          startedAt: DateTime.now(),
+        );
+        final autoSubmitted = Attempt(
+          id: 'a',
+          testId: 't',
+          userId: 'u',
+          status: AttemptStatus.autoSubmitted,
+          startedAt: DateTime.now(),
+        );
+        final scored = Attempt(
+          id: 'a',
+          testId: 't',
+          userId: 'u',
+          status: AttemptStatus.scored,
+          startedAt: DateTime.now(),
+        );
+        final inProgress = Attempt(
+          id: 'a',
+          testId: 't',
+          userId: 'u',
+          status: AttemptStatus.inProgress,
+          startedAt: DateTime.now(),
+        );
 
-      expect(submitted.isSubmitted, true);
-      expect(autoSubmitted.isSubmitted, true);
-      expect(scored.isSubmitted, true);
-      expect(inProgress.isSubmitted, false);
-    });
+        expect(submitted.isSubmitted, true);
+        expect(autoSubmitted.isSubmitted, true);
+        expect(scored.isSubmitted, true);
+        expect(inProgress.isSubmitted, false);
+      },
+    );
 
     test('timeRemaining returns null when no deadline', () {
       final attempt = Attempt(
@@ -248,80 +310,83 @@ void main() {
     });
   });
 
-  group('Attempt RPC response parsing (AttemptService._parseAttemptResponse)', () {
-    // NOTE: _parseAttemptResponse is private and static in AttemptService.
-    // It handles two formats:
-    //   1. RPC response: { attempt_id, test_id, status: "started"|"resumed", started_at, deadline_at }
-    //   2. Full DB row: { id, test_id, user_id, status: "in_progress"|..., started_at, ... }
-    //
-    // Format 1 maps operation status ("started"/"resumed") → AttemptStatus.inProgress.
-    // Format 2 uses _parseAttemptStatus() which expects snake_case DB values.
-    //
-    // These cannot be unit-tested without mocking Supabase. Integration tests
-    // will verify correct behavior. The following tests verify the DB-format path
-    // which is what Attempt.fromJson handles.
+  group(
+    'Attempt RPC response parsing (AttemptService._parseAttemptResponse)',
+    () {
+      // NOTE: _parseAttemptResponse is private and static in AttemptService.
+      // It handles two formats:
+      //   1. RPC response: { attempt_id, test_id, status: "started"|"resumed", started_at, deadline_at }
+      //   2. Full DB row: { id, test_id, user_id, status: "in_progress"|..., started_at, ... }
+      //
+      // Format 1 maps operation status ("started"/"resumed") → AttemptStatus.inProgress.
+      // Format 2 uses _parseAttemptStatus() which expects snake_case DB values.
+      //
+      // These cannot be unit-tested without mocking Supabase. Integration tests
+      // will verify correct behavior. The following tests verify the DB-format path
+      // which is what Attempt.fromJson handles.
 
-    test('Attempt.fromJson parses DB-format status "in_progress"', () {
-      final attempt = Attempt.fromJson({
-        'id': 'att-1',
-        'test_id': 't-1',
-        'user_id': 'u-1',
-        'status': 'in_progress',
-        'started_at': '2026-09-13T10:00:00Z',
+      test('Attempt.fromJson parses DB-format status "in_progress"', () {
+        final attempt = Attempt.fromJson({
+          'id': 'att-1',
+          'test_id': 't-1',
+          'user_id': 'u-1',
+          'status': 'in_progress',
+          'started_at': '2026-09-13T10:00:00Z',
+        });
+
+        expect(attempt.status, AttemptStatus.inProgress);
       });
 
-      expect(attempt.status, AttemptStatus.inProgress);
-    });
+      test('Attempt.fromJson maps "submitted" DB status correctly', () {
+        final attempt = Attempt.fromJson({
+          'id': 'att-1',
+          'test_id': 't-1',
+          'user_id': 'u-1',
+          'status': 'submitted',
+          'started_at': '2026-09-13T10:00:00Z',
+        });
 
-    test('Attempt.fromJson maps "submitted" DB status correctly', () {
-      final attempt = Attempt.fromJson({
-        'id': 'att-1',
-        'test_id': 't-1',
-        'user_id': 'u-1',
-        'status': 'submitted',
-        'started_at': '2026-09-13T10:00:00Z',
+        expect(attempt.status, AttemptStatus.submitted);
       });
 
-      expect(attempt.status, AttemptStatus.submitted);
-    });
+      test('Attempt.fromJson maps "auto_submitted" DB status correctly', () {
+        final attempt = Attempt.fromJson({
+          'id': 'att-1',
+          'test_id': 't-1',
+          'user_id': 'u-1',
+          'status': 'auto_submitted',
+          'started_at': '2026-09-13T10:00:00Z',
+        });
 
-    test('Attempt.fromJson maps "auto_submitted" DB status correctly', () {
-      final attempt = Attempt.fromJson({
-        'id': 'att-1',
-        'test_id': 't-1',
-        'user_id': 'u-1',
-        'status': 'auto_submitted',
-        'started_at': '2026-09-13T10:00:00Z',
+        expect(attempt.status, AttemptStatus.autoSubmitted);
       });
 
-      expect(attempt.status, AttemptStatus.autoSubmitted);
-    });
+      test('Attempt.fromJson maps "scored" DB status correctly', () {
+        final attempt = Attempt.fromJson({
+          'id': 'att-1',
+          'test_id': 't-1',
+          'user_id': 'u-1',
+          'status': 'scored',
+          'started_at': '2026-09-13T10:00:00Z',
+        });
 
-    test('Attempt.fromJson maps "scored" DB status correctly', () {
-      final attempt = Attempt.fromJson({
-        'id': 'att-1',
-        'test_id': 't-1',
-        'user_id': 'u-1',
-        'status': 'scored',
-        'started_at': '2026-09-13T10:00:00Z',
+        expect(attempt.status, AttemptStatus.scored);
       });
 
-      expect(attempt.status, AttemptStatus.scored);
-    });
+      test('Attempt.toJson serializes status as enum name', () {
+        final attempt = Attempt(
+          id: 'att-1',
+          testId: 't-1',
+          userId: 'u-1',
+          status: AttemptStatus.inProgress,
+          startedAt: DateTime.utc(2026, 9, 13, 10),
+        );
 
-    test('Attempt.toJson serializes status as enum name', () {
-      final attempt = Attempt(
-        id: 'att-1',
-        testId: 't-1',
-        userId: 'u-1',
-        status: AttemptStatus.inProgress,
-        startedAt: DateTime.utc(2026, 9, 13, 10),
-      );
-
-      final json = attempt.toJson();
-      expect(json['status'], 'inProgress');
-    });
-  });
+        final json = attempt.toJson();
+        expect(json['status'], 'inProgress');
+      });
+    },
+  );
 
   group('Result model', () {
     test('fromJson parses required fields', () {
@@ -440,12 +505,82 @@ void main() {
     });
 
     test('equality is based on id, attemptId, testId', () {
-      final r1 = Result(id: 'r', attemptId: 'a', testId: 't', userId: 'u');
-      final r2 = Result(id: 'r', attemptId: 'a', testId: 't', userId: 'u');
-      final r3 = Result(id: 'r', attemptId: 'a', testId: 'x', userId: 'u');
+      const r1 = Result(id: 'r', attemptId: 'a', testId: 't', userId: 'u');
+      const r2 = Result(id: 'r', attemptId: 'a', testId: 't', userId: 'u');
+      const r3 = Result(id: 'r', attemptId: 'a', testId: 'x', userId: 'u');
 
       expect(r1, r2);
       expect(r1 == r3, false);
+    });
+  });
+
+  group('Answer validation', () {
+    test('empty selectedOptionId and textAnswer is valid for unanswered', () {
+      const answer = Answer(attemptId: 'a-1', questionId: 'q-1');
+
+      expect(answer.selectedOptionId, isNull);
+      expect(answer.textAnswer, isNull);
+      expect(answer.isAnswered, false);
+    });
+
+    test('selectedOptionId set marks answer as valid MCQ', () {
+      const answer = Answer(
+        attemptId: 'a-1',
+        questionId: 'q-1',
+        selectedOptionId: 'opt-2',
+        isAnswered: true,
+      );
+
+      expect(answer.selectedOptionId, 'opt-2');
+      expect(answer.isAnswered, true);
+    });
+
+    test('textAnswer set marks answer as valid short answer', () {
+      const answer = Answer(
+        attemptId: 'a-1',
+        questionId: 'q-1',
+        textAnswer: 'Paris is the capital of France',
+        isAnswered: true,
+      );
+
+      expect(answer.textAnswer, 'Paris is the capital of France');
+      expect(answer.isAnswered, true);
+    });
+  });
+
+  group('Answer service payload structure', () {
+    test('toJson list produces correct array for batch save', () {
+      final answers = [
+        const Answer(
+          attemptId: 'a-1',
+          questionId: 'q-1',
+          selectedOptionId: 'opt-1',
+          isAnswered: true,
+        ),
+        const Answer(
+          attemptId: 'a-1',
+          questionId: 'q-2',
+          textAnswer: 'short answer',
+          isAnswered: true,
+        ),
+        const Answer(
+          attemptId: 'a-1',
+          questionId: 'q-3',
+          isMarkedForReview: true,
+        ),
+      ];
+
+      final payload = answers.map((a) => a.toJson()).toList();
+      expect(payload.length, 3);
+      expect(payload[0]['question_id'], 'q-1');
+      expect(payload[1]['question_id'], 'q-2');
+      expect(payload[2]['question_id'], 'q-3');
+    });
+
+    test('empty list produces empty array', () {
+      final answers = <Answer>[];
+      final payload = answers.map((a) => a.toJson()).toList();
+      expect(payload, isEmpty);
     });
   });
 

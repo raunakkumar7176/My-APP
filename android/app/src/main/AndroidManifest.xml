@@ -1,4 +1,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Android 13+ (API 33+): notifications require this runtime
+         permission. On API < 33 the OS ignores it (notifications were
+         never gated behind a runtime permission there) — declaring it is
+         harmless and required either way for flutter_local_notifications /
+         firebase_messaging's own permission check to function. The actual
+         REQUEST (the system dialog) is triggered explicitly from Dart
+         (PushNotificationService.requestPermissionWithRationale), never
+         automatically on launch. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <uses-permission android:name="android.permission.VIBRATE"/>
     <application
         android:label="My Preparation"
         android:name="${applicationName}"
@@ -24,7 +35,30 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- Supabase email verification / auth callback deep link
+                 (my-preparation://auth-callback) — see
+                 AuthService.emailVerificationRedirectUrl. Not an https App
+                 Link, so autoVerify is omitted on purpose. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="my-preparation" android:host="auth-callback"/>
+            </intent-filter>
         </activity>
+        <!-- Default FCM notification channel — used only for the rare
+             notification+data message delivered before PushNotificationService
+             has run (e.g. a very cold background delivery); every push this
+             app actually sends targets one of the 6 named channels created
+             at runtime (PushNotificationService._createChannels /
+             lib/core/services/push_notification_service.dart), which is
+             what the user sees in Android Settings → App notifications. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="general" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@mipmap/ic_launcher" />
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

@@ -161,6 +161,96 @@ void main() {
       },
     );
 
+    test(
+      'question order: unset (default) test never shuffles',
+      () async {
+        AttemptLaunchStore.putLaunch(
+          started: (attempt: _attempt('a-1'), testTitle: null),
+          questions: const [_q1, _q2],
+          test: _test(), // shuffle: false (default)
+        );
+        final c = AttemptController(
+          attemptId: 'a-1',
+          testId: 't-1',
+          attempts: FakeAttemptRepository(),
+          questions: FakeQuestionRepository(),
+          answers: FakeAnswerRepository(),
+          tests: FakeTestRepository(),
+          autosaveInterval: const Duration(hours: 1),
+        );
+        await c.load();
+        expect(c.questions.map((q) => q.id), ['q-1', 'q-2']);
+        c.dispose();
+      },
+    );
+
+    test(
+      'question order: shuffle=true seeds from the attempt id — two '
+      'different attempts (i.e. two different students, or a re-attempt) '
+      'on the identical question set get independently randomized, '
+      'deterministic orders; reloading the same attempt is stable',
+      () async {
+        // A wider question set makes a same-by-chance shuffle implausible.
+        final qs = [
+          for (var i = 1; i <= 8; i++)
+            Question(
+              id: 'q-$i',
+              testId: 't-1',
+              ordinal: i,
+              question: 'Q$i',
+              options: const [
+                QuestionOption(id: 'a', text: 'A'),
+                QuestionOption(id: 'b', text: 'B'),
+              ],
+              difficulty: DifficultyLevel.easy,
+              marks: 1,
+              status: 'approved',
+              questionType: QuestionType.mcqSingle,
+            ),
+        ];
+        final originalOrder = qs.map((q) => q.id).toList();
+
+        Future<List<String>> orderFor(String attemptId) async {
+          AttemptLaunchStore.putLaunch(
+            started: (attempt: _attempt(attemptId), testTitle: null),
+            questions: qs,
+            test: _test(shuffle: true),
+          );
+          final c = AttemptController(
+            attemptId: attemptId,
+            testId: 't-1',
+            attempts: FakeAttemptRepository(),
+            questions: FakeQuestionRepository(),
+            answers: FakeAnswerRepository(),
+            tests: FakeTestRepository(),
+            autosaveInterval: const Duration(hours: 1),
+          );
+          await c.load();
+          final order = c.questions.map((q) => q.id).toList();
+          c.dispose();
+          return order;
+        }
+
+        final studentA1 = await orderFor('attempt-student-a');
+        final studentA2 = await orderFor('attempt-student-a'); // reload / resume
+        final studentB = await orderFor('attempt-student-b');
+
+        // Same content regardless of order (never a different question set).
+        expect(Set.of(studentA1), Set.of(originalOrder));
+        expect(Set.of(studentB), Set.of(originalOrder));
+
+        // Deterministic: the same attempt id always reproduces the same
+        // order (app restart / refresh / resume never reshuffles).
+        expect(studentA1, studentA2);
+
+        // Different attempts (different students, or a genuinely new
+        // attempt) get an independently randomized order — not the
+        // original ordinal order, and not identical to each other.
+        expect(studentA1, isNot(originalOrder));
+        expect(studentA1, isNot(studentB));
+      },
+    );
+
     test('answers: select / typed / clear / review; autosave retries after failure', () async {
       final answers = FakeAnswerRepository();
       AttemptLaunchStore.putLaunch(

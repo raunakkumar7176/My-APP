@@ -36,7 +36,7 @@ The Group Hub (G1–G16) was audited across repository code, live Supabase schem
 | G12 | Leaderboard | fn_is_member | fn_has_permission | policies | rpc_get_leaderboard | VULN (cross-group leakage) |
 | G13 | Group Settings | fn_is_member | fn_has_permission | policies | settings update | PASS |
 | G14 | Owner/Leader Controls | fn_has_permission | fn_has_permission | policies | direct UPDATE/DELETE | VULN (legacy ALL policy) |
-| G15 | Membership Edge Cases | fn_is_member | fn_has_permission | policies | fn_withdraw_join_request | PARTIAL (fn not applied) |
+| G15 | Membership Edge Cases | fn_is_member | fn_has_permission | policies | fn_withdraw_join_request | VERIFIED (fn is live — G5.8 report was outdated) |
 | G16 | Notifications/Unread | fn_is_member | user_id = uid | policies | fn_notify_group | VULN (client callable) |
 
 ---
@@ -45,7 +45,7 @@ The Group Hub (G1–G16) was audited across repository code, live Supabase schem
 
 ### 3.1 Flutter Code (lib/features/group/)
 - **39 Dart files** across domain, data, state, screens, widgets
-- **903 → 982 tests** pass; **analyze 0 errors / 0 warnings** (438 info lints)
+- **903 → 982 tests** pass; **analyze 0 errors / 1 warning** (438 info lints; the 1 warning is an unused import in the untracked G18 acceptance test)
 - No service-role key in Flutter code
 - No `correct_option` or `answers` exposure in client
 - Client-side permission checks are UX-only — not the security boundary
@@ -70,7 +70,7 @@ The Group Hub (G1–G16) was audited across repository code, live Supabase schem
 | `groups` | ON | members read, public discoverable, settings holder update, owner delete |
 | `group_members` | ON | members see roster, role changes (MANAGE_ROLES), manage members (MANAGE_MEMBERS), self leave, group creator owner insert, join via invite code, **LEGACY ALL POLICY (VULN)** |
 | `role_permissions` | ON | members view, manage roles (MANAGE_ROLES), group creator seeds |
-| `group_rules` | ON | members read, settings holders write |
+| `group_rules` | **NOT LIVE** | table absent — G6 migration not applied | members read, settings holders write (proposed) |
 | `group_announcements` | ON | members read, leaders create/update/delete (SEND_ANNOUNCEMENT) |
 | `group_messages` | ON | member reads, member sends (sender_id = uid) |
 | `group_mutes` | ON | own rows only |
@@ -109,7 +109,7 @@ The Group Hub (G1–G16) was audited across repository code, live Supabase schem
 |----------|------------|-------|---------|-------------------|-----------------|-----------------|
 | `fn_has_permission` | '' | postgres | auth, service, anon | yes (implicit) | queries group_members | queries role_permissions |
 | `fn_is_member` | '' | postgres | auth, service, anon | yes (implicit) | queries group_members | N/A |
-| `fn_get_group_role` | '' | postgres | auth, service, anon | yes (implicit) | queries group_members | N/A |
+| `fn_get_group_role` | '' | postgres | auth, service | yes (implicit) | queries group_members | N/A |
 | `fn_get_group_permissions` | '' | postgres | auth, service | yes (implicit) | queries group_members | queries role_permissions |
 
 ### 5.2 Lifecycle Functions (all safe)
@@ -441,7 +441,7 @@ All Flutter paths verified unaffected by the security fixes:
 
 | Check | Result |
 |-------|--------|
-| `flutter analyze` | 0 errors, 0 warnings (438 info lints) |
+| `flutter analyze` | 0 errors, 1 warning (unused import in untracked G18 test), 438 info lints |
 | `flutter test` | **982 passed** |
 | `flutter build apk --debug` | Built successfully |
 

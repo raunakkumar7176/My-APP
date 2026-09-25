@@ -37,6 +37,8 @@ final class ResultBatch {
     this.completedAt,
     this.errors,
     this.reused = false,
+    this.publishedAt,
+    this.publishedBy,
   });
 
   final String id;
@@ -48,6 +50,12 @@ final class ResultBatch {
   final Map<String, dynamic>? totals;
   final DateTime? createdAt;
   final DateTime? completedAt;
+
+  /// Set only by `rpc_publish_results`. NULL means the batch is scored but
+  /// not yet visible to students — "submitted" and "published" are two
+  /// separate events by product rule; this is never set by generation alone.
+  final DateTime? publishedAt;
+  final String? publishedBy;
 
   /// Number of per-user reports that failed inside the batch (from the RPC).
   /// `errors > 0` does NOT mean the RPC call failed.
@@ -65,6 +73,15 @@ final class ResultBatch {
   bool get isTerminal => isCompleted || isFailed;
   bool get canTrigger => !isPending && !isProcessing;
   bool get hasErrors => (errors ?? 0) > 0;
+
+  /// True once an authorized user has run `rpc_publish_results` — the only
+  /// signal that governs student-visible result access for a group test.
+  bool get isPublished => publishedAt != null;
+
+  /// A completed/partially-completed batch that has not yet been published —
+  /// i.e. generation finished but the authorized publish action is still
+  /// pending. Drives the "Publish Result" affordance for result managers.
+  bool get canPublish => (isCompleted || isPartiallyCompleted) && !isPublished;
 
   double get progress {
     if (reportsTotal == null || reportsTotal == 0) return 0;
@@ -87,6 +104,20 @@ final class ResultBatch {
     );
   }
 
+  /// Parses the (proposed) `rpc_publish_results(p_test_id)` jsonb:
+  /// `{batch_id, test_id, status: 'published', published_at, notified, reused}`.
+  factory ResultBatch.fromPublishRpcJson(Map<String, dynamic> json) {
+    return ResultBatch(
+      id: json['batch_id'] as String,
+      testId: json['test_id'] as String? ?? '',
+      status: BatchStatus.completed,
+      reused: json['reused'] == true,
+      publishedAt: json['published_at'] != null
+          ? DateTime.parse(json['published_at'] as String)
+          : null,
+    );
+  }
+
   /// Parses a `public.result_batches` row.
   factory ResultBatch.fromJson(Map<String, dynamic> json) {
     return ResultBatch(
@@ -105,6 +136,10 @@ final class ResultBatch {
       completedAt: json['completed_at'] != null
           ? DateTime.parse(json['completed_at'] as String)
           : null,
+      publishedAt: json['published_at'] != null
+          ? DateTime.parse(json['published_at'] as String)
+          : null,
+      publishedBy: json['published_by'] as String?,
     );
   }
 
@@ -119,6 +154,8 @@ final class ResultBatch {
       'totals': totals,
       'created_at': createdAt?.toIso8601String(),
       'completed_at': completedAt?.toIso8601String(),
+      'published_at': publishedAt?.toIso8601String(),
+      'published_by': publishedBy,
     };
   }
 

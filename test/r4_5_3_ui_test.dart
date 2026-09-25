@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:my_praperation/core/models/group.dart';
 import 'package:my_praperation/core/models/question.dart';
 import 'package:my_praperation/features/test/domain/test_kind.dart';
 import 'package:my_praperation/features/test/models/question_draft.dart';
@@ -189,8 +190,12 @@ void main() {
       );
 
       expect(find.text('Basic Details'), findsOneWidget);
+      // Two TextFormField widgets: title and description.
       expect(find.byType(TextFormField), findsNWidgets(2));
-      expect(find.byType(DropdownButtonFormField<TestKind>), findsOneWidget);
+      // The redesign replaced the DropdownButtonFormField with a tile-based
+      // picker rendered as InkWell widgets; verify the selected kind label
+      // is present instead of asserting a DropdownButtonFormField type.
+      expect(find.text('Self'), findsOneWidget);
     });
 
     testWidgets('calls onTitleChanged when title is entered', (tester) async {
@@ -233,7 +238,7 @@ void main() {
       expect(find.text('Title is required'), findsOneWidget);
     });
 
-    testWidgets('shows all test kind options in dropdown', (tester) async {
+    testWidgets('shows all test kind options', (tester) async {
       await tester.pumpWidget(
         wrapWithApp(
           BasicDetailsStep(
@@ -248,21 +253,16 @@ void main() {
         ),
       );
 
-      await tester.tap(find.byType(DropdownButtonFormField<TestKind>));
-      await tester.pumpAndSettle();
-
-      // The currently-selected value ("Self") renders both in the closed
-      // field and again as a menu item once the dropdown is open.
-      expect(find.text('Self'), findsWidgets);
+      // The redesign renders every kind as a visible tile (no dropdown
+      // popup). Verify all kind labels are present in the tree.
+      expect(find.text('Self'), findsOneWidget);
       expect(find.text('Practice Test'), findsOneWidget);
       expect(find.text('Quick Test'), findsOneWidget);
       expect(find.text('Challenge with Friends'), findsOneWidget);
       expect(find.text('Group Test'), findsOneWidget);
     });
 
-    testWidgets('calls onKindChanged when selection changes', (
-      tester,
-    ) async {
+    testWidgets('calls onKindChanged when selection changes', (tester) async {
       TestKind? capturedKind;
       await tester.pumpWidget(
         wrapWithApp(
@@ -278,7 +278,9 @@ void main() {
         ),
       );
 
-      await tester.tap(find.byType(DropdownButtonFormField<TestKind>));
+      // Tap the "Challenge with Friends" tile directly (tile-based picker).
+      // Use ensureVisible because the tile list may be longer than the viewport.
+      await tester.ensureVisible(find.text('Challenge with Friends'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Challenge with Friends'));
       await tester.pumpAndSettle();
@@ -333,7 +335,9 @@ void main() {
 
       expect(find.text('Test Configuration'), findsOneWidget);
       expect(find.text('Duration (minutes)'), findsOneWidget);
-      expect(find.text('Marks per Question'), findsOneWidget);
+      // The redesign renamed "Marks per Question" → "Correct Answer" and
+      // placed it side-by-side with "Negative Marks" inside a Row.
+      expect(find.text('Correct Answer'), findsOneWidget);
       expect(find.text('Negative Marks'), findsOneWidget);
       expect(find.text('Max Participants'), findsOneWidget);
       expect(find.text('Access Code'), findsOneWidget);
@@ -395,12 +399,139 @@ void main() {
         ),
       );
 
-      await tester.ensureVisible(find.byType(SwitchListTile));
+      // The redesign replaced SwitchListTile with a Switch inside a
+      // SettingTile; the semantic label "Allow Late Joining" is still
+      // present, but the toggle widget is now a bare Switch.
+      await tester.ensureVisible(find.byType(Switch));
       await tester.pumpAndSettle();
-      await tester.tap(find.byType(SwitchListTile));
+      await tester.tap(find.byType(Switch));
       await tester.pumpAndSettle();
       expect(capturedValues!['allowLateJoin'], true);
     });
+
+    // Regression coverage for "Cannot hit test a render box with no size":
+    // the group-selection section's content height changes twice outside
+    // any user gesture — on self<->group mode switch, and again when
+    // groupsLoading flips after the async group fetch resolves. These
+    // tests verify both transitions render cleanly (via pumpAndSettle,
+    // which drives the AnimatedSize wrapper to completion) rather than
+    // throwing during layout/hit-testing. They cannot reproduce the exact
+    // framework-level gesture-vs-relayout race a live device hits, but they
+    // do prove the state plumbing and the animated-resize path are sound.
+    testWidgets(
+      'switching self -> group and back renders without throwing',
+      (tester) async {
+        String testMode = 'self';
+        late StateSetter setLocalState;
+        await tester.pumpWidget(
+          wrapWithApp(
+            StatefulBuilder(
+              builder: (context, setState) {
+                setLocalState = setState;
+                return ConfigurationStep(
+                  durationSec: null,
+                  marksPerQuestion: null,
+                  negativeMarks: null,
+                  testMode: testMode,
+                  groupId: null,
+                  startsAt: null,
+                  endsAt: null,
+                  maxParticipants: null,
+                  allowLateJoin: false,
+                  accessCode: null,
+                  joinCode: null,
+                  kind: TestKind.group,
+                  groups: const [],
+                  onChanged: (_) {},
+                );
+              },
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+
+        setLocalState(() => testMode = 'group');
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(find.text('Group Selection'), findsOneWidget);
+
+        setLocalState(() => testMode = 'self');
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(find.text('Group Selection'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'groups arriving after the initial (empty) build renders without throwing',
+      (tester) async {
+        List<Group> groups = const [];
+        bool loading = true;
+        late StateSetter setLocalState;
+        await tester.pumpWidget(
+          wrapWithApp(
+            StatefulBuilder(
+              builder: (context, setState) {
+                setLocalState = setState;
+                return ConfigurationStep(
+                  durationSec: null,
+                  marksPerQuestion: null,
+                  negativeMarks: null,
+                  testMode: 'group',
+                  groupId: null,
+                  startsAt: null,
+                  endsAt: null,
+                  maxParticipants: null,
+                  allowLateJoin: false,
+                  accessCode: null,
+                  joinCode: null,
+                  kind: TestKind.group,
+                  groups: groups,
+                  groupsLoading: loading,
+                  onChanged: (_) {},
+                );
+              },
+            ),
+          ),
+        );
+        // Not pumpAndSettle: CircularProgressIndicator animates forever.
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 250));
+        expect(find.byType(CircularProgressIndicator), findsOneWidget);
+
+        // Simulate loadGroups() resolving mid-scroll-session: groups arrive
+        // and the loading spinner is replaced by a populated dropdown, all
+        // driven by a setState from outside any user gesture.
+        setLocalState(() {
+          loading = false;
+          groups = [
+            Group(
+              id: 'g-1',
+              name: 'Physics Batch',
+              ownerId: 'u-owner',
+              createdAt: DateTime(2026),
+              memberCount: 12,
+            ),
+          ];
+        });
+        // Bounded pumps, not pumpAndSettle: this StatefulBuilder-driven tree
+        // can have long-lived animations elsewhere in the widget catalog
+        // unrelated to this fix; a handful of pumps past the 200ms
+        // AnimatedSize duration is enough to prove the transition completes
+        // without throwing.
+        await tester.pump();
+        for (var i = 0; i < 5; i++) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+        expect(tester.takeException(), isNull);
+        expect(find.byType(DropdownButtonFormField<String>), findsOneWidget);
+      },
+    );
   });
 
   group('QuestionsStep', () {
@@ -412,7 +543,7 @@ void main() {
             serverQuestions: const [],
             onLocalQuestionsChanged: (_) {},
             onDeleteServerQuestion: (_) async {},
-            onUpdateServerQuestion: (_, __) async {},
+            onUpdateServerQuestion: (_, _) async {},
           ),
         ),
       );
@@ -442,7 +573,7 @@ void main() {
             serverQuestions: const [],
             onLocalQuestionsChanged: (_) {},
             onDeleteServerQuestion: (_) async {},
-            onUpdateServerQuestion: (_, __) async {},
+            onUpdateServerQuestion: (_, _) async {},
           ),
         ),
       );
@@ -469,7 +600,7 @@ void main() {
             serverQuestions: const [],
             onLocalQuestionsChanged: (_) {},
             onDeleteServerQuestion: (_) async {},
-            onUpdateServerQuestion: (_, __) async {},
+            onUpdateServerQuestion: (_, _) async {},
           ),
         ),
       );
@@ -498,7 +629,7 @@ void main() {
             serverQuestions: const [],
             onLocalQuestionsChanged: (q) => capturedQuestions.addAll(q),
             onDeleteServerQuestion: (_) async {},
-            onUpdateServerQuestion: (_, __) async {},
+            onUpdateServerQuestion: (_, _) async {},
           ),
         ),
       );

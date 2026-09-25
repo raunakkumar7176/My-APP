@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/models/profile.dart';
 import '../../core/services/auth_service.dart';
 import '../../core/services/profile_service.dart';
+import '../profile/widgets/profile_avatar.dart';
 
 /// Profile tab: a summary card plus navigation shortcuts. The full editable
 /// profile form is still the existing `/profile` route — nothing here
@@ -107,16 +108,26 @@ class _ProfileTabScreenState extends State<ProfileTabScreen> {
             const SizedBox(height: 20),
             Card(
               child: ListTile(
-                leading: Icon(Icons.logout, color: Theme.of(context).colorScheme.error),
-                title: Text('Logout', style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                leading: Icon(
+                  Icons.logout,
+                  color: Theme.of(context).colorScheme.error,
+                ),
+                title: Text(
+                  'Logout',
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
                 onTap: () async {
+                  final shouldLogout = await _showLogoutConfirmation(context);
+                  if (shouldLogout != true) return;
                   try {
                     await AuthService.signOut();
                   } on Exception catch (e) {
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: Text(e.toString().replaceFirst('AppError: ', '')),
+                          content: Text(
+                            e.toString().replaceFirst('AppError: ', ''),
+                          ),
                           backgroundColor: Theme.of(context).colorScheme.error,
                         ),
                       );
@@ -127,6 +138,26 @@ class _ProfileTabScreenState extends State<ProfileTabScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Future<bool?> _showLogoutConfirmation(BuildContext context) {
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Logout'),
+        content: const Text('Are you sure you want to log out?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Logout'),
+          ),
+        ],
       ),
     );
   }
@@ -146,7 +177,10 @@ class _ProfileTabScreenState extends State<ProfileTabScreen> {
           padding: const EdgeInsets.all(16),
           child: Row(
             children: [
-              Icon(Icons.error_outline, color: Theme.of(context).colorScheme.error),
+              Icon(
+                Icons.error_outline,
+                color: Theme.of(context).colorScheme.error,
+              ),
               const SizedBox(width: 12),
               Expanded(child: Text(_error!)),
               TextButton(onPressed: _load, child: const Text('Retry')),
@@ -161,13 +195,10 @@ class _ProfileTabScreenState extends State<ProfileTabScreen> {
         padding: const EdgeInsets.all(16),
         child: Row(
           children: [
-            CircleAvatar(
+            ProfileAvatar(
+              initials: _profile?.initials ?? '?',
+              avatarUrl: _profile?.avatarUrl,
               radius: 32,
-              backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.1),
-              child: Text(
-                _profile?.initials ?? '?',
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.w600, color: theme.colorScheme.primary),
-              ),
             ),
             const SizedBox(width: 16),
             Expanded(
@@ -176,7 +207,9 @@ class _ProfileTabScreenState extends State<ProfileTabScreen> {
                 children: [
                   Text(
                     _profile?.displayName ?? 'Student',
-                    style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                   if (_profile?.studentCode != null) ...[
                     const SizedBox(height: 2),
@@ -193,7 +226,9 @@ class _ProfileTabScreenState extends State<ProfileTabScreen> {
                     Text(
                       email,
                       style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                        color: theme.colorScheme.onSurface.withValues(
+                          alpha: 0.6,
+                        ),
                       ),
                     ),
                   ],
@@ -205,9 +240,13 @@ class _ProfileTabScreenState extends State<ProfileTabScreen> {
                       children: [
                         for (final target in _profile!.examTargets)
                           Chip(
-                            label: Text(target, style: const TextStyle(fontSize: 11)),
+                            label: Text(
+                              target,
+                              style: const TextStyle(fontSize: 11),
+                            ),
                             visualDensity: VisualDensity.compact,
-                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
                           ),
                       ],
                     ),

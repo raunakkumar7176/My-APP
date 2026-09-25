@@ -5,9 +5,7 @@
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:my_praperation/core/errors/app_error.dart';
-import 'package:my_praperation/core/models/test.dart';
 import 'package:my_praperation/core/models/test_template.dart';
-import 'package:my_praperation/features/test/data/test_repository.dart';
 import 'package:my_praperation/features/test/state/test_creation_controller.dart';
 import 'package:my_praperation/features/test/state/test_template_controller.dart';
 import 'package:my_praperation/features/test/state/template_form_controller.dart';
@@ -21,22 +19,22 @@ TestTemplate _tpl(
   String? groupId,
   String owner = 'u-1',
   Map<String, dynamic>? config,
-}) =>
-    TestTemplate(
-      id: id,
-      createdBy: owner,
-      groupId: groupId,
-      title: title,
-      description: 'Reusable physics quiz',
-      configuration: config ??
-          const {
-            'kind': 'practice',
-            'duration_sec': 3600,
-            'marks_per_question': 1.0,
-          },
-      createdAt: DateTime(2026, 9, 20),
-      updatedAt: DateTime(2026, 9, 20),
-    );
+}) => TestTemplate(
+  id: id,
+  createdBy: owner,
+  groupId: groupId,
+  title: title,
+  description: 'Reusable physics quiz',
+  configuration:
+      config ??
+      const {
+        'kind': 'practice',
+        'duration_sec': 3600,
+        'marks_per_question': 1.0,
+      },
+  createdAt: DateTime(2026, 9, 20),
+  updatedAt: DateTime(2026, 9, 20),
+);
 
 void main() {
   group('G19 — TestTemplateController', () {
@@ -87,18 +85,20 @@ void main() {
       expect(c.myTemplates, isEmpty);
     });
 
-    test('double-tap protection: loading flag prevents concurrent loads',
-        () async {
-      final repo = FakeTestTemplateRepository()..seed(id: 'tpl-1');
-      final c = TestTemplateController(repository: repo);
-      // First load
-      final f1 = c.load();
-      // Second load should be a no-op
-      final f2 = c.load();
-      await Future.wait([f1, f2]);
-      // listMy called only once
-      expect(repo.calls.where((x) => x == 'listMy').length, 1);
-    });
+    test(
+      'double-tap protection: loading flag prevents concurrent loads',
+      () async {
+        final repo = FakeTestTemplateRepository()..seed(id: 'tpl-1');
+        final c = TestTemplateController(repository: repo);
+        // First load
+        final f1 = c.load();
+        // Second load should be a no-op
+        final f2 = c.load();
+        await Future.wait([f1, f2]);
+        // listMy called only once
+        expect(repo.calls.where((x) => x == 'listMy').length, 1);
+      },
+    );
   });
 
   group('G19 — TemplateFormController', () {
@@ -185,10 +185,7 @@ void main() {
       c.presetFromConfiguration(
         templateTitle: 'From Test',
         templateDescription: 'Desc',
-        templateConfiguration: const {
-          'kind': 'quick',
-          'duration_sec': 600,
-        },
+        templateConfiguration: const {'kind': 'quick', 'duration_sec': 600},
       );
       expect(c.title, 'From Test');
       expect(c.description, 'Desc');
@@ -315,10 +312,7 @@ void main() {
         ..currentUser = 'u-1'
         ..seed(id: 'tpl-1', title: 'Secret', createdBy: 'u-other');
 
-      expect(
-        () => repo.delete('tpl-1'),
-        throwsA(isA<DataError>()),
-      );
+      expect(() => repo.delete('tpl-1'), throwsA(isA<DataError>()));
     });
 
     test('cannot update another user\'s template via fake', () async {
@@ -329,10 +323,7 @@ void main() {
       expect(
         () => repo.update(
           'tpl-1',
-          const TestTemplateInput(
-            title: 'Hacked',
-            configuration: {},
-          ),
+          const TestTemplateInput(title: 'Hacked', configuration: {}),
         ),
         throwsA(isA<DataError>()),
       );

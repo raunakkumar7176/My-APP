@@ -267,6 +267,7 @@ void main() {
   group('member: own result only, no AI on open', () {
     test('member sees only their own result and no other report', () async {
       final f = _fixture('u-me');
+      f.results.publish('t-1');
       final c = _ctl(f, 'u-me');
       await c.load();
       expect(c.accessDenied, isFalse);
@@ -300,6 +301,7 @@ void main() {
 
     test('member with a stored report reads it (own row policy)', () async {
       final f = _fixture('u-b');
+      f.results.publish('t-1');
       final c = _ctl(f, 'u-b');
       await c.load();
       expect(c.myReport?.summary, 'Solid physics, weak maths.');
@@ -356,6 +358,7 @@ void main() {
 
     test('removed member loses access on refresh', () async {
       final f = _fixture('u-me');
+      f.results.publish('t-1');
       final c = _ctl(f, 'u-me');
       await c.load();
       expect(c.myResult, isNotNull);
@@ -401,6 +404,48 @@ void main() {
       // Second run reuses the batch (live UNIQUE(test_id)).
       expect(await c.generateResults(), isTrue);
       expect(f.results.batchByTest.length, 1);
+    });
+
+    test(
+      'publish: requires a finished batch, is idempotent, notifies eligible participants only',
+      () async {
+        final f = _fixture('u-lead');
+        final c = _ctl(f, 'u-lead');
+        await c.load();
+
+        // 1/2/3: submission alone never publishes — no batch, no publish.
+        expect(c.batch, isNull);
+        expect(await c.publishResults(), isFalse);
+        expect(c.error, contains('Generate results first'));
+        expect(f.results.calls.any((x) => x.startsWith('publish')), isFalse);
+
+        await c.generateResults();
+        expect(c.batch?.canPublish, isTrue);
+        expect(c.batch?.isPublished, isFalse);
+
+        // 5/6: authorized owner/leader can publish.
+        expect(await c.publishResults(), isTrue);
+        expect(c.batch?.isPublished, isTrue);
+        expect(f.results.calls.where((x) => x == 'publish:t-1').length, 1);
+
+        // 7: duplicate publish is idempotent — no second notification round,
+        // no duplicate batch, no error.
+        expect(await c.publishResults(), isFalse, reason: 'already published — canPublish is false');
+        expect(f.results.calls.where((x) => x == 'publish:t-1').length, 1);
+        expect(f.results.batchByTest.length, 1);
+      },
+    );
+
+    test('non-member/unauthorized student cannot publish', () async {
+      final f = _fixture('u-me');
+      final c = _ctl(f, 'u-me');
+      await c.load();
+      expect(await c.publishResults(), isFalse);
+      expect(c.error, contains('permission'));
+      await expectLater(
+        f.results.publishResults('t-1'),
+        throwsA(isA<DataError>()),
+      );
     });
 
     test(
@@ -538,7 +583,9 @@ void main() {
     testWidgets(
       'member: own result, insights, review button, no manager section, no coach report',
       (tester) async {
-        final c = await pump(tester, _fixture('u-me'), 'u-me');
+        final f = _fixture('u-me');
+        f.results.publish('t-1');
+        final c = await pump(tester, f, 'u-me');
         expect(find.byKey(const Key('my_result_card')), findsOneWidget);
         expect(find.byKey(const Key('my_score')), findsOneWidget);
         expect(find.byKey(const Key('my_negative')), findsOneWidget);
@@ -560,7 +607,9 @@ void main() {
     testWidgets(
       'member with report: coach card sections render from stored payload',
       (tester) async {
-        final c = await pump(tester, _fixture('u-b'), 'u-b');
+        final f = _fixture('u-b');
+        f.results.publish('t-1');
+        final c = await pump(tester, f, 'u-b');
         expect(find.byKey(const Key('coach_report_card')), findsOneWidget);
         expect(find.byKey(const Key('coach_summary')), findsOneWidget);
         expect(find.byKey(const Key('coach_mistakes')), findsOneWidget);
@@ -606,6 +655,100 @@ void main() {
       },
     );
 
+    testWidgets(
+      'leader: publish button disabled until generated, confirmation gate, idempotent re-tap, notifies via existing category',
+      (tester) async {
+        final f = _fixture('u-lead');
+        final c = await pump(tester, f, 'u-lead');
+        // Before generation: Publish Result is visible but disabled — the
+        // button alone is never the security boundary, but it must not
+        // invite a doomed tap either.
+        expect(
+          tester
+              .widget<FilledButton>(
+                find.byKey(const Key('publish_results_button')),
+              )
+              .onPressed,
+          isNull,
+        );
+
+        await tester.tap(find.byKey(const Key('generate_results_button')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('confirm_generate_results')));
+        await tester.pumpAndSettle();
+        expect(
+          find.text('Result Pending Publication'),
+          findsOneWidget,
+          reason: 'generated but not yet published',
+        );
+        expect(
+          tester
+              .widget<FilledButton>(
+                find.byKey(const Key('publish_results_button')),
+              )
+              .onPressed,
+          isNotNull,
+        );
+
+        await tester.tap(find.byKey(const Key('publish_results_button')));
+        await tester.pumpAndSettle();
+        // Bilingual confirmation text is shown before anything happens.
+        expect(find.textContaining('परिणाम प्रकाशित'), findsOneWidget);
+        expect(
+          f.results.calls.any((x) => x.startsWith('publish')),
+          isFalse,
+          reason: 'no publish call until the dialog is confirmed',
+        );
+        await tester.tap(find.byKey(const Key('confirm_publish_results')));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Result Published'), findsOneWidget);
+        expect(c.batch?.isPublished, isTrue);
+        expect(
+          tester
+              .widget<FilledButton>(
+                find.byKey(const Key('publish_results_button')),
+              )
+              .onPressed,
+          isNull,
+          reason: 'already published — cannot re-publish',
+        );
+        expect(f.results.calls.where((x) => x == 'publish:t-1').length, 1);
+
+        await tester.pumpWidget(const SizedBox());
+        c.dispose();
+      },
+    );
+
+    testWidgets(
+      'member: no publish button, no batch status, sees the safe pre-publish note then the real result once published',
+      (tester) async {
+        final f = _fixture('u-me');
+        var c = await pump(tester, f, 'u-me');
+        expect(find.byKey(const Key('publish_results_button')), findsNothing);
+        expect(find.byKey(const Key('results_manager_section')), findsNothing);
+        expect(
+          find.textContaining('परिणाम प्रकाशित होने के बाद उपलब्ध होगा'),
+          findsOneWidget,
+        );
+        expect(find.byKey(const Key('my_result_card')), findsNothing);
+        await tester.pumpWidget(const SizedBox());
+        c.dispose();
+
+        // Now the owner-side state publishes (simulating the server gate
+        // opening) and the member reloads.
+        f.results.publish('t-1');
+        c = await pump(tester, f, 'u-me');
+        expect(find.byKey(const Key('my_result_card')), findsOneWidget);
+        expect(
+          find.textContaining('परिणाम प्रकाशित होने के बाद उपलब्ध होगा'),
+          findsNothing,
+        );
+        await tester.pumpWidget(const SizedBox());
+        c.dispose();
+      },
+    );
+
     testWidgets('non-member: denied state', (tester) async {
       final c = await pump(tester, _fixture('u-stranger'), 'u-stranger');
       expect(find.byKey(const Key('group_results_denied')), findsOneWidget);
@@ -644,6 +787,9 @@ class _Delegating implements ResultRepository {
   @override
   Future<ResultBatch> generateResults(String testId) =>
       inner.generateResults(testId);
+  @override
+  Future<ResultBatch> publishResults(String testId) =>
+      inner.publishResults(testId);
   @override
   Future<List<Result>> resultsForTest(String testId) =>
       inner.resultsForTest(testId);

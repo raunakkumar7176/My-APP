@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -9,7 +10,9 @@ import '../features/calendar/screens/calendar_screen.dart';
 import '../features/auth/auth_screen.dart';
 import '../features/auth/splash_screen.dart';
 import '../features/group/screens/group_create_screen.dart';
+import '../features/group/screens/group_discussion_screen.dart';
 import '../features/group/screens/group_hub_screen.dart';
+import '../features/group/state/group_hub_controller.dart';
 import '../features/group/screens/group_leaderboard_screen.dart';
 import '../features/group/screens/group_list_screen.dart';
 import '../features/group/screens/group_members_screen.dart';
@@ -19,15 +22,16 @@ import '../features/group/screens/group_test_results_screen.dart';
 import '../features/group/screens/group_tests_screen.dart';
 import '../features/leaderboard/leaderboard_hub_screen.dart';
 import '../features/notifications/notifications_hub_screen.dart';
+import '../features/notifications/screens/notification_settings_screen.dart';
 import '../features/performance/performance_screen.dart';
 import '../features/profile/profile_screen.dart';
+import '../features/profile/screens/avatar_viewer_screen.dart';
 import '../features/settings/settings_screen.dart';
 import 'app_shell.dart';
 import '../features/study/material_detail_screen.dart';
 import '../features/study/material_list_screen.dart';
-import '../features/study/subject_list_screen.dart';
+import '../features/study/study.dart';
 import '../features/study/syllabus_detail_screen.dart';
-import '../features/study/syllabus_screen.dart';
 import '../features/routine/screens/routine_list_screen.dart';
 import '../features/routine/screens/routine_create_screen.dart';
 import '../features/routine/screens/routine_detail_screen.dart';
@@ -38,6 +42,7 @@ import '../features/test/screens/question_review_screen.dart';
 import '../features/test/screens/test_creation_screen.dart';
 import '../features/test/screens/camera_capture_screen.dart';
 import '../features/test/screens/document_upload_screen.dart';
+import '../features/test/screens/my_uploads_screen.dart';
 import '../features/test/screens/ai_generation_screen.dart';
 import '../features/test/screens/template_listing_screen.dart';
 import '../features/test/screens/template_form_screen.dart';
@@ -58,7 +63,7 @@ final class AppRouter {
   static final GoRouter router = GoRouter(
     navigatorKey: _rootNavigatorKey,
     initialLocation: '/',
-    debugLogDiagnostics: true,
+    debugLogDiagnostics: kDebugMode,
     refreshListenable: _AuthRefreshListenable(),
     redirect: (context, state) {
       final authStatus = AuthService.currentStatus;
@@ -110,6 +115,19 @@ final class AppRouter {
         path: '/profile',
         name: 'profile',
         builder: (context, state) => const ProfileScreen(),
+        routes: [
+          GoRoute(
+            path: 'avatar',
+            name: 'avatar-viewer',
+            builder: (context, state) {
+              final params = state.uri.queryParameters;
+              return AvatarViewerScreen(
+                avatarUrl: params['url'],
+                initials: params['initials'] ?? '?',
+              );
+            },
+          ),
+        ],
       ),
       GoRoute(
         path: '/performance',
@@ -125,6 +143,16 @@ final class AppRouter {
         builder: (context, state) => const NotificationsHubScreen(),
       ),
       GoRoute(
+        path: '/my-uploads',
+        name: 'my-uploads',
+        builder: (context, state) => const MyUploadsScreen(),
+      ),
+      GoRoute(
+        path: '/notification-settings',
+        name: 'notification-settings',
+        builder: (context, state) => const NotificationSettingsScreen(),
+      ),
+      GoRoute(
         path: '/leaderboard',
         name: 'leaderboard',
         builder: (context, state) => const LeaderboardHubScreen(),
@@ -133,6 +161,80 @@ final class AppRouter {
         path: '/settings',
         name: 'settings',
         builder: (context, state) => const SettingsScreen(),
+      ),
+      // ── Study System V1 (Phase 4) ──
+      GoRoute(
+        path: '/study',
+        name: 'study-home',
+        builder: (context, state) => const StudyHomeScreen(),
+        routes: [
+          GoRoute(
+            path: 'subject/:subjectId',
+            name: 'study-subject-chapters',
+            builder: (context, state) => SubjectChaptersScreen(
+              subjectId: state.pathParameters['subjectId']!,
+            ),
+          ),
+          GoRoute(
+            path: 'chapter/:chapterId',
+            name: 'study-chapter-hub',
+            builder: (context, state) {
+              final chapterId = state.pathParameters['chapterId']!;
+              final initialTab =
+                  int.tryParse(state.uri.queryParameters['tab'] ?? '') ?? 0;
+              return ChapterHubScreen(
+                chapterId: chapterId,
+                initialTab: initialTab,
+              );
+            },
+          ),
+          GoRoute(
+            path: 'topic/:topicId',
+            name: 'study-topic-theory',
+            builder: (context, state) {
+              final topicId = state.pathParameters['topicId']!;
+              final chapterId =
+                  state.uri.queryParameters['chapterId'] ??
+                  (state.extra as String? ?? '');
+              return TopicTheoryScreen(topicId: topicId, chapterId: chapterId);
+            },
+          ),
+          GoRoute(
+            path: 'topic/:topicId/practice',
+            name: 'study-topic-practice',
+            builder: (context, state) {
+              final topicId = state.pathParameters['topicId']!;
+              final extraMap = state.extra is Map<String, dynamic>
+                  ? state.extra as Map<String, dynamic>
+                  : null;
+              final chapterId =
+                  state.uri.queryParameters['chapterId'] ??
+                  (extraMap?['chapterId'] as String?) ??
+                  '';
+              final topicTitle =
+                  state.uri.queryParameters['topicTitle'] ??
+                  (extraMap?['topicTitle'] as String?);
+              final chapterTitle =
+                  state.uri.queryParameters['chapterTitle'] ??
+                  (extraMap?['chapterTitle'] as String?);
+              final subjectTitle =
+                  state.uri.queryParameters['subjectTitle'] ??
+                  (extraMap?['subjectTitle'] as String?);
+              final subjectId =
+                  state.uri.queryParameters['subjectId'] ??
+                  (extraMap?['subjectId'] as String?);
+
+              return TopicPracticeScreen(
+                topicId: topicId,
+                chapterId: chapterId,
+                topicTitle: topicTitle,
+                chapterTitle: chapterTitle,
+                subjectTitle: subjectTitle,
+                subjectId: subjectId,
+              );
+            },
+          ),
+        ],
       ),
       // Calendar V1: routines + scheduled tests on one month grid (read-only).
       GoRoute(
@@ -143,15 +245,14 @@ final class AppRouter {
       GoRoute(
         path: '/subjects',
         name: 'subjects',
-        builder: (context, state) => const SubjectListScreen(),
+        redirect: (context, state) => '/study',
       ),
       GoRoute(
         path: '/subjects/:subjectId/syllabus',
         name: 'syllabus',
-        builder: (context, state) {
-          final subjectId = state.pathParameters['subjectId']!;
-          final subjectName = state.extra as String?;
-          return SyllabusScreen(subjectId: subjectId, subjectName: subjectName);
+        redirect: (context, state) {
+          final subjectId = state.pathParameters['subjectId'];
+          return subjectId != null ? '/study/subject/$subjectId' : '/study';
         },
       ),
       GoRoute(
@@ -214,6 +315,21 @@ final class AppRouter {
                 GroupHubScreen(groupId: state.pathParameters['groupId']!),
             routes: [
               GoRoute(
+                path: 'discussion',
+                name: 'group-discussion',
+                builder: (context, state) {
+                  final controller = state.extra;
+                  if (controller is GroupHubController) {
+                    return GroupDiscussionScreen(controller: controller);
+                  }
+                  // Deep link without the hub's shared controller: the
+                  // screen cannot render standalone — bounce to the hub.
+                  return const Scaffold(
+                    body: Center(child: Text('Open the group first.')),
+                  );
+                },
+              ),
+              GoRoute(
                 path: 'members',
                 name: 'group-members',
                 builder: (context, state) => GroupMembersScreen(
@@ -239,9 +355,8 @@ final class AppRouter {
               GoRoute(
                 path: 'tests',
                 name: 'group-tests',
-                builder: (context, state) => GroupTestsScreen(
-                  groupId: state.pathParameters['groupId']!,
-                ),
+                builder: (context, state) =>
+                    GroupTestsScreen(groupId: state.pathParameters['groupId']!),
                 routes: [
                   // G11: group test results.
                   GoRoute(
@@ -308,13 +423,37 @@ final class AppRouter {
             name: 'test-create',
             builder: (context, state) {
               final s = state.uri.queryParameters['source'];
-              final template = state.extra as TestTemplate?;
+              final extra = state.extra;
+
+              TestTemplate? template;
+              Map<String, dynamic>? prefill;
+
+              if (extra is TestTemplate) {
+                template = extra;
+              } else if (extra is Map<String, dynamic>) {
+                prefill = extra;
+              }
+
+              QuestionSource? source;
+              if (prefill != null &&
+                  prefill['initialSource'] is QuestionSource) {
+                source = prefill['initialSource'] as QuestionSource;
+              } else if (s != null) {
+                source = QuestionSource.values
+                    .cast<QuestionSource?>()
+                    .firstWhere((v) => v?.name == s, orElse: () => null);
+              }
+
               return TestCreationScreen(
                 initialGroupId: state.uri.queryParameters['group'],
-                initialSource: QuestionSource.values
-                    .cast<QuestionSource?>()
-                    .firstWhere((v) => v?.name == s, orElse: () => null),
+                initialSource: source,
                 template: template,
+                prefillTitle: prefill?['prefillTitle'] as String?,
+                prefillSubjectId: prefill?['prefillSubjectId'] as String?,
+                prefillChapterId: prefill?['prefillChapterId'] as String?,
+                availableQuestionCount:
+                    prefill?['availableQuestionCount'] as int?,
+                defaultMode: prefill?['defaultMode'] as String?,
               );
             },
           ),
@@ -431,7 +570,8 @@ final class AppRouter {
           final extra = state.extra as Map<String, dynamic>?;
           final selectionMode = extra?['selectionMode'] as bool? ?? false;
           final onSelectionConfirmed =
-              extra?['onSelectionConfirmed'] as ValueChanged<List<QuestionBankItem>>?;
+              extra?['onSelectionConfirmed']
+                  as ValueChanged<List<QuestionBankItem>>?;
           return QuestionBankScreen(
             selectionMode: selectionMode,
             onSelectionConfirmed: onSelectionConfirmed,
@@ -453,7 +593,11 @@ final class AppRouter {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.error_outline, size: 64, color: Colors.red),
+            Icon(
+              Icons.error_outline,
+              size: 64,
+              color: Theme.of(context).colorScheme.error,
+            ),
             const SizedBox(height: 16),
             Text(
               'Page not found',
@@ -466,7 +610,7 @@ final class AppRouter {
             ),
             const SizedBox(height: 24),
             ElevatedButton(
-              onPressed: () => context.go('/'),
+              onPressed: () => context.go('/home'),
               child: const Text('Go Home'),
             ),
           ],

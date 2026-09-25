@@ -17,6 +17,8 @@ class GroupListController extends DisposableNotifier {
   final GroupRepository _repo;
 
   List<Group> _groups = const [];
+  Map<String, int> _unreadCounts = const {};
+  Map<String, GroupLatestMessage> _latestMessages = const {};
   List<GroupJoinRequest> _pendingRequests = const [];
   List<GroupInvitation> _invitations = const [];
   bool _invitationsLoading = false;
@@ -30,6 +32,18 @@ class GroupListController extends DisposableNotifier {
   String? _error;
 
   List<Group> get groups => _groups;
+
+  /// Unread chat message count for [groupId] (0027's `message_reads`,
+  /// fetched batched via `fn_get_group_unread_counts`). 0 when absent —
+  /// either genuinely no unread messages, or the batched read is still
+  /// loading / failed, which is never treated as "many unread" by default.
+  int unreadCountFor(String groupId) => _unreadCounts[groupId] ?? 0;
+
+  /// The most recent message in [groupId], for a list-tile preview. Null
+  /// when the group has no messages yet, or the batched read hasn't
+  /// resolved.
+  GroupLatestMessage? latestMessageFor(String groupId) =>
+      _latestMessages[groupId];
 
   /// The caller's own pending join requests (own rows only, one query, no
   /// per-group reads). A pending request is **not** membership: nothing here
@@ -76,6 +90,7 @@ class GroupListController extends DisposableNotifier {
       _groups = await _repo.myGroups();
       await _loadInvitations();
       await _loadPendingRequests();
+      await _loadUnreadAndPreviews();
     } on AppError catch (e) {
       _error = e.message;
     } catch (e, st) {
@@ -85,6 +100,30 @@ class GroupListController extends DisposableNotifier {
     _loading = false;
     _loadedOnce = true;
     notifyListeners();
+  }
+
+  /// Batched unread count + latest-message preview for every group in
+  /// [_groups]. Best effort: a failure here must never block the groups
+  /// list itself from rendering — tiles simply show no badge/preview.
+  Future<void> _loadUnreadAndPreviews() async {
+    if (_groups.isEmpty) {
+      _unreadCounts = const {};
+      _latestMessages = const {};
+      return;
+    }
+    final ids = [for (final g in _groups) g.id];
+    try {
+      _unreadCounts = await _repo.unreadCounts(ids);
+    } catch (e) {
+      AppLogger.warning('Group unread counts unavailable: $e');
+      _unreadCounts = const {};
+    }
+    try {
+      _latestMessages = await _repo.latestMessages(ids);
+    } catch (e) {
+      AppLogger.warning('Group latest messages unavailable: $e');
+      _latestMessages = const {};
+    }
   }
 
   /// Reads the caller's own pending join requests; a failure is kept

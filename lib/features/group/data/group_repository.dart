@@ -164,10 +164,11 @@ abstract interface class GroupRepository {
 
   /// `fn_accept_group_invitation(p_invitation_id)` — the server checks the caller
   /// is the invitee and the row is pending, inserts the membership itself,
-  /// and raises `INVITE_NOT_FOUND` otherwise. No client-side table write.
+  /// and raises `INVITATION_NOT_FOUND` / `INVITATION_NOT_PENDING` otherwise.
+  /// No client-side table write.
   Future<void> acceptInvitation(String invitationId);
 
-  /// `fn_decline_group_invitation(p_invitation_id)` — same guard; `INVITE_NOT_FOUND`.
+  /// `fn_decline_group_invitation(p_invitation_id)` — same guards.
   Future<void> declineInvitation(String invitationId);
 
   /// Outgoing / managed invitations of one group (exact `group_id`, all
@@ -240,16 +241,10 @@ abstract interface class GroupRepository {
   Future<List<GroupRule>> groupRules(String groupId);
 
   /// Creates a rule. RLS: GROUP_SETTINGS or owner (live groups UPDATE gate).
-  Future<void> createRule({
-    required String groupId,
-    required String ruleText,
-  });
+  Future<void> createRule({required String groupId, required String ruleText});
 
   /// Updates a rule's text. RLS: GROUP_SETTINGS or owner (live groups UPDATE gate).
-  Future<void> updateRule({
-    required String ruleId,
-    required String ruleText,
-  });
+  Future<void> updateRule({required String ruleId, required String ruleText});
 
   /// Deletes a rule. RLS: GROUP_SETTINGS or owner (live groups UPDATE gate).
   Future<void> deleteRule(String ruleId);
@@ -296,6 +291,95 @@ abstract interface class GroupRepository {
   /// messages": `sender_id = auth.uid() AND fn_is_member(group_id, uid)` —
   /// the server rejects any other sender and any group the caller is not in.
   Future<void> sendMessage({required String groupId, required String body});
+
+  /// Subscribes to live INSERT/UPDATE events on `group_messages` for
+  /// [groupId] via the existing Supabase Realtime publication (already
+  /// carries this table — see migrations 0037/0049; this method is the
+  /// first CLIENT-side use of it, not a new server capability). [onInsert]
+  /// fires for a new message, [onUpdate] for a soft-delete (`deleted_at`
+  /// set); [onConnectionChange] reports whether the channel is currently
+  /// joined, for a "Reconnecting…" indicator. Call [GroupMessageSubscription
+  /// .cancel] exactly once, when the screen using it is disposed — never
+  /// leave a channel open past that.
+  GroupMessageSubscription subscribeToMessages({
+    required String groupId,
+    required void Function(GroupMessage message) onInsert,
+    required void Function(GroupMessage message) onUpdate,
+    void Function(bool connected)? onConnectionChange,
+  });
+
+  /// Deletes a group that has exactly one member (its owner) — the only
+  /// case a group can be deleted at all (`rpc_delete_group`, server-side
+  /// authoritative: owner + solo-member check both re-verified there, not
+  /// just here). Hard delete: `groups` has never had a soft-delete column
+  /// (unlike `tests`), so this follows that table's own existing design
+  /// rather than inventing one.
+  Future<void> deleteGroup(String groupId);
+
+  // ── Chat unread state (existing `message_reads` / RPCs from 0027) —
+  // previously unused by the client; wired here so the groups list can
+  // show a real per-group unread badge and preview. ──
+
+  /// Batched unread count per group, via `fn_get_group_unread_counts`
+  /// (server-side: excludes the caller's own messages and anything soft
+  /// deleted, compares against the caller's `message_reads.last_read_at`).
+  /// Groups with no unread rows are simply absent from the result map.
+  Future<Map<String, int>> unreadCounts(List<String> groupIds);
+
+  /// Upserts the caller's `message_reads.last_read_at = now()` for
+  /// [groupId] via `fn_mark_group_read` (server re-verifies membership).
+  Future<void> markGroupRead(String groupId);
+
+  /// Batched latest-message preview per group, via
+  /// `fn_latest_group_messages` (soft-delete-safe: a deleted message's
+  /// `body` comes back null with `isDeleted = true`).
+  Future<Map<String, GroupLatestMessage>> latestMessages(
+    List<String> groupIds,
+  );
+}
+
+/// One group's most recent message, for a list-screen preview. Mirrors
+/// `fn_latest_group_messages`'s row shape exactly — not a general chat
+/// model (see [GroupMessage] for that).
+class GroupLatestMessage {
+  const GroupLatestMessage({
+    required this.groupId,
+    required this.id,
+    required this.body,
+    required this.createdAt,
+    required this.senderId,
+    required this.senderName,
+    required this.isDeleted,
+  });
+
+  factory GroupLatestMessage.fromJson(Map<String, dynamic> json) =>
+      GroupLatestMessage(
+        groupId: json['group_id'] as String,
+        id: json['id'] as String,
+        body: json['body'] as String?,
+        createdAt: DateTime.parse(json['created_at'] as String),
+        senderId: json['sender_id'] as String?,
+        senderName: json['sender_name'] as String? ?? 'Member',
+        isDeleted: json['is_deleted'] as bool? ?? false,
+      );
+
+  final String groupId;
+  final String id;
+
+  /// Null when [isDeleted] — the server never sends a deleted body.
+  final String? body;
+  final DateTime createdAt;
+  final String? senderId;
+  final String senderName;
+  final bool isDeleted;
+
+  String get preview => isDeleted ? 'Message deleted' : (body ?? '');
+}
+
+/// A live subscription handle. Exactly one [cancel] call releases the
+/// underlying Realtime channel.
+abstract interface class GroupMessageSubscription {
+  Future<void> cancel();
 }
 
 /// Default chat window; one page per hub open, older pages on demand.
@@ -510,7 +594,7 @@ class SupabaseGroupRepository implements GroupRepository {
         .update({
           'name': name.trim(),
           'description': description.trim(),
-          if (privacy != null) 'privacy': privacy,
+          'privacy': ?privacy,
         })
         .eq('id', groupId);
   });
@@ -725,9 +809,7 @@ class SupabaseGroupRepository implements GroupRepository {
         );
         // Identity of a third party: log the shape only, never the values.
         AppLogger.rpcShape('rpc_find_profile_by_student_code', response);
-        final rows = response is List
-            ? response
-            : [if (response != null) response];
+        final rows = response is List ? response : [?response];
         if (rows.isEmpty) return null;
         return ProfileMatch.fromJson(rows.first as Map<String, dynamic>);
       });
@@ -787,11 +869,7 @@ class SupabaseGroupRepository implements GroupRepository {
       await _client
           .from('role_permissions')
           .upsert(
-            {
-              'group_id': groupId,
-              'role': role.db,
-              'permission': permission.db,
-            },
+            {'group_id': groupId, 'role': role.db, 'permission': permission.db},
             onConflict: 'group_id,role,permission',
             ignoreDuplicates: true,
           );
@@ -815,7 +893,8 @@ class SupabaseGroupRepository implements GroupRepository {
 
   // ── Group Rules (G6) ──
 
-  static const _ruleColumns = 'id, group_id, rule_text, position, created_at, updated_at';
+  static const _ruleColumns =
+      'id, group_id, rule_text, position, created_at, updated_at';
 
   @override
   Future<List<GroupRule>> groupRules(String groupId) =>
@@ -844,12 +923,9 @@ class SupabaseGroupRepository implements GroupRepository {
         .eq('group_id', groupId)
         .order('position', ascending: false)
         .limit(1);
-    final maxPos =
-        existing.isEmpty
-            ? 0
-            : (existing.first['position'] as num)
-                  .toInt() +
-                1;
+    final maxPos = existing.isEmpty
+        ? 0
+        : (existing.first['position'] as num).toInt() + 1;
     await _client.from('group_rules').insert({
       'group_id': groupId,
       'rule_text': ruleText.trim(),
@@ -858,37 +934,37 @@ class SupabaseGroupRepository implements GroupRepository {
   });
 
   @override
-  Future<void> updateRule({
-    required String ruleId,
-    required String ruleText,
-  }) => _guard(GroupErrorContext.update, () async {
-    final updated = await _client
-        .from('group_rules')
-        .update({'rule_text': ruleText.trim()})
-        .eq('id', ruleId)
-        .select('id');
-    if ((updated as List).isEmpty) {
-      throw const DataError(
-        message: 'This rule could not be updated. It may have been removed.',
-      );
-    }
-  });
-
-  @override
-  Future<void> deleteRule(String ruleId) =>
+  Future<void> updateRule({required String ruleId, required String ruleText}) =>
       _guard(GroupErrorContext.update, () async {
-        final deleted = await _client
+        final updated = await _client
             .from('group_rules')
-            .delete()
+            .update({'rule_text': ruleText.trim()})
             .eq('id', ruleId)
             .select('id');
-        if ((deleted as List).isEmpty) {
+        if ((updated as List).isEmpty) {
           throw const DataError(
             message:
-                'This rule could not be deleted. It may have been removed.',
+                'This rule could not be updated. It may have been removed.',
           );
         }
       });
+
+  @override
+  Future<void> deleteRule(String ruleId) => _guard(
+    GroupErrorContext.update,
+    () async {
+      final deleted = await _client
+          .from('group_rules')
+          .delete()
+          .eq('id', ruleId)
+          .select('id');
+      if ((deleted as List).isEmpty) {
+        throw const DataError(
+          message: 'This rule could not be deleted. It may have been removed.',
+        );
+      }
+    },
+  );
 
   // ── Group Announcements (G7) ──
 
@@ -949,26 +1025,30 @@ class SupabaseGroupRepository implements GroupRepository {
   });
 
   @override
-  Future<void> deleteAnnouncement(String announcementId) =>
-      _guard(GroupErrorContext.announcement, () async {
-        final deleted = await _client
-            .from('group_announcements')
-            .delete()
-            .eq('id', announcementId)
-            .select('id');
-        if ((deleted as List).isEmpty) {
-          throw const DataError(
-            message:
-                'This announcement could not be deleted. It may have been removed.',
-          );
-        }
-      });
+  Future<void> deleteAnnouncement(
+    String announcementId,
+  ) => _guard(GroupErrorContext.announcement, () async {
+    final deleted = await _client
+        .from('group_announcements')
+        .delete()
+        .eq('id', announcementId)
+        .select('id');
+    if ((deleted as List).isEmpty) {
+      throw const DataError(
+        message:
+            'This announcement could not be deleted. It may have been removed.',
+      );
+    }
+  });
 
   // ── Group Chat (G8) ──
 
-  /// Base columns only (0001_init); message_type / metadata / deleted_* are
+  /// Base columns including `deleted_at` (present since the initial migration;
+  /// selected so the client can show a truthful "Message deleted" placeholder
+  /// for soft-deleted rows). `message_type` / `metadata` / `deleted_by` are
   /// never requested so a partially-migrated live table still reads.
-  static const _messageColumns = 'id, group_id, sender_id, body, created_at';
+  static const _messageColumns =
+      'id, group_id, sender_id, body, created_at, deleted_at';
 
   @override
   Future<List<GroupMessage>> messages(
@@ -1008,6 +1088,101 @@ class SupabaseGroupRepository implements GroupRepository {
         });
       });
 
+  @override
+  GroupMessageSubscription subscribeToMessages({
+    required String groupId,
+    required void Function(GroupMessage message) onInsert,
+    required void Function(GroupMessage message) onUpdate,
+    void Function(bool connected)? onConnectionChange,
+  }) {
+    // Channel name only needs to be unique per subscription on this client;
+    // it carries no server meaning.
+    final channel = _client.channel('group_messages:$groupId');
+    channel
+      ..onPostgresChanges(
+        event: PostgresChangeEvent.insert,
+        schema: 'public',
+        table: 'group_messages',
+        filter: PostgresChangeFilter(
+          type: PostgresChangeFilterType.eq,
+          column: 'group_id',
+          value: groupId,
+        ),
+        callback: (payload) {
+          try {
+            onInsert(GroupMessage.fromJson(payload.newRecord));
+          } catch (e, st) {
+            AppLogger.error('Realtime group_messages INSERT decode failed: $e', stackTrace: st);
+          }
+        },
+      )
+      ..onPostgresChanges(
+        event: PostgresChangeEvent.update,
+        schema: 'public',
+        table: 'group_messages',
+        filter: PostgresChangeFilter(
+          type: PostgresChangeFilterType.eq,
+          column: 'group_id',
+          value: groupId,
+        ),
+        callback: (payload) {
+          try {
+            onUpdate(GroupMessage.fromJson(payload.newRecord));
+          } catch (e, st) {
+            AppLogger.error('Realtime group_messages UPDATE decode failed: $e', stackTrace: st);
+          }
+        },
+      )
+      ..subscribe((status, error) {
+        if (error != null) {
+          AppLogger.warning('group_messages realtime channel error: $error');
+        }
+        onConnectionChange?.call(status == RealtimeSubscribeStatus.subscribed);
+      });
+
+    return _SupabaseGroupMessageSubscription(_client, channel);
+  }
+
+  @override
+  Future<void> deleteGroup(String groupId) => _guard(GroupErrorContext.update, () async {
+        await _client.rpc('rpc_delete_group', params: {'p_group': groupId});
+      });
+
+  @override
+  Future<Map<String, int>> unreadCounts(List<String> groupIds) =>
+      _guard(GroupErrorContext.load, () async {
+        if (groupIds.isEmpty) return const {};
+        final rows = await _client.rpc(
+          'fn_get_group_unread_counts',
+          params: {'p_group_ids': groupIds},
+        ) as List<dynamic>;
+        return {
+          for (final r in rows.cast<Map<String, dynamic>>())
+            r['group_id'] as String: (r['unread_count'] as num).toInt(),
+        };
+      });
+
+  @override
+  Future<void> markGroupRead(String groupId) =>
+      _guard(GroupErrorContext.load, () async {
+        await _client.rpc('fn_mark_group_read', params: {'p_group': groupId});
+      });
+
+  @override
+  Future<Map<String, GroupLatestMessage>> latestMessages(
+    List<String> groupIds,
+  ) => _guard(GroupErrorContext.load, () async {
+        if (groupIds.isEmpty) return const {};
+        final rows = await _client.rpc(
+          'fn_latest_group_messages',
+          params: {'p_group_ids': groupIds},
+        ) as List<dynamic>;
+        return {
+          for (final r in rows.cast<Map<String, dynamic>>())
+            r['group_id'] as String: GroupLatestMessage.fromJson(r),
+        };
+      });
+
   static Future<T> _guard<T>(
     GroupErrorContext context,
     Future<T> Function() body,
@@ -1025,5 +1200,17 @@ class SupabaseGroupRepository implements GroupRepository {
       AppLogger.error('GroupRepository unexpected: $e', stackTrace: st);
       throw DataError(message: GroupErrors.map(e.toString(), context: context));
     }
+  }
+}
+
+class _SupabaseGroupMessageSubscription implements GroupMessageSubscription {
+  _SupabaseGroupMessageSubscription(this._client, this._channel);
+
+  final SupabaseClient _client;
+  final RealtimeChannel _channel;
+
+  @override
+  Future<void> cancel() async {
+    await _client.removeChannel(_channel);
   }
 }

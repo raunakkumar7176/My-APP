@@ -72,8 +72,9 @@ abstract final class TestLifecycle {
     required DateTime? endsAt,
     required DateTime now,
   }) {
-    if (startsAt != null && now.isBefore(startsAt))
+    if (startsAt != null && now.isBefore(startsAt)) {
       return SchedulePhase.notStarted;
+    }
     if (endsAt != null && !now.isBefore(endsAt)) return SchedulePhase.ended;
     return SchedulePhase.active;
   }

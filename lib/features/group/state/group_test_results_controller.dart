@@ -228,6 +228,23 @@ class GroupTestResultsController extends DisposableNotifier {
     },
   );
 
+  /// `rpc_publish_results`: the one authorized action that makes an already
+  /// generated batch's results visible to students and notifies them.
+  /// Submission and publication are two separate events by product rule —
+  /// this is never called automatically. Same authorization as generate;
+  /// the server additionally requires a completed/partially-completed batch
+  /// and is idempotent (a second call is a safe no-op, never a duplicate
+  /// notification).
+  Future<bool> publishResults() => _run(
+    canGenerateResults && (_batch?.canPublish == true),
+    !canGenerateResults
+        ? 'Only the test creator or a member with the results permission can publish results.'
+        : 'Generate results first, then publish them.',
+    () async {
+      _batch = await _results.publishResults(testId);
+    },
+  );
+
   /// Queues AI coach reports for the finished batch (proposed RPC). The
   /// request itself runs no AI; the same request twice returns the same job.
   Future<bool> requestCoachReports() => _run(

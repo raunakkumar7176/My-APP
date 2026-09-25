@@ -3,7 +3,6 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/theme/app_colors.dart';
 import '../../../core/errors/app_error.dart';
-import '../../../core/models/test_template.dart';
 import '../domain/test_kind.dart';
 import '../state/template_form_controller.dart';
 
@@ -50,7 +49,8 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
             widget.initialConfig!['description'] as String? ?? '',
         templateGroupId: widget.initialConfig!['group_id'] as String?,
         templateConfiguration:
-            widget.initialConfig!['configuration'] as Map<String, dynamic>? ?? {},
+            widget.initialConfig!['configuration'] as Map<String, dynamic>? ??
+            {},
       );
       _titleCtrl.text = _c.title;
       _descCtrl.text = _c.description;
@@ -202,7 +202,7 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
             const SizedBox(height: 12),
             DropdownButtonFormField<TestKind>(
               key: const Key('template_kind'),
-              value: _kind,
+              initialValue: _kind,
               decoration: const InputDecoration(
                 labelText: 'Test Kind',
                 border: OutlineInputBorder(),
@@ -267,7 +267,9 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
                 child: Text(
                   busy
                       ? 'Saving…'
-                      : (_c.isPersisted ? 'Update Template' : 'Create Template'),
+                      : (_c.isPersisted
+                            ? 'Update Template'
+                            : 'Create Template'),
                 ),
               ),
             ),

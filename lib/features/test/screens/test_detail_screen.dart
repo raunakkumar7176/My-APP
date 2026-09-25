@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:printing/printing.dart';
@@ -73,69 +75,54 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
     if (mounted) _snack('Test published successfully');
   });
 
-  /// Instructions / disclaimer gate: shown before a NEW attempt (Start Test
-  /// and Re-attempt). Resuming an in_progress attempt skips it — the timer
-  /// is already running. Every value comes from the stored row.
-  Future<bool> _acknowledgeInstructions({required bool reattempt}) async {
+  /// Mandatory pre-test disclaimer + instructions gate: shown before a NEW
+  /// attempt (Start Test and Re-attempt) — never before an attempt exists,
+  /// so Cancel/back/outside-tap never creates one. Resuming an in_progress
+  /// attempt skips it — the timer is already running. Returns the accepted
+  /// language ("en"/"hi") only when the explicit acknowledgement button was
+  /// pressed with the checkbox checked; null otherwise (declined/backed out).
+  Future<String?> _acknowledgeInstructions({required bool reattempt}) async {
     final t = _c.test;
-    if (t == null) return false;
-    final lines = <String>[
+    if (t == null) return null;
+    final testLines = <String>[
       '${_c.kind.label} · ${_c.questionCountLabel} question(s) · ${TestFormatters.duration(t.durationSec)}',
-      'The timer starts as soon as you begin and keeps running if you leave the test.',
       if (t.endsAt != null)
         'Your answers are submitted automatically at the deadline or at ${TestFormatters.dateTime(t.endsAt)}, whichever is first.'
       else
         'Your answers are submitted automatically when the time is up.',
-      'Answers are saved as you go; you can mark questions for review.',
       'Attempts: ${_c.attemptPolicyLabel}.',
       if (t.negativeMarks != null && t.negativeMarks! > 0)
         'Negative marking: ${t.negativeMarks} per wrong answer.',
       if (t.instructions != null && t.instructions!.trim().isNotEmpty)
         t.instructions!.trim(),
     ];
-    final ok = await showDialog<bool>(
+    final language = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(reattempt ? 'Re-attempt this test?' : 'Before you start'),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final l in lines)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Text('• $l'),
-                ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(reattempt ? 'Start Re-attempt' : 'Start Test'),
-          ),
-        ],
+      barrierDismissible: false,
+      builder: (ctx) => _DisclaimerDialog(
+        reattempt: reattempt,
+        testLines: testLines,
       ),
     );
-    return ok == true && mounted;
+    return mounted ? language : null;
   }
 
   Future<void> _start() async {
     // Resume needs no gate; only a brand-new attempt does.
     final resuming =
         _c.attemptState?.inProgress != null && !_c.attemptsLoadFailed;
-    if (!resuming && !await _acknowledgeInstructions(reattempt: false)) return;
-    await _launch(_c.start);
+    String? language;
+    if (!resuming) {
+      language = await _acknowledgeInstructions(reattempt: false);
+      if (language == null) return;
+    }
+    await _launch(_c.start, disclaimerLanguage: language);
   }
 
   Future<void> _reattempt() async {
-    if (!await _acknowledgeInstructions(reattempt: true)) return;
-    await _launch(_c.reattempt);
+    final language = await _acknowledgeInstructions(reattempt: true);
+    if (language == null) return;
+    await _launch(_c.reattempt, disclaimerLanguage: language);
   }
 
   /// Builds the student question paper from `get_test_questions_safe` (the
@@ -155,20 +142,34 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
     if (mounted) _snack('Join code copied');
   }
 
-  Future<void> _launch(Future<LaunchedAttempt> Function() action) =>
-      _run(() async {
-        final launched = await action();
-        if (!mounted) return;
-        // Hand the server response to the taking screen in memory; the route
-        // itself carries ids only (a cold start falls back to server resume).
-        AttemptLaunchStore.putLaunch(
-          started: launched.started,
-          questions: launched.questions,
-          test: launched.test,
-        );
-        final a = launched.started.attempt;
-        context.go('/attempts/${a.id}/take?test=${a.testId}');
-      });
+  Future<void> _launch(
+    Future<LaunchedAttempt> Function() action, {
+    String? disclaimerLanguage,
+  }) => _run(() async {
+    final launched = await action();
+    if (!mounted) return;
+    // Hand the server response to the taking screen in memory; the route
+    // itself carries ids only (a cold start falls back to server resume).
+    AttemptLaunchStore.putLaunch(
+      started: launched.started,
+      questions: launched.questions,
+      test: launched.test,
+    );
+    final a = launched.started.attempt;
+    // Only ever called with an attempt that was just created by the
+    // disclaimer-gated action above — never for a resumed attempt (the
+    // disclaimer, and therefore this call, is skipped entirely on resume).
+    if (disclaimerLanguage != null) {
+      unawaited(
+        _c.acceptDisclaimer(
+          attemptId: a.id,
+          version: testDisclaimerVersion,
+          language: disclaimerLanguage,
+        ),
+      );
+    }
+    context.push('/attempts/${a.id}/take?test=${a.testId}');
+  });
 
   Future<void> _generate() => _run(() async {
     final batch = await _c.generateResults();
@@ -638,6 +639,148 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Fixed disclaimer text version — bump only alongside a real content
+/// change, per this feature's own "do not hardcode a future versioning
+/// system unless needed" instruction.
+const String testDisclaimerVersion = 'v1';
+
+const List<String> _disclaimerPointsEn = [
+  'Once the test starts, the timer will run according to the configured test duration.',
+  'Leaving the app, changing screens, or other suspicious activities may be recorded by the system.',
+  'Question order may be different for each student. Therefore, question numbers should not be used to assume that another student has the same question at the same position.',
+  'Each answer is saved against the actual question identity.',
+  'After submission, answers may not be editable where the configured test rules prohibit changes.',
+  'Report technical problems immediately to your teacher or group leader.',
+  'Make sure you have sufficient time and a stable internet connection before starting.',
+  'Do not use unauthorized assistance or unfair means during the test.',
+  'Once the test starts, the configured test rules and time limit must be followed.',
+];
+
+const List<String> _disclaimerPointsHi = [
+  'टेस्ट शुरू करने के बाद निर्धारित समय के अनुसार टाइमर चलेगा।',
+  'टेस्ट के दौरान ऐप से बाहर जाने, स्क्रीन बदलने या अन्य संदिग्ध गतिविधियों को सिस्टम द्वारा रिकॉर्ड किया जा सकता है।',
+  'टेस्ट में प्रश्नों का क्रम प्रत्येक विद्यार्थी के लिए अलग हो सकता है। इसलिए प्रश्न संख्या देखकर दूसरे विद्यार्थी से उत्तर मिलाना संभव नहीं माना जाएगा।',
+  'प्रत्येक प्रश्न का उत्तर उसी प्रश्न की पहचान के आधार पर सेव किया जाएगा।',
+  'टेस्ट सबमिट करने के बाद उत्तरों में बदलाव की अनुमति नहीं होगी, यदि टेस्ट नियम ऐसा निर्धारित करते हैं।',
+  'तकनीकी समस्या होने पर तुरंत अपने शिक्षक/ग्रुप लीडर को सूचित करें।',
+  'टेस्ट शुरू करने से पहले सुनिश्चित करें कि आपके पास पर्याप्त समय और स्थिर इंटरनेट कनेक्शन है।',
+  'टेस्ट के दौरान अनुचित साधनों या सहायता का उपयोग न करें।',
+  'टेस्ट शुरू करने के बाद लागू टेस्ट नियमों और समय सीमा का पालन करना आवश्यक है।',
+];
+
+/// Mandatory pre-test disclaimer. Purely a client-side gate: no attempt
+/// exists yet when this is shown (Cancel/back/outside-tap/barrier never
+/// creates one — `barrierDismissible: false` plus `PopScope`-equivalent
+/// AlertDialog default already refuses a bare back-press dismissal on
+/// Android; the only ways out are the two explicit buttons). Language
+/// toggle and the checkbox are local UI state — neither one, by itself,
+/// can close the dialog or start the test.
+class _DisclaimerDialog extends StatefulWidget {
+  const _DisclaimerDialog({required this.reattempt, required this.testLines});
+
+  final bool reattempt;
+  final List<String> testLines;
+
+  @override
+  State<_DisclaimerDialog> createState() => _DisclaimerDialogState();
+}
+
+class _DisclaimerDialogState extends State<_DisclaimerDialog> {
+  bool _hindi = false;
+  bool _agreed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final points = _hindi ? _disclaimerPointsHi : _disclaimerPointsEn;
+    return AlertDialog(
+      title: Text(
+        widget.reattempt
+            ? (_hindi ? 'क्या आप दोबारा प्रयास करना चाहते हैं?' : 'Re-attempt this test?')
+            : (_hindi ? 'शुरू करने से पहले' : 'Before you start'),
+      ),
+      content: ConstrainedBox(
+        // Bounded on all platforms: a fixed max width keeps the dialog
+        // readable on desktop/tablet without ever demanding unbounded
+        // width, and the content itself scrolls rather than assuming any
+        // fixed height — safe on the smallest phone screens too.
+        constraints: const BoxConstraints(maxWidth: 480),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Align(
+                alignment: Alignment.centerRight,
+                child: SegmentedButton<bool>(
+                  key: const Key('disclaimer_language_toggle'),
+                  segments: const [
+                    ButtonSegment(value: false, label: Text('English')),
+                    ButtonSegment(value: true, label: Text('हिंदी')),
+                  ],
+                  selected: {_hindi},
+                  onSelectionChanged: (s) => setState(() => _hindi = s.first),
+                ),
+              ),
+              const SizedBox(height: 12),
+              for (final l in widget.testLines)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text('• $l', style: theme.textTheme.bodyMedium),
+                ),
+              const Divider(height: 24),
+              Text(
+                _hindi
+                    ? 'टेस्ट शुरू करने से पहले कृपया निम्न बातों को ध्यानपूर्वक पढ़ें:'
+                    : 'Please read the following instructions carefully before starting the test:',
+                style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 8),
+              for (var i = 0; i < points.length; i++)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text('${i + 1}. ${points[i]}', style: theme.textTheme.bodyMedium),
+                ),
+              const SizedBox(height: 8),
+              CheckboxListTile(
+                key: const Key('disclaimer_acknowledge_checkbox'),
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                value: _agreed,
+                onChanged: (v) => setState(() => _agreed = v ?? false),
+                title: Text(
+                  _hindi
+                      ? 'मैं इन टेस्ट निर्देशों को समझता/समझती हूँ और उनका पालन करने के लिए सहमत हूँ।'
+                      : 'I understand and agree to follow these test instructions.',
+                  style: theme.textTheme.bodyMedium,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          key: const Key('disclaimer_cancel'),
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(_hindi ? 'रद्द करें' : 'Cancel'),
+        ),
+        FilledButton(
+          key: const Key('disclaimer_start'),
+          onPressed: _agreed
+              ? () => Navigator.of(context).pop(_hindi ? 'hi' : 'en')
+              : null,
+          child: Text(
+            _hindi
+                ? 'मैं समझता/समझती हूँ और टेस्ट शुरू करें'
+                : (widget.reattempt ? 'Start Re-attempt' : 'I Understand & Start Test'),
+          ),
+        ),
+      ],
     );
   }
 }

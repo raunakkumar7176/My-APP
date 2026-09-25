@@ -36,9 +36,25 @@ class SettingsScreen extends StatelessWidget {
                 ListTile(
                   leading: const Icon(Icons.notifications_outlined),
                   title: const Text('Notifications'),
-                  subtitle: const Text('Mute or view group notifications'),
+                  subtitle: const Text('Configure notification preferences'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => context.push('/notification-settings'),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.mark_email_read_outlined),
+                  title: const Text('Notification Center'),
+                  subtitle: const Text('View all your notifications'),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => context.push('/notifications'),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.folder_open_outlined),
+                  title: const Text('My Uploaded Documents'),
+                  subtitle: const Text('Manage files uploaded for test creation'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => context.push('/my-uploads'),
                 ),
               ],
             ),
@@ -56,10 +72,12 @@ class SettingsScreen extends StatelessWidget {
                   onTap: () => context.push('/profile'),
                 ),
                 const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(Icons.privacy_tip_outlined),
-                  title: const Text('Privacy'),
-                  subtitle: const Text('Your data is scoped to your account and groups'),
+                const ListTile(
+                  leading: Icon(Icons.privacy_tip_outlined),
+                  title: Text('Privacy'),
+                  subtitle: Text(
+                    'Your data is scoped to your account and groups',
+                  ),
                 ),
               ],
             ),
@@ -84,9 +102,9 @@ class SettingsScreen extends StatelessWidget {
       child: Text(
         text,
         style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.w600,
-              color: Theme.of(context).colorScheme.primary,
-            ),
+          fontWeight: FontWeight.w600,
+          color: Theme.of(context).colorScheme.primary,
+        ),
       ),
     );
   }
@@ -104,11 +122,29 @@ class _ThemeCard extends StatelessWidget {
         return Card(
           child: Column(
             children: [
-              _tile(context, ThemeMode.light, 'Light', Icons.light_mode_outlined, mode),
+              _tile(
+                context,
+                ThemeMode.light,
+                'Light',
+                Icons.light_mode_outlined,
+                mode,
+              ),
               const Divider(height: 1),
-              _tile(context, ThemeMode.dark, 'Dark', Icons.dark_mode_outlined, mode),
+              _tile(
+                context,
+                ThemeMode.dark,
+                'Dark',
+                Icons.dark_mode_outlined,
+                mode,
+              ),
               const Divider(height: 1),
-              _tile(context, ThemeMode.system, 'System', Icons.brightness_auto_outlined, mode),
+              _tile(
+                context,
+                ThemeMode.system,
+                'System',
+                Icons.brightness_auto_outlined,
+                mode,
+              ),
             ],
           ),
         );
@@ -116,7 +152,13 @@ class _ThemeCard extends StatelessWidget {
     );
   }
 
-  Widget _tile(BuildContext context, ThemeMode value, String label, IconData icon, ThemeMode current) {
+  Widget _tile(
+    BuildContext context,
+    ThemeMode value,
+    String label,
+    IconData icon,
+    ThemeMode current,
+  ) {
     return RadioListTile<ThemeMode>(
       value: value,
       groupValue: current,

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/theme/app_colors.dart';
 import '../../../core/models/result_analytics.dart';
@@ -64,6 +65,8 @@ class TopicAnalysisCard extends StatelessWidget {
       accuracyColor = AppColors.error;
     }
 
+    final isWeak = accuracy < 60 && item.attempted > 0;
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
@@ -95,6 +98,44 @@ class TopicAnalysisCard extends StatelessWidget {
               textAlign: TextAlign.end,
             ),
           ),
+          if (isWeak) ...[
+            const SizedBox(width: 8),
+            InkWell(
+              borderRadius: BorderRadius.circular(4),
+              onTap: () {
+                if (item.topicId.isNotEmpty && item.topicId != 'unknown') {
+                  context.push('/study/topic/${item.topicId}');
+                } else {
+                  context.push('/study');
+                }
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppColors.error.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(
+                    color: AppColors.error.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.auto_stories, size: 12, color: AppColors.error),
+                    SizedBox(width: 2),
+                    Text(
+                      'Revise',
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.error,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );

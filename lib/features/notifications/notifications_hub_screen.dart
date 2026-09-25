@@ -1,19 +1,31 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/errors/app_error.dart';
-import '../../core/models/group.dart';
-import '../group/data/group_repository.dart';
+import '../../core/models/app_notification.dart';
 import '../group/data/notification_repository.dart';
+import '../group/data/group_repository.dart';
+import 'data/notification_feed_repository.dart';
+import 'state/notification_deep_link_handler.dart';
+import 'state/notification_feed_controller.dart';
+import 'widgets/notification_tile.dart';
 
-/// Notification center. Notifications are stored per-group only (see
-/// [NotificationRepository]) — there is no unified feed table — so this
-/// screen lists the caller's own groups (a small, bounded list) with each
-/// group's unread count, and hands off to the existing per-group
-/// notification screen for the actual read/unread list.
+/// Global notification center. Shows ALL of the caller's notifications
+/// across all groups in a unified chronological feed with:
+/// - All / Unread tabs
+/// - Paginated keyset loading
+/// - Mark all read
+/// - Per-notification tap to navigate (deep link)
+/// - Empty / error / loading states
+/// - Pull-to-refresh
 class NotificationsHubScreen extends StatefulWidget {
-  const NotificationsHubScreen({super.key, this.groupRepository, this.notificationRepository});
+  const NotificationsHubScreen({
+    this.feedRepository,
+    this.groupRepository,
+    this.notificationRepository,
+    super.key,
+  });
 
+  final NotificationFeedRepository? feedRepository;
   final GroupRepository? groupRepository;
   final NotificationRepository? notificationRepository;
 
@@ -21,143 +33,251 @@ class NotificationsHubScreen extends StatefulWidget {
   State<NotificationsHubScreen> createState() => _NotificationsHubScreenState();
 }
 
-class _GroupUnread {
-  const _GroupUnread(this.group, this.unread);
-  final Group group;
-  final int unread;
-}
-
-class _NotificationsHubScreenState extends State<NotificationsHubScreen> {
-  late final GroupRepository _groups;
-  late final NotificationRepository _notifications;
-
-  bool _loading = true;
-  String? _error;
-  List<_GroupUnread> _items = [];
+class _NotificationsHubScreenState extends State<NotificationsHubScreen>
+    with SingleTickerProviderStateMixin {
+  late final NotificationFeedController _feedController;
+  late final TabController _tabController;
+  bool _ownsFeed = false;
 
   @override
   void initState() {
     super.initState();
-    _groups = widget.groupRepository ?? const SupabaseGroupRepository();
-    _notifications = widget.notificationRepository ?? const SupabaseNotificationRepository();
-    _load();
+    _tabController = TabController(length: 2, vsync: this);
+    _feedController = NotificationFeedController(feed: widget.feedRepository);
+    _ownsFeed = true;
+    _feedController.addListener(_onChanged);
+    _feedController.load();
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-    try {
-      final myGroups = await _groups.myGroups();
-      final items = <_GroupUnread>[];
-      for (final g in myGroups) {
-        final unread = await _notifications.unreadCount(g.id);
-        items.add(_GroupUnread(g, unread));
-      }
-      items.sort((a, b) => b.unread.compareTo(a.unread));
-      if (!mounted) return;
-      setState(() {
-        _items = items;
-        _loading = false;
-      });
-    } on AppError catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _error = e.message;
-        _loading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _error = 'Failed to load notifications. Please try again.';
-        _loading = false;
-      });
+  void _onChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _feedController.removeListener(_onChanged);
+    if (_ownsFeed) _feedController.dispose();
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  void _snack(String message, {bool error = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: error ? Theme.of(context).colorScheme.error : null,
+      ),
+    );
+  }
+
+  List<AppNotification> get _filteredItems {
+    if (_tabController.index == 0) return _feedController.items;
+    return _feedController.items.where((n) => !n.isRead).toList();
+  }
+
+  Future<void> _markAllRead() async {
+    final ok = await _feedController.markAllRead();
+    if (!mounted) return;
+    if (!ok) {
+      _snack(_feedController.error ?? 'Could not mark all read.', error: true);
     }
+  }
+
+  Future<void> _onNotificationTap(AppNotification n) async {
+    // Mark read first.
+    if (!n.isRead) {
+      final ok = await _feedController.markRead(n.id);
+      if (!mounted) return;
+      if (!ok) {
+        _snack(
+          _feedController.error ?? 'Could not mark notification read.',
+          error: true,
+        );
+      }
+    }
+    // Navigate via deep link handler.
+    if (!mounted) return;
+    NotificationDeepLinkHandler.handleTap(context, n);
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final unreadCount = _feedController.unreadCount;
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Notifications')),
+      appBar: AppBar(
+        title: Text(
+          unreadCount > 0
+              ? 'Notifications ($unreadCount unread)'
+              : 'Notifications',
+        ),
+        actions: [
+          if (_feedController.hasUnread)
+            IconButton(
+              key: const Key('mark_all_read'),
+              tooltip: 'Mark all read',
+              icon: const Icon(Icons.done_all),
+              onPressed: _feedController.isBusy ? null : _markAllRead,
+            ),
+          IconButton(
+            key: const Key('notification_settings_button'),
+            tooltip: 'Notification settings',
+            icon: const Icon(Icons.settings_outlined),
+            onPressed: () => context.push('/notification-settings'),
+          ),
+        ],
+        bottom: TabBar(
+          controller: _tabController,
+          onTap: (_) => setState(() {}),
+          tabs: [
+            const Tab(text: 'All'),
+            Tab(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Unread'),
+                  if (unreadCount > 0) ...[
+                    const SizedBox(width: 6),
+                    Badge(
+                      label: Text('$unreadCount'),
+                      backgroundColor: theme.colorScheme.error,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
       body: _buildBody(),
     );
   }
 
   Widget _buildBody() {
-    if (_loading) {
+    if (_feedController.isLoading && !_feedController.hasLoaded) {
       return const Center(child: CircularProgressIndicator());
     }
-    if (_error != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.error_outline, size: 40, color: Theme.of(context).colorScheme.error),
-              const SizedBox(height: 12),
-              Text(_error!, textAlign: TextAlign.center),
-              const SizedBox(height: 16),
-              ElevatedButton(onPressed: _load, child: const Text('Retry')),
-            ],
-          ),
-        ),
-      );
+
+    if (_feedController.error != null && _feedController.isEmpty) {
+      return _errorWidget();
     }
-    if (_items.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.notifications_none,
-                size: 48,
-                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
-              ),
-              const SizedBox(height: 12),
-              const Text('No notifications'),
-              const SizedBox(height: 4),
-              Text(
-                'Join or create a group to start receiving notifications.',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
-                    ),
-              ),
-            ],
-          ),
-        ),
-      );
+
+    final items = _filteredItems;
+
+    if (items.isEmpty) {
+      return _emptyWidget();
     }
+
     return RefreshIndicator(
-      onRefresh: _load,
-      child: ListView.separated(
-        padding: const EdgeInsets.all(16),
-        itemCount: _items.length,
-        separatorBuilder: (_, _) => const SizedBox(height: 8),
-        itemBuilder: (context, i) {
-          final item = _items[i];
-          return Card(
-            child: ListTile(
-              leading: CircleAvatar(
-                backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
-                child: Icon(Icons.groups, color: Theme.of(context).colorScheme.primary),
+      onRefresh: _feedController.refresh,
+      child: ListView.builder(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        itemCount: items.length + (_feedController.hasOlder ? 1 : 0),
+        itemBuilder: (context, index) {
+          if (index == items.length) {
+            return _loadOlderButton();
+          }
+          final n = items[index];
+          return Column(
+            children: [
+              NotificationTile(
+                notification: n,
+                isActing: _feedController.actingId == n.id,
+                onTap: _feedController.isBusy
+                    ? null
+                    : () => _onNotificationTap(n),
               ),
-              title: Text(item.group.name),
-              subtitle: Text('${item.group.memberCount} member${item.group.memberCount == 1 ? '' : 's'}'),
-              trailing: item.unread > 0
-                  ? Badge(label: Text('${item.unread}'))
-                  : const Icon(Icons.chevron_right),
-              onTap: () async {
-                await context.push('/groups/${item.group.id}/notifications');
-                if (mounted) _load();
-              },
-            ),
+              const Divider(height: 1, indent: 56),
+            ],
           );
         },
+      ),
+    );
+  }
+
+  Widget _loadOlderButton() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+      child: Center(
+        child: _feedController.olderLoading
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : TextButton(
+                key: const Key('load_older_notifications'),
+                onPressed: _feedController.loadOlder,
+                child: const Text('Load older'),
+              ),
+      ),
+    );
+  }
+
+  Widget _errorWidget() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.error_outline,
+              size: 48,
+              color: Theme.of(context).colorScheme.error,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              _feedController.error ?? 'Something went wrong.',
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            FilledButton(
+              key: const Key('notifications_retry'),
+              onPressed: _feedController.load,
+              child: const Text('Retry'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _emptyWidget() {
+    final isUnreadTab = _tabController.index == 1;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              isUnreadTab
+                  ? Icons.mark_email_read_outlined
+                  : Icons.notifications_none,
+              size: 56,
+              color: Theme.of(context).colorScheme.onSurface
+                  .withValues(alpha: 0.3),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              isUnreadTab ? 'All caught up!' : 'No notifications yet',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              isUnreadTab
+                  ? 'You have no unread notifications.'
+                  : 'Join or create a group to start receiving notifications.',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurface
+                    .withValues(alpha: 0.6),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

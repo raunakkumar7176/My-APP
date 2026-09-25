@@ -24,6 +24,14 @@ abstract interface class ResultRepository {
   /// is group-permission based and would hide a standalone owner's batch).
   Future<ResultBatch> generateResults(String testId);
 
+  /// Publishes an already-generated batch via `rpc_publish_results` — the
+  /// one authorized action that makes a group test's results visible to
+  /// students, distinct from `generateResults`. Idempotent: a second call
+  /// (or a concurrent one) returns the same published state, never a
+  /// duplicate. The server rejects this when no completed batch exists
+  /// (`RESULTS_NOT_GENERATED`) — call `generateResults` first.
+  Future<ResultBatch> publishResults(String testId);
+
   // ── Group test results (G11) ──
 
   /// All scored results for a test, visible under RLS. Leaders with
@@ -31,6 +39,13 @@ abstract interface class ResultRepository {
   /// own (per the `own results` + `analytics holders see group results`
   /// policies).
   Future<List<Result>> resultsForTest(String testId);
+
+  /// `rpc_get_leaderboard(p_test)` — the SECURITY DEFINER server ranking
+  /// (remediated 2026-09-20: rows only for the test creator, members of the
+  /// test's group, or participants; anon revoked). Returns the raw rows
+  /// `rank, user_id, full_name, avatar_url, student_code, score, max_score,
+  /// percentage, accuracy, submitted_at` in server rank order. Read-only.
+  Future<List<Map<String, dynamic>>> leaderboard(String testId);
 
   /// The current user's AI coach report for a test (if one exists).
   /// Reads from `ai_reports` under RLS (own reports policy).
@@ -109,6 +124,16 @@ class SupabaseResultRepository implements ResultRepository {
     return batchFromRpcResponse(response);
   }, TestErrorContext.generic);
 
+  @override
+  Future<ResultBatch> publishResults(String testId) => _guard(() async {
+    final response = await _client.rpc(
+      'rpc_publish_results',
+      params: {'p_test_id': testId},
+    );
+    AppLogger.rpcShape('rpc_publish_results', response);
+    return publishFromRpcResponse(response);
+  }, TestErrorContext.generic);
+
   // ── Group test results (G11) ──
 
   @override
@@ -123,6 +148,19 @@ class SupabaseResultRepository implements ResultRepository {
       for (final r in rows as List) Result.fromJson(r as Map<String, dynamic>),
     ];
   }, TestErrorContext.load);
+
+  @override
+  Future<List<Map<String, dynamic>>> leaderboard(String testId) =>
+      _guard(() async {
+        final rows = await _client.rpc(
+          'rpc_get_leaderboard',
+          params: {'p_test': testId},
+        );
+        AppLogger.rpcShape('rpc_get_leaderboard', rows);
+        return [
+          for (final r in rows as List) Map<String, dynamic>.from(r as Map),
+        ];
+      }, TestErrorContext.load);
 
   @override
   Future<AiCoachReport?> myAiReport(String testId) => _guard(() async {
@@ -199,6 +237,20 @@ class SupabaseResultRepository implements ResultRepository {
     }
     throw const DataError(
       message: 'Result generation returned an unexpected response.',
+    );
+  }
+
+  /// Parses the `rpc_publish_results` jsonb (`{batch_id, test_id, status:
+  /// 'published', published_at, notified, reused}`).
+  static ResultBatch publishFromRpcResponse(dynamic response) {
+    final data = response is List && response.isNotEmpty
+        ? response.first
+        : response;
+    if (data is Map && data['batch_id'] is String) {
+      return ResultBatch.fromPublishRpcJson(Map<String, dynamic>.from(data));
+    }
+    throw const DataError(
+      message: 'Result publication returned an unexpected response.',
     );
   }
 

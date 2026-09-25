@@ -28,7 +28,7 @@ class QuestionsStep extends StatefulWidget {
   /// Throw an [AppError] to show its message.
   final Future<void> Function(Question question) onDeleteServerQuestion;
   final Future<void> Function(Question original, QuestionDraft updated)
-  onUpdateServerQuestion;
+      onUpdateServerQuestion;
 
   /// Non-blocking hint (e.g. Quick Test size guidance).
   final String? guidance;
@@ -70,18 +70,18 @@ class _QuestionsStepState extends State<QuestionsStep> {
   }
 
   void _addLocal() => _openEditor(
-    onSave: (d) =>
-        widget.onLocalQuestionsChanged([...widget.localQuestions, d]),
-  );
+        onSave: (d) =>
+            widget.onLocalQuestionsChanged([...widget.localQuestions, d]),
+      );
 
   void _editLocal(int index) => _openEditor(
-    initial: widget.localQuestions[index],
-    onSave: (d) {
-      final updated = List<QuestionDraft>.from(widget.localQuestions);
-      updated[index] = d;
-      widget.onLocalQuestionsChanged(updated);
-    },
-  );
+        initial: widget.localQuestions[index],
+        onSave: (d) {
+          final updated = List<QuestionDraft>.from(widget.localQuestions);
+          updated[index] = d;
+          widget.onLocalQuestionsChanged(updated);
+        },
+      );
 
   void _deleteLocal(int index) {
     final updated = List<QuestionDraft>.from(widget.localQuestions)
@@ -90,32 +90,32 @@ class _QuestionsStepState extends State<QuestionsStep> {
   }
 
   Future<void> _editServer(Question q) => _openEditor(
-    initial: QuestionDraft(
-      id: q.id,
-      questionText: q.question,
-      questionType: q.questionType ?? QuestionType.mcqSingle,
-      options: [
-        for (final o in q.options ?? const <QuestionOption>[])
-          QuestionOptionDraft(id: o.id, text: o.text),
-      ],
-      correctOptionIndex: null, // never exposed by the safe RPC
-      explanation: q.explanation,
-      subjectId: q.subjectId,
-      topicNodeId: q.topicNodeId,
-      difficulty: q.difficulty,
-      marks: q.marks,
-      negativeMarks: q.negativeMarks,
-      language: q.language,
-    ),
-    onSave: (d) async {
-      try {
-        await widget.onUpdateServerQuestion(q, d);
-        if (mounted) _snack('Question updated');
-      } on AppError catch (e) {
-        if (mounted) _snack(e.message, error: true);
-      }
-    },
-  );
+        initial: QuestionDraft(
+          id: q.id,
+          questionText: q.question,
+          questionType: q.questionType ?? QuestionType.mcqSingle,
+          options: [
+            for (final o in q.options ?? const <QuestionOption>[])
+              QuestionOptionDraft(id: o.id, text: o.text),
+          ],
+          correctOptionIndex: null, // never exposed by the safe RPC
+          explanation: q.explanation,
+          subjectId: q.subjectId,
+          topicNodeId: q.topicNodeId,
+          difficulty: q.difficulty,
+          marks: q.marks,
+          negativeMarks: q.negativeMarks,
+          language: q.language,
+        ),
+        onSave: (d) async {
+          try {
+            await widget.onUpdateServerQuestion(q, d);
+            if (mounted) _snack('Question updated');
+          } on AppError catch (e) {
+            if (mounted) _snack(e.message, error: true);
+          }
+        },
+      );
 
   Future<void> _deleteServer(Question q) async {
     final confirmed = await showDialog<bool>(
@@ -147,17 +147,54 @@ class _QuestionsStepState extends State<QuestionsStep> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final items = <_Item>[
       for (final q in widget.serverQuestions) _Item.server(q),
       for (var i = 0; i < widget.localQuestions.length; i++)
         _Item.local(widget.localQuestions[i], i),
     ];
+    final totalCount = items.length;
 
     return Column(
       children: [
+        // ── Header with count ──
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          child: Row(
+            children: [
+              Text(
+                'Questions',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const Spacer(),
+              if (totalCount > 0)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primaryContainer,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '$totalCount',
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: theme.colorScheme.onPrimaryContainer,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+
+        // ── Guidance banner ──
         if (widget.guidance != null)
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
             child: Row(
               children: [
                 const Icon(Icons.info_outline, size: 18),
@@ -165,15 +202,17 @@ class _QuestionsStepState extends State<QuestionsStep> {
                 Expanded(
                   child: Text(
                     widget.guidance!,
-                    style: Theme.of(context).textTheme.bodySmall,
+                    style: theme.textTheme.bodySmall,
                   ),
                 ),
               ],
             ),
           ),
+
+        // ── Question list or empty state ──
         Expanded(
           child: items.isEmpty
-              ? _empty(context)
+              ? _buildEmpty(context)
               : ListView.builder(
                   padding: const EdgeInsets.all(16),
                   itemCount: items.length,
@@ -181,13 +220,15 @@ class _QuestionsStepState extends State<QuestionsStep> {
                       _tile(context, items[index], index),
                 ),
         ),
+
+        // ── Add Question button ──
         Padding(
           padding: const EdgeInsets.all(16),
           child: SizedBox(
             width: double.infinity,
-            child: ElevatedButton.icon(
+            child: FilledButton.icon(
               onPressed: widget.busy ? null : _addLocal,
-              icon: const Icon(Icons.add),
+              icon: const Icon(Icons.add, size: 20),
               label: const Text('Add Question'),
             ),
           ),
@@ -197,19 +238,21 @@ class _QuestionsStepState extends State<QuestionsStep> {
   }
 
   Widget _tile(BuildContext context, _Item item, int index) {
+    final theme = Theme.of(context);
+
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
         leading: CircleAvatar(
           radius: 16,
           backgroundColor: item.isServer
-              ? AppColors.primaryLight.withValues(alpha: 0.1)
-              : Theme.of(context).colorScheme.primaryContainer
-                    .withValues(alpha: 0.5),
+              ? theme.colorScheme.primaryContainer
+              : theme.colorScheme.secondaryContainer,
           child: Text(
             '${index + 1}',
-            style: Theme.of(context).textTheme.bodySmall
-                ?.copyWith(fontWeight: FontWeight.w600),
+            style: theme.textTheme.bodySmall?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ),
         title: Text(
@@ -218,9 +261,9 @@ class _QuestionsStepState extends State<QuestionsStep> {
           overflow: TextOverflow.ellipsis,
         ),
         subtitle: Text(
-          '${_typeLabel(item.type)} • ${item.marks} marks'
-          '${item.isServer ? ' • ${item.server!.status == 'approved' ? 'Approved' : 'Pending review'}' : ''}',
-          style: Theme.of(context).textTheme.bodySmall,
+          '${_typeLabel(item.type)} \u2022 ${item.marks} marks'
+          '${item.isServer ? ' \u2022 ${item.server!.status == 'approved' ? 'Approved' : 'Pending'}' : ''}',
+          style: theme.textTheme.bodySmall,
         ),
         trailing: PopupMenuButton<String>(
           enabled: !widget.busy,
@@ -244,27 +287,41 @@ class _QuestionsStepState extends State<QuestionsStep> {
     );
   }
 
-  Widget _empty(BuildContext context) {
+  Widget _buildEmpty(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              Icons.question_answer_outlined,
-              size: 64,
-              color: Theme.of(context).colorScheme.outline,
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primaryContainer.withValues(alpha: 0.3),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.quiz_outlined,
+                size: 40,
+                color: theme.colorScheme.primary,
+              ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
             Text(
               'No questions yet',
-              style: Theme.of(context).textTheme.headlineSmall,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
             ),
             const SizedBox(height: 8),
             Text(
-              'Tap "Add Question" to create your first question.',
-              style: Theme.of(context).textTheme.bodyMedium,
+              'Tap "Add Question" below to create your first question.',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
               textAlign: TextAlign.center,
             ),
           ],

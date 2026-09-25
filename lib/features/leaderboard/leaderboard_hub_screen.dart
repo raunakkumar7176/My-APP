@@ -244,6 +244,7 @@ class _LeaderboardHubScreenState extends State<LeaderboardHubScreen> {
       children: [
         for (final t in _groupTests)
           Card(
+            key: ValueKey(t.id),
             margin: const EdgeInsets.only(bottom: 8),
             child: ListTile(
               title: Text(t.title, maxLines: 1, overflow: TextOverflow.ellipsis),

@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/logging/app_logger.dart';
-import '../features/group/data/group_repository.dart';
-import '../features/group/data/notification_repository.dart';
+import '../core/services/push_notification_service.dart';
+import '../features/notifications/data/notification_feed_repository.dart';
 import '../features/dashboard/dashboard_screen.dart';
 import '../features/dashboard/profile_tab_screen.dart';
 import '../features/dashboard/study_tab_screen.dart';
@@ -39,21 +39,23 @@ class _AppShellState extends State<AppShell> {
   void initState() {
     super.initState();
     _loadUnreadCount();
+    // Cold-start deep link: if the app was launched by tapping a system
+    // push notification (not just resumed), route to it now that this
+    // shell — and therefore a real router context — exists.
+    PushNotificationService.instance.handleColdStartDeepLink();
+    // Covers "app cold-started with an already-persisted session" — the
+    // AuthService.onAuthStateChange path only fires on a NEW sign-in
+    // event, not a session Supabase restored from disk on launch.
+    PushNotificationService.instance.registerCurrentDevice();
   }
 
-  /// Notifications are group-scoped only (see NotificationRepository); there
-  /// is no single aggregate query, so this sums the caller's own groups —
-  /// a small, bounded list, not an unlimited fetch.
+  /// Uses the global notification feed repository for a single server-side
+  /// count query — no per-group aggregation needed.
   Future<void> _loadUnreadCount() async {
     try {
-      const GroupRepository groups = SupabaseGroupRepository();
-      const NotificationRepository notifications = SupabaseNotificationRepository();
-      final myGroups = await groups.myGroups();
-      var total = 0;
-      for (final g in myGroups) {
-        total += await notifications.unreadCount(g.id);
-      }
-      if (mounted) setState(() => _unreadNotifications = total);
+      const feedRepo = SupabaseNotificationFeedRepository();
+      final count = await feedRepo.totalUnreadCount();
+      if (mounted) setState(() => _unreadNotifications = count);
     } catch (e, st) {
       AppLogger.error('AppShell unread count failed: $e', stackTrace: st);
     }

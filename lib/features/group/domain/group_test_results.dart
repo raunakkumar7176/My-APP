@@ -340,6 +340,39 @@ final class LeaderboardEntry {
   /// competition leaderboard).
   ///
   /// If a result has no `score`, it is placed at the bottom.
+  /// Build entries from the live `rpc_get_leaderboard(p_test)` rows
+  /// (`rank, user_id, full_name, avatar_url, student_code, score, max_score,
+  /// percentage, accuracy, submitted_at`). The **server** ranks
+  /// (`score DESC, percentage DESC, submitted_at ASC, attempt_id ASC`) and
+  /// decides who may see rows (creator, member of the test's group, or a
+  /// participant); nothing is re-ranked or filtered here. Rows arrive in
+  /// rank order and are kept in that order. `full_name` comes from the
+  /// server; [labelFor] is only the roster fallback when it is empty.
+  static List<LeaderboardEntry> fromServerRows(
+    List<Map<String, dynamic>> rows, {
+    required String currentUserId,
+    required String Function(String userId) labelFor,
+  }) {
+    double? num_(Object? v) => v == null ? null : (v as num).toDouble();
+    return [
+      for (final r in rows)
+        LeaderboardEntry(
+          rank: (r['rank'] as num).toInt(),
+          userId: r['user_id'] as String,
+          label: r['user_id'] == currentUserId
+              ? 'You'
+              : ((r['full_name'] as String?)?.trim().isNotEmpty ?? false)
+              ? (r['full_name'] as String).trim()
+              : labelFor(r['user_id'] as String),
+          score: num_(r['score']),
+          maxScore: num_(r['max_score']),
+          percentage: num_(r['percentage']),
+          accuracy: num_(r['accuracy']),
+          isCurrentUser: r['user_id'] == currentUserId,
+        ),
+    ];
+  }
+
   static List<LeaderboardEntry> fromResults(
     List<Result> results, {
     required String currentUserId,

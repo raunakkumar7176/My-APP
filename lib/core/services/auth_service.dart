@@ -5,12 +5,27 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../errors/app_error.dart';
 import '../logging/app_logger.dart';
 import 'profile_service.dart';
+import 'push_notification_service.dart';
 import 'supabase_service.dart';
 
 enum AuthStatus { unknown, authenticated, unauthenticated }
 
 final class AuthService {
   AuthService._();
+
+  /// Custom Android deep-link scheme the app registers in AndroidManifest.xml
+  /// (`<data android:scheme="my-preparation" android:host="auth-callback"/>`).
+  /// Passed as `emailRedirectTo` so Supabase's confirmation email points here
+  /// instead of falling back to the project's Site URL (which is a localhost
+  /// dev URL, never reachable from a device) — this is the actual production
+  /// bug: a build with no `emailRedirectTo` inherits the dashboard's Site URL.
+  /// Must also be added to Supabase Dashboard → Authentication → URL
+  /// Configuration → Redirect URLs, or GoTrue rejects it as "unauthorized".
+  /// supabase_flutter already listens for this scheme automatically
+  /// (`FlutterAuthClientOptions.detectSessionInUri` defaults to true) — no
+  /// extra deep-link handling code is needed here.
+  static const String emailVerificationRedirectUrl =
+      'my-preparation://auth-callback';
 
   static final StreamController<AuthStatus> _authStatusController =
       StreamController<AuthStatus>.broadcast();
@@ -35,10 +50,15 @@ final class AuthService {
       if (newStatus != _currentStatus) {
         _currentStatus = newStatus;
         _authStatusController.add(newStatus);
-        AppLogger.info('Auth state changed: ${newStatus.name}');
+        AppLogger.info('AUTH_DEBUG: Session state changed -> ${newStatus.name}');
 
         if (newStatus == AuthStatus.authenticated) {
           await _loadProfileForSession();
+          // Best-effort: register this device's FCM token now that a
+          // session exists. Never requests permission itself (see
+          // PushNotificationService.registerCurrentDevice) — only sends a
+          // token if the OS permission was already granted.
+          unawaited(PushNotificationService.instance.registerCurrentDevice());
         } else {
           ProfileService.reset();
         }
@@ -69,20 +89,35 @@ final class AuthService {
     required String password,
   }) async {
     try {
-      AppLogger.info('Attempting sign up for: $email');
+      AppLogger.info('AUTH_DEBUG: Sign-up request started');
       final response = await _auth.signUp(
         email: email,
         password: password,
+        emailRedirectTo: emailVerificationRedirectUrl,
       );
+      AppLogger.info('AUTH_DEBUG: Sign-up result received');
 
       if (response.user == null) {
         throw const AuthError(message: 'Sign up failed. Please try again.');
       }
 
-      AppLogger.info('Sign up successful for: $email');
+      // response.session is non-null only when email confirmation is OFF
+      // (or the project auto-confirms) — that case needs no extra handling
+      // here: AuthService.initialize()'s onAuthStateChange listener already
+      // picks up the new session and flips AuthStatus to authenticated,
+      // which the router redirects to /home on its own. When confirmation
+      // IS required, session is null and the caller (AuthScreen) already
+      // shows "check your email to verify" rather than treating this as a
+      // failure — both paths are already correct, this log just makes the
+      // branch visible for diagnosis.
+      AppLogger.info(
+        'AUTH_DEBUG: Sign-up ${response.session != null ? "issued a session (email confirmation not required)" : "created the account; email confirmation pending"}',
+      );
     } on AuthException catch (e) {
-      AppLogger.error('Sign up AuthException: ${e.message}');
-      throw AuthError(message: _mapAuthErrorMessage(e.message));
+      AppLogger.error(
+        'Sign up AuthException: message=${e.message}, statusCode=${e.statusCode}, code=${e.code}',
+      );
+      throw AuthError(message: _mapAuthErrorMessage(e.message, code: e.code));
     } catch (e) {
       if (e is AuthError) rethrow;
       AppLogger.error('Sign up unexpected error: $e');
@@ -95,20 +130,23 @@ final class AuthService {
     required String password,
   }) async {
     try {
-      AppLogger.info('Attempting sign in for: $email');
+      AppLogger.info('AUTH_DEBUG: Sign-in request started');
       final response = await _auth.signInWithPassword(
         email: email,
         password: password,
       );
+      AppLogger.info('AUTH_DEBUG: Sign-in result received');
 
       if (response.user == null) {
         throw const AuthError(message: 'Sign in failed. Please try again.');
       }
 
-      AppLogger.info('Sign in successful for: $email');
+      AppLogger.info('AUTH_DEBUG: Sign-in successful');
     } on AuthException catch (e) {
-      AppLogger.error('Sign in AuthException: ${e.message}');
-      throw AuthError(message: _mapAuthErrorMessage(e.message));
+      AppLogger.error(
+        'Sign in AuthException: message=${e.message}, statusCode=${e.statusCode}, code=${e.code}',
+      );
+      throw AuthError(message: _mapAuthErrorMessage(e.message, code: e.code));
     } catch (e) {
       if (e is AuthError) rethrow;
       AppLogger.error('Sign in unexpected error: $e');
@@ -119,11 +157,18 @@ final class AuthService {
   static Future<void> signOut() async {
     try {
       AppLogger.info('Signing out...');
+      // Must run BEFORE _auth.signOut() clears the session — deactivating
+      // this device's token needs the still-authenticated client. Only
+      // THIS device's token is touched (Phase 16: other devices signed
+      // into the same account keep receiving push).
+      await PushNotificationService.instance.deactivateCurrentDevice();
       await _auth.signOut();
       AppLogger.info('Sign out successful.');
     } on AuthException catch (e) {
-      AppLogger.error('Sign out AuthException: ${e.message}');
-      throw AuthError(message: _mapAuthErrorMessage(e.message));
+      AppLogger.error(
+        'Sign out AuthException: message=${e.message}, statusCode=${e.statusCode}, code=${e.code}',
+      );
+      throw AuthError(message: _mapAuthErrorMessage(e.message, code: e.code));
     } catch (e) {
       if (e is AuthError) rethrow;
       AppLogger.error('Sign out unexpected error: $e');
@@ -131,9 +176,20 @@ final class AuthService {
     }
   }
 
-  static String _mapAuthErrorMessage(String supabaseMessage) {
+  static String _mapAuthErrorMessage(String supabaseMessage, {String? code}) {
     final lower = supabaseMessage.toLowerCase();
 
+    // Prefer the machine-readable error code (stable across GoTrue message
+    // wording changes) over substring-matching the human-readable message,
+    // where Supabase actually gives us one.
+    if (code == 'email_not_confirmed') {
+      return 'Please verify your email before logging in. Check your inbox for the confirmation link.';
+    }
+
+    if (lower.contains('email not confirmed') ||
+        lower.contains('email is not confirmed')) {
+      return 'Please verify your email before logging in. Check your inbox for the confirmation link.';
+    }
     if (lower.contains('invalid login credentials') ||
         lower.contains('invalid email or password')) {
       return 'Incorrect email or password. Please try again.';

@@ -82,6 +82,24 @@ void main() {
     expect(find.text('TAKING'), findsNothing);
   });
 
+  testWidgets(
+    'Start Test button is disabled until the disclaimer checkbox is checked',
+    (tester) async {
+      final d = _make();
+      await tester.pumpWidget(_app(d.c));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Start Test'));
+      await tester.pumpAndSettle();
+      final startButton = tester.widget<FilledButton>(
+        find.byKey(const Key('disclaimer_start')),
+      );
+      expect(startButton.onPressed, isNull);
+      await tester.tap(find.byKey(const Key('disclaimer_start')));
+      await tester.pumpAndSettle();
+      expect(d.a.calls.where((x) => x.startsWith('start:')), isEmpty);
+    },
+  );
+
   testWidgets('confirming the gate starts attempt 1 and navigates to taking', (
     tester,
   ) async {
@@ -90,15 +108,24 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Start Test'));
     await tester.pumpAndSettle();
-    await tester.tap(
-      find.descendant(
-        of: find.byType(AlertDialog),
-        matching: find.text('Start Test'),
-      ),
+    await tester.ensureVisible(
+      find.byKey(const Key('disclaimer_acknowledge_checkbox')),
     );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('disclaimer_acknowledge_checkbox')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('disclaimer_start')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('disclaimer_start')));
     await tester.pumpAndSettle();
     expect(d.a.calls, contains('start:t-1'));
     expect(find.text('TAKING'), findsOneWidget);
+    // Acceptance is recorded against the real attempt, in English by default.
+    expect(
+      d.a.calls,
+      contains(startsWith('disclaimer:')),
+    );
+    expect(d.a.disclaimerAcceptances.values.single.language, 'en');
   });
 
   testWidgets('Continue Test (in_progress) skips the gate and resumes', (
@@ -122,8 +149,9 @@ void main() {
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
       SystemChannels.platform,
       (call) async {
-        if (call.method == 'Clipboard.setData')
+        if (call.method == 'Clipboard.setData') {
           copied.add((call.arguments as Map)['text'] as String);
+        }
         return null;
       },
     );

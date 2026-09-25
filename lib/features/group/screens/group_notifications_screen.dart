@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/theme/app_colors.dart';
 import '../../../core/models/app_notification.dart';
+import '../../notifications/state/notification_deep_link_handler.dart';
 import '../../test/widgets/test_formatters.dart';
 import '../state/group_notifications_controller.dart';
 
@@ -75,27 +76,9 @@ class _GroupNotificationsScreenState extends State<GroupNotificationsScreen> {
         _snack(_c.error ?? 'Could not mark that notification read.', error: true);
       }
     }
-    // Follow the payload only when a router is mounted (widget tests pump
-    // the screen alone); marking read never depends on navigation.
+    // Follow the payload via deep link handler (validates path before navigation).
     if (!mounted || GoRouter.maybeOf(context) == null) return;
-    final g = widget.groupId;
-    switch (n.type) {
-      case 'group_test':
-        // G10 screen (probes its own permissions); refresh on return.
-        await context.push('/groups/$g/tests');
-        if (mounted) await _c.refresh();
-      case 'group_message':
-      case 'group_announcement':
-      case 'group_join':
-        // These live on the hub this screen was opened from.
-        if (context.canPop()) {
-          context.pop();
-        } else {
-          context.go('/groups/$g');
-        }
-      default:
-        return;
-    }
+    NotificationDeepLinkHandler.handleTap(context, n);
   }
 
   Future<void> _toggleMute(bool muted) async {
@@ -291,7 +274,9 @@ class _GroupNotificationsScreenState extends State<GroupNotificationsScreen> {
               const SizedBox(height: 16),
               action ??
                   FilledButton(
-                    onPressed: () => context.go('/groups'),
+                    onPressed: () => context.canPop()
+                        ? context.pop()
+                        : context.go('/groups'),
                     child: const Text('Back to Groups'),
                   ),
             ],

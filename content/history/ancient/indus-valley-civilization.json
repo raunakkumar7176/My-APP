@@ -1,0 +1,229 @@
+{
+  "subject_key": "history",
+  "subject_slug": "history",
+  "subject_icon": "history_edu",
+  "subject_order_index": 3,
+  "subject_translations": {
+    "en": {
+      "name": "History",
+      "description": "Complete Ancient, Medieval, and Modern Indian & World History."
+    },
+    "hi": {
+      "name": "इतिहास",
+      "description": "प्राचीन, मध्यकालीन एवं आधुनिक भारत तथा विश्व का संपूर्ण इतिहास।"
+    }
+  },
+  "part_key": "ancient_history",
+  "part_order_index": 1,
+  "part_translations": {
+    "en": "Ancient History",
+    "hi": "प्राचीन इतिहास"
+  },
+  "chapter_key": "indus_valley_civilization",
+  "order_index": 1,
+  "version": 1,
+  "chapter_translations": {
+    "en": {
+      "title": "Indus Valley Civilization",
+      "description": "Origin, chronology, major excavated sites, society, religion, and town planning."
+    },
+    "hi": {
+      "title": "सिंधु घाटी सभ्यता",
+      "description": "उत्पत्ति, कालक्रम, प्रमुख उत्खनन स्थल, समाज, धर्म एवं नगर योजना।"
+    }
+  },
+  "topics": [
+    {
+      "topic_key": "features_and_religion",
+      "order_index": 1,
+      "estimated_minutes": 8,
+      "translations": {
+        "en": {
+          "title": "Characteristics & Religious Practices",
+          "summary": "Bronze age culture, Pashupati seal, Mother Goddess, and town planning."
+        },
+        "hi": {
+          "title": "सभ्यता की विशेषताएं एवं धार्मिक प्रथाएं",
+          "summary": "कांस्य युगीन संस्कृति, पशुपति मुहर, मातृदेवी एवं नगर योजना की प्रमुख बातें।"
+        }
+      },
+      "content_blocks": [
+        {
+          "block_type": "heading",
+          "order_index": 1,
+          "content": {
+            "en": { "text": "Key Highlights of Harappan Culture" },
+            "hi": { "text": "हड़प्पा संस्कृति की प्रमुख विशेषताएं" }
+          }
+        },
+        {
+          "block_type": "definition",
+          "order_index": 2,
+          "content": {
+            "en": { "text": "Indus Valley Civilization (flourished circa 2600-1900 BCE) is a Bronze Age proto-historic civilization noted for grid-planned cities, burnt bricks, and advanced hygiene." },
+            "hi": { "text": "सिंधु घाटी सभ्यता (लगभग 2600-1900 ई. पूर्व) कांस्य युगीन आद्य-ऐतिहासिक सभ्यता थी, जो ग्रिड नगर योजना, पक्की ईंटों और उन्नत जल निकासी प्रणाली के लिए जानी जाती है।" }
+          }
+        },
+        {
+          "block_type": "important_point",
+          "order_index": 3,
+          "content": {
+            "en": {
+              "points": [
+                "Primary inhabitants were Dravidian and Mediterranean peoples.",
+                "Pashupati Seal depicts a deity surrounded by 4 animals: Elephant, Tiger, Rhinoceros, and Buffalo.",
+                "Worship of Mother Goddess (clay figurines symbolize fertility).",
+                "Fire Altars (Agnikunda) were discovered at Kalibangan and Lothal.",
+                "Absence of large temple structures; religious worship was decentralized."
+              ]
+            },
+            "hi": {
+              "points": [
+                "इसके प्रमुख निवासी द्रविड़ और भूमध्यसागरीय लोग माने जाते हैं।",
+                "पशुपति मुहर: त्रिमुखी देवता के चारों ओर 4 पशु अंकित हैं — हाथी, बाघ, भैंसा और गैंडा।",
+                "मातृदेवी: मिट्टी की मूर्तियों से उर्वरता की पूजा के संकेत मिलते हैं।",
+                "अग्निकुण्ड: कालीबंगा और लोथल से अग्निकुण्ड के प्रमाण मिले हैं।",
+                "बड़े मंदिरों का अभाव: पूजा विकेंद्रीकृत थी, कोई विशाल मंदिर नहीं मिला।"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "topic_key": "major_excavated_sites",
+      "order_index": 2,
+      "estimated_minutes": 10,
+      "translations": {
+        "en": {
+          "title": "Major Sites & Archaeological Findings",
+          "summary": "Harappa, Mohenjo-daro, Lothal, Kalibangan, and Dholavira."
+        },
+        "hi": {
+          "title": "प्रमुख स्थल एवं महत्वपूर्ण खोजें",
+          "summary": "हड़प्पा, मोहनजोदड़ो, लोथल, कालीबंगन एवं धौलावीरा से प्राप्त साक्ष्य।"
+        }
+      },
+      "content_blocks": [
+        {
+          "block_type": "heading",
+          "order_index": 1,
+          "content": {
+            "en": { "text": "Archaeological Sites and Artifacts" },
+            "hi": { "text": "प्रमुख उत्खनित स्थल और निष्कर्ष" }
+          }
+        },
+        {
+          "block_type": "important_point",
+          "order_index": 2,
+          "content": {
+            "en": {
+              "points": [
+                "Harappa (Ravi River, Pakistan): 12 Granaries in 2 rows, Red sandstone torso, Workmen quarters.",
+                "Mohenjo-daro (Indus River, Pakistan): Meaning 'Mound of the Dead', Great Bath, Great Granary, Bronze Dancing Girl, Bearded Priest.",
+                "Lothal (Bhogava River, Gujarat): World's first tidal artificial dockyard (port), Rice husk, Fire altars.",
+                "Kalibangan (Ghaggar River, Rajasthan): Ploughed field evidence, Camel bones, Fire altars.",
+                "Dholavira (Kutch, Gujarat): Unique city divided into 3 parts (Citadel, Middle Town, Lower Town) with giant water reservoirs and signboard script.",
+                "Rakhigarhi (Haryana): The largest Harappan site in India."
+              ]
+            },
+            "hi": {
+              "points": [
+                "हड़प्पा (रावी नदी, पाकिस्तान): दो कतारों में 6-6 अन्नागार, लाल बलुआ पत्थर का धड़, श्रमिकों के आवास।",
+                "मोहनजोदड़ो (सिंधु नदी, पाकिस्तान): 'मृतकों का टीला', विशाल स्नानागार, विशाल अन्नागार, नर्तकी की कांस्य प्रतिमा, दाढ़ी वाले पुजारी की मूर्ति।",
+                "लोथल (भोगवा नदी, गुजरात): पहला मानव निर्मित कृत्रिम गोदीबाड़ा (बंदरगाह), चावल की भूसी, अग्निकुंड।",
+                "कालीबंगन (घग्गर नदी, राजस्थान): जुते हुए खेत के साक्ष्य, ऊंट की हड्डियां, लकड़ी का हल।",
+                "धौलावीरा (कच्छ, गुजरात): तीन भागों में विभाजित नगर (दुर्ग, मध्य नगर, निचला नगर), उन्नत जल संरक्षण प्रणाली और साइन बोर्ड।",
+                "राखीगढ़ी (हरियाणा): भारत में स्थित सबसे बड़ा हड़प्पा स्थल।"
+              ]
+            }
+          }
+        },
+        {
+          "block_type": "common_mistake",
+          "order_index": 3,
+          "content": {
+            "en": {
+              "mistake": "Assuming Mohenjo-daro is located in India.",
+              "correction": "Mohenjo-daro is in Larkana District, Sindh, Pakistan. The largest site in India is Rakhigarhi (Haryana), followed by Dholavira (Gujarat)."
+            },
+            "hi": {
+              "mistake": "यह समझना कि मोहनजोदड़ो भारत में स्थित है।",
+              "correction": "मोहनजोदड़ो सिंध (पाकिस्तान) में है। भारत में स्थित सबसे बड़ा स्थल राखीगढ़ी (हरियाणा) है और दूसरा धौलावीरा (गुजरात) है।"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "questions": [
+    {
+      "topic_key": "features_and_religion",
+      "difficulty": "medium",
+      "correct_option": 2,
+      "translations": {
+        "en": {
+          "question": "Which animal is NOT depicted around the deity on the famous Pashupati Seal of Harappan culture?",
+          "explanation": "Pashupati seal depicts 4 animals: Elephant, Tiger, Rhinoceros, and Buffalo. Horse and Cow are NOT depicted.",
+          "options": ["Tiger", "Elephant", "Horse", "Rhinoceros"]
+        },
+        "hi": {
+          "question": "हड़प्पा संस्कृति की प्रसिद्ध पशुपति मुहर पर त्रिमुखी देवता के चारों ओर कौन सा पशु अंकित नहीं है?",
+          "explanation": "पशुपति मुहर पर 4 पशु हैं: हाथी, बाघ, गैंडा और भैंसा। घोड़ा और गाय इस मुहर पर अंकित नहीं हैं।",
+          "options": ["बाघ", "हाथी", "घोड़ा", "गैंडा"]
+        }
+      }
+    },
+    {
+      "topic_key": "major_excavated_sites",
+      "difficulty": "easy",
+      "correct_option": 1,
+      "translations": {
+        "en": {
+          "question": "What is the literal meaning of 'Mohenjo-daro' in Sindhi language?",
+          "explanation": "In Sindhi, Mohenjo-daro literally translates to 'Mound of the Dead' (मृतकों का टीला).",
+          "options": ["City of Forts", "Mound of the Dead", "Black Bangles", "Port of Sea"]
+        },
+        "hi": {
+          "question": "सिंधी भाषा में 'मोहनजोदड़ो' का शाब्दिक अर्थ क्या है?",
+          "explanation": "सिंधी भाषा में मोहनजोदड़ो का अर्थ 'मृतकों का टीला' (Mound of the Dead) होता है।",
+          "options": ["किलों का नगर", "मृतकों का टीला", "काली चूड़ियां", "समुद्री पत्तन"]
+        }
+      }
+    },
+    {
+      "topic_key": "major_excavated_sites",
+      "difficulty": "medium",
+      "correct_option": 0,
+      "translations": {
+        "en": {
+          "question": "Which unique Harappan site is divided into three distinct parts: Citadel, Middle Town, and Lower Town?",
+          "explanation": "Dholavira in Kutch (Gujarat) is uniquely divided into three parts and possesses a world-famous water reservoir system.",
+          "options": ["Dholavira", "Lothal", "Kalibangan", "Banawali"]
+        },
+        "hi": {
+          "question": "हड़प्पा का कौन सा अनूठा स्थल तीन स्पष्ट भागों — दुर्ग, मध्य नगर और निचला नगर में विभाजित है?",
+          "explanation": "धौलावीरा (कच्छ, गुजरात) एकमात्र ऐसा स्थल है जो तीन भागों में विभाजित है और अपनी उन्नत जल प्रबंधन प्रणाली के लिए प्रसिद्ध है।",
+          "options": ["धौलावीरा", "लोथल", "कालीबंगन", "बनावली"]
+        }
+      }
+    },
+    {
+      "topic_key": "major_excavated_sites",
+      "difficulty": "hard",
+      "correct_option": 3,
+      "translations": {
+        "en": {
+          "question": "Which is the largest Indus Valley Civilization site located within the territory of India?",
+          "explanation": "Rakhigarhi in Hisar district of Haryana is the largest Harappan site in India, followed by Dholavira.",
+          "options": ["Kalibangan", "Lothal", "Dholavira", "Rakhigarhi"]
+        },
+        "hi": {
+          "question": "भारत की भौगोलिक सीमा के भीतर स्थित सिंधु घाटी सभ्यता का सबसे बड़ा स्थल कौन सा है?",
+          "explanation": "हरियाणा के हिसार जिले में स्थित राखीगढ़ी भारत का सबसे बड़ा हड़प्पा स्थल है (दूसरा धौलावीरा है)।",
+          "options": ["कालीबंगन", "लोथल", "धौलावीरा", "राखीगढ़ी"]
+        }
+      }
+    }
+  ]
+}

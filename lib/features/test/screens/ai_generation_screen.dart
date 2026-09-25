@@ -14,6 +14,8 @@ class AiGenerationPrefill {
     this.groupId,
     this.testMode = 'self',
     this.marksPerQuestion = 1,
+    this.sourceText,
+    this.sourceLabel,
   });
 
   final String subject;
@@ -22,6 +24,16 @@ class AiGenerationPrefill {
   final String? groupId;
   final String testMode;
   final double marksPerQuestion;
+
+  /// Extracted text from a camera/file source (Phase 17/18/21): when
+  /// present, generation is grounded in this content instead of the topic
+  /// alone. Never sent when null/empty — a plain topic-only generation is
+  /// unaffected.
+  final String? sourceText;
+
+  /// What to show the user for [sourceText] (e.g. the file name or
+  /// "N photos"), purely for display.
+  final String? sourceLabel;
 }
 
 /// Result returned when the user finishes AI generation and review.
@@ -92,7 +104,11 @@ class _AiGenerationScreenState extends State<AiGenerationScreen> {
     'Custom / Other',
   ];
 
-  static const _languages = {'en': 'English', 'hi': 'Hindi', 'hinglish': 'Hinglish'};
+  static const _languages = {
+    'en': 'English',
+    'hi': 'Hindi',
+    'hinglish': 'Hinglish',
+  };
 
   @override
   void initState() {
@@ -124,8 +140,12 @@ class _AiGenerationScreenState extends State<AiGenerationScreen> {
   String? _validateConfig() {
     final subj = _subject == 'Custom / Other' ? _subject : _subject;
     if (subj.isEmpty) return 'Subject is required.';
-    if (_topic.isEmpty && _chapter.isEmpty) return 'Topic or Chapter is required.';
-    if (_questionCount < 1 || _questionCount > 30) return 'Question count must be 1-30.';
+    if (_topic.isEmpty && _chapter.isEmpty) {
+      return 'Topic or Chapter is required.';
+    }
+    if (_questionCount < 1 || _questionCount > 30) {
+      return 'Question count must be 1-30.';
+    }
     if (_difficulty == 'mixed') {
       final sum = _difficultyDistribution.values.fold(0, (a, b) => a + b);
       if (sum != _questionCount) {
@@ -160,13 +180,16 @@ class _AiGenerationScreenState extends State<AiGenerationScreen> {
         chapter: _chapter,
         questionCount: _questionCount,
         difficulty: _difficulty,
-        difficultyDistribution: _difficulty == 'mixed' ? _difficultyDistribution : null,
+        difficultyDistribution: _difficulty == 'mixed'
+            ? _difficultyDistribution
+            : null,
         language: _language,
         questionType: 'mcq',
         marksPerQuestion: _marksPerQuestion,
         groupId: widget.prefill?.groupId,
         testMode: widget.prefill?.testMode ?? 'self',
         title: '$effectiveSubject - $effectiveTopic',
+        sourceText: widget.prefill?.sourceText,
       );
 
       if (!mounted) return;
@@ -243,12 +266,16 @@ class _AiGenerationScreenState extends State<AiGenerationScreen> {
       final newApproved = <int>{};
       final newRejected = <int>{};
       for (final i in _approvedIndices) {
-        if (i < index) newApproved.add(i);
-        else if (i > index) newApproved.add(i - 1);
+        if (i < index) {
+          newApproved.add(i);
+        } else if (i > index)
+          newApproved.add(i - 1);
       }
       for (final i in _rejectedIndices) {
-        if (i < index) newRejected.add(i);
-        else if (i > index) newRejected.add(i - 1);
+        if (i < index) {
+          newRejected.add(i);
+        } else if (i > index)
+          newRejected.add(i - 1);
       }
       _approvedIndices
         ..clear()
@@ -307,9 +334,7 @@ class _AiGenerationScreenState extends State<AiGenerationScreen> {
     for (final i in _approvedIndices) {
       if (i < _questions.length) {
         final q = _questions[i];
-        approved.add(q.toQuestionDraft(
-          marks: _marksPerQuestion.toInt(),
-        ));
+        approved.add(q.toQuestionDraft(marks: _marksPerQuestion.toInt()));
         diffCounts[q.difficulty] = (diffCounts[q.difficulty] ?? 0) + 1;
       }
     }
@@ -319,17 +344,25 @@ class _AiGenerationScreenState extends State<AiGenerationScreen> {
       return;
     }
 
-    Navigator.of(context).pop(AiGenerationComplete(
-      questions: approved,
-      difficultyDistribution: diffCounts,
-    ));
+    Navigator.of(context).pop(
+      AiGenerationComplete(
+        questions: approved,
+        difficultyDistribution: diffCounts,
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(_step == 0 ? 'AI Generation' : _step == 1 ? 'Generating...' : 'Review Questions'),
+        title: Text(
+          _step == 0
+              ? 'AI Generation'
+              : _step == 1
+              ? 'Generating...'
+              : 'Review Questions',
+        ),
         leading: IconButton(
           icon: const Icon(Icons.close),
           onPressed: _busy ? null : () => Navigator.of(context).pop(),
@@ -393,7 +426,9 @@ class _AiGenerationScreenState extends State<AiGenerationScreen> {
         children: [
           Text(
             'AI Question Generator',
-            style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
           ),
           const SizedBox(height: 4),
           Text(
@@ -402,6 +437,32 @@ class _AiGenerationScreenState extends State<AiGenerationScreen> {
               color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
             ),
           ),
+          if (widget.prefill?.sourceText?.trim().isNotEmpty ?? false) ...[
+            const SizedBox(height: 12),
+            Container(
+              key: const Key('ai_source_banner'),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primaryContainer.withValues(
+                  alpha: 0.3,
+                ),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.description_outlined, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Grounded in: ${widget.prefill?.sourceLabel ?? "your content"} — '
+                      'AI will generate questions from this, not just the topic.',
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 20),
 
           // Subject
@@ -411,9 +472,14 @@ class _AiGenerationScreenState extends State<AiGenerationScreen> {
             initialValue: _subjects.contains(_subject) ? _subject : null,
             decoration: const InputDecoration(
               border: OutlineInputBorder(),
-              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              contentPadding: EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 12,
+              ),
             ),
-            items: _subjects.map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
+            items: _subjects
+                .map((s) => DropdownMenuItem(value: s, child: Text(s)))
+                .toList(),
             onChanged: (v) => setState(() => _subject = v ?? ''),
           ),
           if (_subject == 'Custom / Other') ...[
@@ -476,23 +542,31 @@ class _AiGenerationScreenState extends State<AiGenerationScreen> {
           Row(
             children: [
               IconButton(
-                onPressed: () => setState(() => _questionCount = (_questionCount - 1).clamp(1, 30)),
+                onPressed: () => setState(
+                  () => _questionCount = (_questionCount - 1).clamp(1, 30),
+                ),
                 icon: const Icon(Icons.remove_circle_outline),
               ),
               Expanded(
                 child: TextFormField(
                   textAlign: TextAlign.center,
                   keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(border: OutlineInputBorder()),
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                  ),
                   initialValue: _questionCount.toString(),
                   onChanged: (v) {
                     final n = int.tryParse(v);
-                    if (n != null) setState(() => _questionCount = n.clamp(1, 30));
+                    if (n != null) {
+                      setState(() => _questionCount = n.clamp(1, 30));
+                    }
                   },
                 ),
               ),
               IconButton(
-                onPressed: () => setState(() => _questionCount = (_questionCount + 1).clamp(1, 30)),
+                onPressed: () => setState(
+                  () => _questionCount = (_questionCount + 1).clamp(1, 30),
+                ),
                 icon: const Icon(Icons.add_circle_outline),
               ),
             ],
@@ -562,9 +636,7 @@ class _AiGenerationScreenState extends State<AiGenerationScreen> {
           const SizedBox(height: 6),
           TextFormField(
             keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
-              border: OutlineInputBorder(),
-            ),
+            decoration: const InputDecoration(border: OutlineInputBorder()),
             initialValue: _marksPerQuestion.toString(),
             onChanged: (v) {
               final d = double.tryParse(v);
@@ -583,12 +655,19 @@ class _AiGenerationScreenState extends State<AiGenerationScreen> {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.error_outline, color: AppColors.error, size: 20),
+                  const Icon(
+                    Icons.error_outline,
+                    color: AppColors.error,
+                    size: 20,
+                  ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       _error!,
-                      style: const TextStyle(color: AppColors.error, fontSize: 13),
+                      style: const TextStyle(
+                        color: AppColors.error,
+                        fontSize: 13,
+                      ),
                     ),
                   ),
                 ],
@@ -606,12 +685,18 @@ class _AiGenerationScreenState extends State<AiGenerationScreen> {
                 children: [
                   Text('Generation Summary', style: theme.textTheme.titleSmall),
                   const SizedBox(height: 8),
-                  _summaryRow('Subject', _subject == 'Custom / Other' ? _topic : _subject),
+                  _summaryRow(
+                    'Subject',
+                    _subject == 'Custom / Other' ? _topic : _subject,
+                  ),
                   _summaryRow('Topic', _topic.isNotEmpty ? _topic : _chapter),
                   _summaryRow('Count', '$_questionCount questions'),
                   _summaryRow('Difficulty', _difficulty),
                   _summaryRow('Language', _languages[_language] ?? _language),
-                  _summaryRow('Marks', '${_marksPerQuestion.toInt()} per question'),
+                  _summaryRow(
+                    'Marks',
+                    '${_marksPerQuestion.toInt()} per question',
+                  ),
                 ],
               ),
             ),
@@ -632,12 +717,17 @@ class _AiGenerationScreenState extends State<AiGenerationScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text('Distribution', style: TextStyle(fontWeight: FontWeight.w600)),
+                const Text(
+                  'Distribution',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
                 Text(
                   '$sum / $_questionCount',
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
-                    color: sum == _questionCount ? AppColors.success : AppColors.error,
+                    color: sum == _questionCount
+                        ? AppColors.success
+                        : AppColors.error,
                   ),
                 ),
               ],
@@ -655,10 +745,14 @@ class _AiGenerationScreenState extends State<AiGenerationScreen> {
                   ),
                   IconButton(
                     onPressed: () => setState(() {
-                      _difficultyDistribution[tier] = (_difficultyDistribution[tier]! - 1).clamp(0, 99);
+                      _difficultyDistribution[tier] =
+                          (_difficultyDistribution[tier]! - 1).clamp(0, 99);
                     }),
                     icon: const Icon(Icons.remove, size: 18),
-                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                    constraints: const BoxConstraints(
+                      minWidth: 32,
+                      minHeight: 32,
+                    ),
                   ),
                   SizedBox(
                     width: 30,
@@ -670,13 +764,22 @@ class _AiGenerationScreenState extends State<AiGenerationScreen> {
                   ),
                   IconButton(
                     onPressed: () {
-                      final currentSum = _difficultyDistribution.values.fold(0, (a, b) => a + b);
+                      final currentSum = _difficultyDistribution.values.fold(
+                        0,
+                        (a, b) => a + b,
+                      );
                       if (currentSum < _questionCount) {
-                        setState(() => _difficultyDistribution[tier] = _difficultyDistribution[tier]! + 1);
+                        setState(
+                          () => _difficultyDistribution[tier] =
+                              _difficultyDistribution[tier]! + 1,
+                        );
                       }
                     },
                     icon: const Icon(Icons.add, size: 18),
-                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                    constraints: const BoxConstraints(
+                      minWidth: 32,
+                      minHeight: 32,
+                    ),
                   ),
                 ],
               ),
@@ -701,10 +804,16 @@ class _AiGenerationScreenState extends State<AiGenerationScreen> {
         children: [
           SizedBox(
             width: 80,
-            child: Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+            child: Text(
+              label,
+              style: const TextStyle(fontSize: 12, color: Colors.grey),
+            ),
           ),
           Expanded(
-            child: Text(value, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+            child: Text(
+              value,
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+            ),
           ),
         ],
       ),
@@ -735,7 +844,11 @@ class _AiGenerationScreenState extends State<AiGenerationScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'AI is creating ${_language == "hi" ? "Hindi" : _language == "hinglish" ? "Hinglish" : "English"} MCQ questions for ${_subject == "Custom / Other" ? _topic : _subject}.',
+              'AI is creating ${_language == "hi"
+                  ? "Hindi"
+                  : _language == "hinglish"
+                  ? "Hinglish"
+                  : "English"} MCQ questions for ${_subject == "Custom / Other" ? _topic : _subject}.',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 13, color: Colors.grey[600]),
             ),
@@ -773,13 +886,19 @@ class _AiGenerationScreenState extends State<AiGenerationScreen> {
             children: [
               _reviewStat('Total', _questions.length, Colors.blue),
               const SizedBox(width: 12),
-              _reviewStat('Approved', _approvedIndices.length, AppColors.success),
+              _reviewStat(
+                'Approved',
+                _approvedIndices.length,
+                AppColors.success,
+              ),
               const SizedBox(width: 12),
               _reviewStat('Rejected', _rejectedIndices.length, AppColors.error),
               const Spacer(),
               if (_result != null)
                 Text(
-                  _result!.cacheHit ? 'Cache hit' : '${_result!.tokensIn}/${_result!.tokensOut} tokens',
+                  _result!.cacheHit
+                      ? 'Cache hit'
+                      : '${_result!.tokensIn}/${_result!.tokensOut} tokens',
                   style: TextStyle(fontSize: 11, color: Colors.grey[600]),
                 ),
             ],
@@ -807,7 +926,11 @@ class _AiGenerationScreenState extends State<AiGenerationScreen> {
       children: [
         Text(
           '$count',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: color),
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
         ),
         Text(label, style: TextStyle(fontSize: 10, color: Colors.grey[600])),
       ],
@@ -846,7 +969,10 @@ class _AiGenerationScreenState extends State<AiGenerationScreen> {
             Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: theme.colorScheme.primaryContainer,
                     borderRadius: BorderRadius.circular(4),
@@ -862,7 +988,10 @@ class _AiGenerationScreenState extends State<AiGenerationScreen> {
                 ),
                 const SizedBox(width: 8),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: _statusColor(q.status).withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(4),
@@ -881,7 +1010,10 @@ class _AiGenerationScreenState extends State<AiGenerationScreen> {
                   '${(q.confidence * 100).toInt()}%',
                   style: TextStyle(fontSize: 11, color: Colors.grey[600]),
                 ),
-                Text(' • ${q.difficulty}', style: TextStyle(fontSize: 11, color: Colors.grey[600])),
+                Text(
+                  ' • ${q.difficulty}',
+                  style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                ),
               ],
             ),
             const SizedBox(height: 8),
@@ -904,7 +1036,9 @@ class _AiGenerationScreenState extends State<AiGenerationScreen> {
                       : theme.colorScheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(6),
                   border: q.correctOption == i
-                      ? Border.all(color: AppColors.success.withValues(alpha: 0.3))
+                      ? Border.all(
+                          color: AppColors.success.withValues(alpha: 0.3),
+                        )
                       : null,
                 ),
                 child: Row(
@@ -922,12 +1056,18 @@ class _AiGenerationScreenState extends State<AiGenerationScreen> {
                         q.options[i],
                         style: TextStyle(
                           fontSize: 13,
-                          color: q.correctOption == i ? AppColors.success : null,
+                          color: q.correctOption == i
+                              ? AppColors.success
+                              : null,
                         ),
                       ),
                     ),
                     if (q.correctOption == i)
-                      const Icon(Icons.check_circle, color: AppColors.success, size: 16),
+                      const Icon(
+                        Icons.check_circle,
+                        color: AppColors.success,
+                        size: 16,
+                      ),
                   ],
                 ),
               ),
@@ -944,7 +1084,11 @@ class _AiGenerationScreenState extends State<AiGenerationScreen> {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(Icons.lightbulb_outline, size: 16, color: Colors.grey[600]),
+                    Icon(
+                      Icons.lightbulb_outline,
+                      size: 16,
+                      color: Colors.grey[600],
+                    ),
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text(
@@ -962,12 +1106,19 @@ class _AiGenerationScreenState extends State<AiGenerationScreen> {
               const SizedBox(height: 6),
               Row(
                 children: [
-                  Icon(Icons.warning_amber, size: 14, color: AppColors.warning),
+                  const Icon(
+                    Icons.warning_amber,
+                    size: 14,
+                    color: AppColors.warning,
+                  ),
                   const SizedBox(width: 4),
                   Expanded(
                     child: Text(
                       q.reason!,
-                      style: TextStyle(fontSize: 11, color: AppColors.warning),
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: AppColors.warning,
+                      ),
                     ),
                   ),
                 ],
@@ -982,7 +1133,9 @@ class _AiGenerationScreenState extends State<AiGenerationScreen> {
                   child: OutlinedButton.icon(
                     onPressed: () => _toggleApproval(index),
                     icon: Icon(
-                      isApproved ? Icons.check_circle : Icons.check_circle_outline,
+                      isApproved
+                          ? Icons.check_circle
+                          : Icons.check_circle_outline,
                       size: 16,
                       color: isApproved ? AppColors.success : null,
                     ),
@@ -1025,7 +1178,9 @@ class _AiGenerationScreenState extends State<AiGenerationScreen> {
                 ),
                 const SizedBox(width: 8),
                 IconButton(
-                  onPressed: index > 0 ? () => _moveQuestion(index, index - 1) : null,
+                  onPressed: index > 0
+                      ? () => _moveQuestion(index, index - 1)
+                      : null,
                   icon: const Icon(Icons.arrow_upward, size: 18),
                   tooltip: 'Move up',
                 ),
@@ -1038,7 +1193,11 @@ class _AiGenerationScreenState extends State<AiGenerationScreen> {
                 ),
                 IconButton(
                   onPressed: () => _deleteQuestion(index),
-                  icon: const Icon(Icons.delete_outline, size: 18, color: AppColors.error),
+                  icon: const Icon(
+                    Icons.delete_outline,
+                    size: 18,
+                    color: AppColors.error,
+                  ),
                   tooltip: 'Delete',
                 ),
               ],

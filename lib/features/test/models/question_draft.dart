@@ -14,6 +14,7 @@ final class QuestionDraft {
     this.marks = 1,
     this.negativeMarks,
     this.language,
+    this.source = 'upload',
   });
 
   final String? id;
@@ -28,6 +29,7 @@ final class QuestionDraft {
   final int marks;
   final double? negativeMarks;
   final String? language;
+  final String source;
 
   /// V1 product rule, enforced by rpc_create_question / rpc_update_question
   /// as well: at least this many non-empty options.
@@ -67,6 +69,7 @@ final class QuestionDraft {
     int? marks,
     double? negativeMarks,
     String? language,
+    String? source,
   }) {
     return QuestionDraft(
       id: id ?? this.id,
@@ -81,6 +84,7 @@ final class QuestionDraft {
       marks: marks ?? this.marks,
       negativeMarks: negativeMarks ?? this.negativeMarks,
       language: language ?? this.language,
+      source: source ?? this.source,
     );
   }
 
@@ -88,6 +92,7 @@ final class QuestionDraft {
     final params = <String, dynamic>{
       'p_test_id': testId,
       'p_question': questionText,
+      'p_source': source,
     };
 
     params['p_question_type'] = _questionTypeToRpc(questionType);

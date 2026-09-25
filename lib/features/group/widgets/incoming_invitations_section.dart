@@ -57,8 +57,9 @@ class IncomingInvitationsSection extends StatelessWidget {
         ),
       );
     }
-    if (!c.hasInvitations)
+    if (!c.hasInvitations) {
       return const SizedBox.shrink(key: Key('invitations_empty'));
+    }
 
     return Column(
       key: const Key('invitations_section'),

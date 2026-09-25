@@ -48,7 +48,7 @@ class AppDrawer extends StatelessWidget {
                     context,
                     icon: Icons.menu_book_outlined,
                     label: 'Study',
-                    onTap: () => context.push('/subjects'),
+                    onTap: () => context.push('/study'),
                   ),
                   _item(
                     context,
@@ -123,14 +123,17 @@ class AppDrawer extends StatelessWidget {
               label: 'Logout',
               color: AppColors.error,
               onTap: () async {
-                Navigator.of(context).pop();
+                final shouldLogout = await _showLogoutConfirmation(context);
+                if (shouldLogout != true) return;
                 try {
                   await AuthService.signOut();
                 } on Exception catch (e) {
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                        content: Text(e.toString().replaceFirst('AppError: ', '')),
+                        content: Text(
+                          e.toString().replaceFirst('AppError: ', ''),
+                        ),
                         backgroundColor: AppColors.error,
                       ),
                     );
@@ -163,6 +166,28 @@ class AppDrawer extends StatelessWidget {
   }
 }
 
+Future<bool> _showLogoutConfirmation(BuildContext context) async {
+    return await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Confirm Logout'),
+          content: const Text('Are you want to Log out'),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('No'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Yes'),
+            ),
+          ],
+        );
+      },
+    ) ?? false;
+  }
+
 class _Header extends StatelessWidget {
   const _Header({required this.profile, required this.email});
 
@@ -181,7 +206,9 @@ class _Header extends StatelessWidget {
         children: [
           CircleAvatar(
             radius: 28,
-            backgroundColor: theme.colorScheme.onPrimary.withValues(alpha: 0.15),
+            backgroundColor: theme.colorScheme.onPrimary.withValues(
+              alpha: 0.15,
+            ),
             child: Text(
               profile?.initials ?? '?',
               style: TextStyle(

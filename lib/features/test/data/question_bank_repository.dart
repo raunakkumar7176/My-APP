@@ -5,6 +5,7 @@ import '../../../core/logging/app_logger.dart';
 import '../../../core/models/question_bank_item.dart';
 import '../../../core/services/supabase_service.dart';
 import '../domain/test_errors.dart';
+import '../models/question_draft.dart';
 
 /// Repository for interacting with the `question_bank` table.
 ///
@@ -100,6 +101,56 @@ abstract interface class QuestionBankRepository {
     required List<String> bankIds,
     int marksPerQuestion = 1,
   });
+
+  /// Saves drafts to question bank using `rpc_save_drafts_to_question_bank`.
+  Future<QuestionBankSaveResult> saveDrafts({
+    required List<QuestionDraft> drafts,
+    String? subjectId,
+    String? chapterId,
+    String source = 'upload',
+    String status = 'pending_review',
+  });
+}
+
+/// Result of saving drafts into the question bank.
+class QuestionBankSaveResult {
+  const QuestionBankSaveResult({
+    required this.total,
+    required this.savedCount,
+    required this.savedIds,
+    required this.skippedDuplicateCount,
+    required this.skippedDuplicates,
+  });
+
+  factory QuestionBankSaveResult.fromJson(Map<String, dynamic> json) {
+    final rawSaved = json['saved_ids'];
+    final savedIds = rawSaved is List
+        ? rawSaved.map((e) => e.toString()).toList()
+        : const <String>[];
+
+    final rawSkipped = json['skipped_duplicates'];
+    final skippedDuplicates = rawSkipped is List
+        ? rawSkipped
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList()
+        : const <Map<String, dynamic>>[];
+
+    return QuestionBankSaveResult(
+      total: (json['total'] as num?)?.toInt() ?? 0,
+      savedCount: (json['saved_count'] as num?)?.toInt() ?? 0,
+      savedIds: savedIds,
+      skippedDuplicateCount:
+          (json['skipped_duplicate_count'] as num?)?.toInt() ?? 0,
+      skippedDuplicates: skippedDuplicates,
+    );
+  }
+
+  final int total;
+  final int savedCount;
+  final List<String> savedIds;
+  final int skippedDuplicateCount;
+  final List<Map<String, dynamic>> skippedDuplicates;
 }
 
 class SupabaseQuestionBankRepository implements QuestionBankRepository {
@@ -159,40 +210,59 @@ class SupabaseQuestionBankRepository implements QuestionBankRepository {
     // For total count, we use a separate head query with the same filters
     // We'll estimate total from the data returned (offset + items.length for
     // a simple approach). The real total is computed separately.
-    final countQuery = _client
-        .from('question_bank')
-        .select('id');
+    final countQuery = _client.from('question_bank').select('id');
 
     // Apply same filters for count
     var filteredCountQuery = countQuery;
     if (filter.search != null && filter.search!.trim().isNotEmpty) {
-      filteredCountQuery = filteredCountQuery.ilike('question', '%${filter.search!.trim()}%');
+      filteredCountQuery = filteredCountQuery.ilike(
+        'question',
+        '%${filter.search!.trim()}%',
+      );
     }
     if (filter.status != null && filter.status!.isNotEmpty) {
       filteredCountQuery = filteredCountQuery.eq('status', filter.status!);
     }
     if (filter.subjectId != null && filter.subjectId!.isNotEmpty) {
-      filteredCountQuery = filteredCountQuery.eq('subject_id', filter.subjectId!);
+      filteredCountQuery = filteredCountQuery.eq(
+        'subject_id',
+        filter.subjectId!,
+      );
     }
     if (filter.subjectName != null && filter.subjectName!.isNotEmpty) {
-      filteredCountQuery = filteredCountQuery.ilike('subject_name', '%${filter.subjectName!.trim()}%');
+      filteredCountQuery = filteredCountQuery.ilike(
+        'subject_name',
+        '%${filter.subjectName!.trim()}%',
+      );
     }
     if (filter.chapter != null && filter.chapter!.isNotEmpty) {
-      filteredCountQuery = filteredCountQuery.ilike('chapter', '%${filter.chapter!.trim()}%');
+      filteredCountQuery = filteredCountQuery.ilike(
+        'chapter',
+        '%${filter.chapter!.trim()}%',
+      );
     }
     if (filter.topicNodeId != null && filter.topicNodeId!.isNotEmpty) {
-      filteredCountQuery = filteredCountQuery.eq('topic_node_id', filter.topicNodeId!);
+      filteredCountQuery = filteredCountQuery.eq(
+        'topic_node_id',
+        filter.topicNodeId!,
+      );
     }
     if (filter.difficulty != null &&
         filter.difficulty!.isNotEmpty &&
         filter.difficulty != 'mixed') {
-      filteredCountQuery = filteredCountQuery.eq('difficulty', filter.difficulty!);
+      filteredCountQuery = filteredCountQuery.eq(
+        'difficulty',
+        filter.difficulty!,
+      );
     }
     if (filter.language != null && filter.language!.isNotEmpty) {
       filteredCountQuery = filteredCountQuery.eq('language', filter.language!);
     }
     if (filter.questionType != null && filter.questionType!.isNotEmpty) {
-      filteredCountQuery = filteredCountQuery.eq('question_type', filter.questionType!);
+      filteredCountQuery = filteredCountQuery.eq(
+        'question_type',
+        filter.questionType!,
+      );
     }
     if (filter.source != null && filter.source!.isNotEmpty) {
       filteredCountQuery = filteredCountQuery.eq('source', filter.source!);
@@ -223,7 +293,7 @@ class SupabaseQuestionBankRepository implements QuestionBankRepository {
         .maybeSingle();
 
     if (data == null) return null;
-    return QuestionBankItem.fromJson(data as Map<String, dynamic>);
+    return QuestionBankItem.fromJson(data);
   }, TestErrorContext.load);
 
   @override
@@ -247,7 +317,9 @@ class SupabaseQuestionBankRepository implements QuestionBankRepository {
       return (response as num?)?.toInt() ?? 0;
     } catch (e) {
       // Fallback to PostgREST count
-      AppLogger.warning('fn_bank_available RPC failed, using PostgREST count: $e');
+      AppLogger.warning(
+        'fn_bank_available RPC failed, using PostgREST count: $e',
+      );
       var query = _client
           .from('question_bank')
           .select('id')
@@ -259,7 +331,9 @@ class SupabaseQuestionBankRepository implements QuestionBankRepository {
       if (chapter != null && chapter.isNotEmpty) {
         query = query.ilike('chapter', '%${chapter.trim()}%');
       }
-      if (difficulty != null && difficulty.isNotEmpty && difficulty != 'mixed') {
+      if (difficulty != null &&
+          difficulty.isNotEmpty &&
+          difficulty != 'mixed') {
         query = query.eq('difficulty', difficulty);
       }
       if (language != null && language.isNotEmpty) {
@@ -293,10 +367,10 @@ class SupabaseQuestionBankRepository implements QuestionBankRepository {
           'options': options.map((o) => {'text': o.text}).toList(),
           'correct_option': correctOption,
           'explanation': explanation,
-          if (subjectId != null) 'subject_id': subjectId,
+          'subject_id': ?subjectId,
           'subject_name': subjectName,
           'chapter': chapter,
-          if (topicNodeId != null) 'topic_node_id': topicNodeId,
+          'topic_node_id': ?topicNodeId,
           'difficulty': difficulty,
           'language': language,
           'question_type': questionType,
@@ -350,40 +424,45 @@ class SupabaseQuestionBankRepository implements QuestionBankRepository {
 
   @override
   Future<void> archive(String id) => _guard(() async {
-    await _client.from('question_bank').update({
-      'archived_at': DateTime.now().toUtc().toIso8601String(),
-      'status': 'archived',
-    }).eq('id', id);
+    await _client
+        .from('question_bank')
+        .update({
+          'archived_at': DateTime.now().toUtc().toIso8601String(),
+          'status': 'archived',
+        })
+        .eq('id', id);
     AppLogger.info('Archived bank question: $id');
   }, TestErrorContext.save);
 
   @override
   Future<void> restore(String id) => _guard(() async {
-    await _client.from('question_bank').update({
-      'archived_at': null,
-      'status': 'pending_review',
-    }).eq('id', id);
+    await _client
+        .from('question_bank')
+        .update({'archived_at': null, 'status': 'pending_review'})
+        .eq('id', id);
     AppLogger.info('Restored bank question: $id');
   }, TestErrorContext.save);
 
   @override
-  Future<List<QuestionBankItem>> checkDuplicates(String questionText) =>
-      _guard(() async {
-    final normalizedKey = questionText
-        .toLowerCase()
-        .trim()
-        .replaceAll(RegExp(r'\s+'), ' ');
+  Future<List<QuestionBankItem>> checkDuplicates(String questionText) => _guard(
+    () async {
+      final normalizedKey = questionText.toLowerCase().trim().replaceAll(
+        RegExp(r'\s+'),
+        ' ',
+      );
 
-    final data = await _client
-        .from('question_bank')
-        .select()
-        .eq('duplicate_key', normalizedKey)
-        .limit(10);
+      final data = await _client
+          .from('question_bank')
+          .select()
+          .eq('duplicate_key', normalizedKey)
+          .limit(10);
 
-    return (data as List<dynamic>)
-        .map((row) => QuestionBankItem.fromJson(row as Map<String, dynamic>))
-        .toList();
-  }, TestErrorContext.load);
+      return (data as List<dynamic>)
+          .map((row) => QuestionBankItem.fromJson(row as Map<String, dynamic>))
+          .toList();
+    },
+    TestErrorContext.load,
+  );
 
   @override
   Future<int> cloneToTest({
@@ -409,6 +488,45 @@ class SupabaseQuestionBankRepository implements QuestionBankRepository {
     return 0;
   }, TestErrorContext.save);
 
+  @override
+  Future<QuestionBankSaveResult> saveDrafts({
+    required List<QuestionDraft> drafts,
+    String? subjectId,
+    String? chapterId,
+    String source = 'upload',
+    String status = 'pending_review',
+  }) => _guard(() async {
+    final payload = drafts.map((d) {
+      return {
+        'question': d.questionText,
+        'options': d.options.map((o) => {'id': o.id, 'text': o.text}).toList(),
+        'correct_option': d.correctOptionIndex ?? 0,
+        'explanation': d.explanation,
+        'subject_id': d.subjectId ?? subjectId,
+        'chapter_id': chapterId,
+        'topic_id': d.topicNodeId,
+        'source': source,
+      };
+    }).toList();
+
+    final response = await _client.rpc(
+      'rpc_save_drafts_to_question_bank',
+      params: {
+        'p_drafts': payload,
+        'p_subject_id': subjectId,
+        'p_chapter_id': chapterId,
+        'p_source': source,
+        'p_status': status,
+      },
+    );
+
+    AppLogger.rpcShape('rpc_save_drafts_to_question_bank', response);
+
+    return QuestionBankSaveResult.fromJson(
+      response is Map ? Map<String, dynamic>.from(response) : {},
+    );
+  }, TestErrorContext.save);
+
   static Future<T> _guard<T>(
     Future<T> Function() body,
     TestErrorContext context,
@@ -416,7 +534,9 @@ class SupabaseQuestionBankRepository implements QuestionBankRepository {
     try {
       return await body();
     } on PostgrestException catch (e) {
-      AppLogger.error('QuestionBankRepository PostgrestException: ${e.message}');
+      AppLogger.error(
+        'QuestionBankRepository PostgrestException: ${e.message}',
+      );
       throw DataError(message: TestErrors.map(e.message, context: context));
     } on AppError {
       rethrow;

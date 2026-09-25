@@ -10,6 +10,7 @@ import 'package:go_router/go_router.dart';
 import 'package:my_praperation/core/errors/app_error.dart';
 import 'package:my_praperation/core/models/group.dart';
 import 'package:my_praperation/core/models/group_invitation.dart';
+import 'package:my_praperation/features/group/domain/group_errors.dart';
 import 'package:my_praperation/features/group/screens/group_hub_screen.dart';
 import 'package:my_praperation/features/group/screens/group_list_screen.dart';
 import 'package:my_praperation/features/group/state/group_hub_controller.dart';
@@ -159,6 +160,12 @@ void main() {
         expect(repo.groups['g-priv']!.roles.containsKey('u-me'), isFalse);
       },
     );
+
+    test('L2: live codes INVITATION_NOT_FOUND / INVITATION_NOT_PENDING map to the stale message (F-06)', () {
+      for (final raw in ['INVITATION_NOT_FOUND', 'INVITATION_NOT_PENDING', 'P0001: INVITATION_NOT_PENDING']) {
+        expect(GroupErrors.map(raw, context: GroupErrorContext.invitation), contains('no longer available'), reason: raw);
+      }
+    });
 
     test('L: INVITE_NOT_FOUND → stale message and list refreshed', () async {
       final repo = _repo()..seedInvitation(id: 'i-1', groupId: 'g-priv');

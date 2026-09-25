@@ -1,0 +1,507 @@
+{
+  "subject_key": "mathematics",
+  "subject_slug": "mathematics",
+  "subject_icon": "calculate",
+  "subject_order_index": 1,
+  "subject_translations": {
+    "en": {
+      "name": "Mathematics",
+      "description": "Comprehensive Mathematics covering numbers, arithmetic, algebra, and geometry for all exams."
+    },
+    "hi": {
+      "name": "गणित",
+      "description": "प्रतियोगी परीक्षाओं के लिए संख्या पद्धति, अंकगणित, बीजगणित और ज्यामिति का संपूर्ण पाठ्यक्रम।"
+    }
+  },
+  "chapter_key": "number_system",
+  "order_index": 1,
+  "version": 1,
+  "chapter_translations": {
+    "en": {
+      "title": "Number System",
+      "description": "Fundamental concepts, classifications, properties, and arithmetic laws of real numbers."
+    },
+    "hi": {
+      "title": "संख्या पद्धति",
+      "description": "वास्तविक संख्याओं की मूलभूत अवधारणाएं, वर्गीकरण, गुणधर्म और अंकगणितीय नियम।"
+    }
+  },
+  "topics": [
+    {
+      "topic_key": "natural_numbers",
+      "order_index": 1,
+      "estimated_minutes": 10,
+      "translations": {
+        "en": {
+          "title": "Natural Numbers & Whole Numbers",
+          "summary": "Concepts of counting numbers (N), whole numbers (W), successor/predecessor, and summation formulas."
+        },
+        "hi": {
+          "title": "प्राकृतिक संख्याएँ एवं पूर्ण संख्याएँ",
+          "summary": "गिनती की संख्याएँ (N), पूर्ण संख्याएँ (W), अनुवर्ती/पूर्ववर्ती और योग सूत्रों की विस्तृत समझ।"
+        }
+      },
+      "content_blocks": [
+        {
+          "order_index": 1,
+          "block_type": "heading",
+          "content": {
+            "en": {
+              "text": "Introduction to Natural and Whole Numbers"
+            },
+            "hi": {
+              "text": "प्राकृतिक और पूर्ण संख्याओं का परिचय"
+            }
+          }
+        },
+        {
+          "order_index": 2,
+          "block_type": "definition",
+          "content": {
+            "en": {
+              "text": "Natural Numbers (N) are the counting numbers starting from 1: N = {1, 2, 3, 4, ...}. Whole Numbers (W) are natural numbers along with zero: W = {0, 1, 2, 3, ...}."
+            },
+            "hi": {
+              "text": "प्राकृतिक संख्याएँ (N) गिनती की संख्याएँ हैं जो 1 से शुरू होती हैं: N = {1, 2, 3, 4, ...}। पूर्ण संख्याएँ (W) वे प्राकृतिक संख्याएँ हैं जिनमें शून्य (0) भी शामिल होता है: W = {0, 1, 2, 3, ...}।"
+            }
+          }
+        },
+        {
+          "order_index": 3,
+          "block_type": "formula",
+          "content": {
+            "en": {
+              "text": "Sum of the first n natural numbers:",
+              "latex": "S_n = \\sum_{k=1}^{n} k = \\frac{n(n + 1)}{2}"
+            },
+            "hi": {
+              "text": "प्रथम n प्राकृतिक संख्याओं का योग:",
+              "latex": "S_n = \\sum_{k=1}^{n} k = \\frac{n(n + 1)}{2}"
+            }
+          }
+        },
+        {
+          "order_index": 4,
+          "block_type": "example",
+          "content": {
+            "en": {
+              "text": "Example: Find the sum of the first 20 natural numbers.",
+              "latex": "S_{20} = \\frac{20 \\times (20 + 1)}{2} = \\frac{20 \\times 21}{2} = 10 \\times 21 = 210"
+            },
+            "hi": {
+              "text": "उदाहरण: प्रथम 20 प्राकृतिक संख्याओं का योग ज्ञात कीजिए।",
+              "latex": "S_{20} = \\frac{20 \\times (20 + 1)}{2} = \\frac{20 \\times 21}{2} = 10 \\times 21 = 210"
+            }
+          }
+        },
+        {
+          "order_index": 5,
+          "block_type": "important_point",
+          "content": {
+            "en": {
+              "text": "Key Properties to Remember:",
+              "points": [
+                "1 is the smallest natural number.",
+                "0 is the smallest whole number.",
+                "Every natural number is a whole number, but 0 is a whole number that is not natural.",
+                "The set of natural numbers is infinite with no largest number."
+              ]
+            },
+            "hi": {
+              "text": "याद रखने योग्य महत्वपूर्ण तथ्य:",
+              "points": [
+                "1 सबसे छोटी प्राकृतिक संख्या है।",
+                "0 सबसे छोटी पूर्ण संख्या है।",
+                "प्रत्येक प्राकृतिक संख्या एक पूर्ण संख्या होती है, लेकिन 0 एक ऐसी पूर्ण संख्या है जो प्राकृतिक संख्या नहीं है।",
+                "प्राकृतिक संख्याओं का समुच्चय अनंत होता है।"
+              ]
+            }
+          }
+        },
+        {
+          "order_index": 6,
+          "block_type": "common_mistake",
+          "content": {
+            "en": {
+              "text": "Common Pitfall: Including 0 in the set of natural numbers. In standard school and competitive mathematics, Natural Numbers begin strictly at 1, while Whole Numbers start at 0."
+            },
+            "hi": {
+              "text": "सामान्य गलती: प्राकृतिक संख्याओं के समूह में 0 को शामिल करना। प्रतियोगी परीक्षाओं में प्राकृतिक संख्याएँ हमेशा 1 से और पूर्ण संख्याएँ 0 से प्रारंभ होती हैं।"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "topic_key": "integers",
+      "order_index": 2,
+      "estimated_minutes": 12,
+      "translations": {
+        "en": {
+          "title": "Integers & Number Line",
+          "summary": "Understanding negative numbers, absolute values, rules of signs, and operations on the real line."
+        },
+        "hi": {
+          "title": "पूर्णांक एवं संख्या रेखा",
+          "summary": "ऋणात्मक संख्याएँ, निरपेक्ष मान, चिन्ह नियम और संख्या रेखा पर संक्रियाओं की समझ।"
+        }
+      },
+      "content_blocks": [
+        {
+          "order_index": 1,
+          "block_type": "heading",
+          "content": {
+            "en": {
+              "text": "Understanding Integers (Z)"
+            },
+            "hi": {
+              "text": "पूर्णांक (Z) की अवधारणा"
+            }
+          }
+        },
+        {
+          "order_index": 2,
+          "block_type": "definition",
+          "content": {
+            "en": {
+              "text": "Integers consist of zero, all positive natural numbers, and their negative counterparts: Z = {..., -3, -2, -1, 0, 1, 2, 3, ...}. Fractions and decimals are excluded."
+            },
+            "hi": {
+              "text": "पूर्णांकों के समुच्चय में शून्य, सभी धनात्मक प्राकृतिक संख्याएँ और उनकी ऋणात्मक संख्याएँ शामिल होती हैं: Z = {..., -3, -2, -1, 0, 1, 2, 3, ...}। इसमें भिन्न और दशमलव शामिल नहीं होते।"
+            }
+          }
+        },
+        {
+          "order_index": 3,
+          "block_type": "formula",
+          "content": {
+            "en": {
+              "text": "Absolute Value (Modulus) Function:",
+              "latex": "|x| = \\begin{cases} x & \\text{if } x \\ge 0 \\\\ -x & \\text{if } x < 0 \\end{cases}"
+            },
+            "hi": {
+              "text": "निरपेक्ष मान (मापांक) फलन:",
+              "latex": "|x| = \\begin{cases} x & \\text{यदि } x \\ge 0 \\\\ -x & \\text{यदि } x < 0 \\end{cases}"
+            }
+          }
+        },
+        {
+          "order_index": 4,
+          "block_type": "example",
+          "content": {
+            "en": {
+              "text": "Example: Calculate |-18| - |7| + |-5|.",
+              "latex": "|-18| - |7| + |-5| = 18 - 7 + 5 = 11 + 5 = 16"
+            },
+            "hi": {
+              "text": "उदाहरण: |-18| - |7| + |-5| का मान ज्ञात कीजिए।",
+              "latex": "|-18| - |7| + |-5| = 18 - 7 + 5 = 11 + 5 = 16"
+            }
+          }
+        },
+        {
+          "order_index": 5,
+          "block_type": "important_point",
+          "content": {
+            "en": {
+              "text": "Rules for Ordering Integers:",
+              "points": [
+                "A number on the right of the number line is always strictly greater than a number on its left.",
+                "Zero is neither positive nor negative; it is neutral, but it is an even integer.",
+                "For negative integers, the greater the absolute magnitude, the smaller the actual value: -50 < -5."
+              ]
+            },
+            "hi": {
+              "text": "पूर्णांकों की तुलना के नियम:",
+              "points": [
+                "संख्या रेखा पर दाईं ओर स्थित संख्या बाईं ओर स्थित संख्या से सदैव बड़ी होती है।",
+                "शून्य न तो धनात्मक है और न ही ऋणात्मक; यह एक सम पूर्णांक है।",
+                "ऋणात्मक पूर्णांकों में, जिस संख्या का निरपेक्ष मान जितना बड़ा होगा, उसका वास्तविक मान उतना ही छोटा होगा: -50 < -5।"
+              ]
+            }
+          }
+        },
+        {
+          "order_index": 6,
+          "block_type": "common_mistake",
+          "content": {
+            "en": {
+              "text": "Common Pitfall: Thinking -10 is greater than -2 because 10 is greater than 2. Remember, owing 10 rupees is a worse financial state than owing 2 rupees, so -10 < -2."
+            },
+            "hi": {
+              "text": "सामान्य गलती: यह सोचना कि -10, -2 से बड़ा है। ऋण में अधिक मान का अर्थ छोटा होना है, अतः -10 < -2।"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "topic_key": "rational_numbers",
+      "order_index": 3,
+      "estimated_minutes": 15,
+      "translations": {
+        "en": {
+          "title": "Rational & Irrational Numbers",
+          "summary": "Representation of numbers in p/q form, terminating vs repeating decimals, and irrational numbers."
+        },
+        "hi": {
+          "title": "परिमेय एवं अपरिमेय संख्याएँ",
+          "summary": "p/q रूप में निरूपण, सांत व असांत आवर्ती दशमलव और अपरिमेय संख्याओं का अध्ययन।"
+        }
+      },
+      "content_blocks": [
+        {
+          "order_index": 1,
+          "block_type": "heading",
+          "content": {
+            "en": {
+              "text": "Definition of Rational Numbers (Q)"
+            },
+            "hi": {
+              "text": "परिमेय संख्याओं (Q) की परिभाषा"
+            }
+          }
+        },
+        {
+          "order_index": 2,
+          "block_type": "definition",
+          "content": {
+            "en": {
+              "text": "A number is rational if it can be expressed in the form p/q, where p and q are integers and q != 0. In decimal form, rational numbers either terminate (e.g. 0.75) or repeat infinitely in blocks (e.g. 0.333...)."
+            },
+            "hi": {
+              "text": "वह संख्या जिसे p/q के रूप में व्यक्त किया जा सकता है, जहाँ p और q पूर्णांक हैं तथा q != 0, परिमेय संख्या कहलाती है। दशमलव रूप में यह या तो सांत होती है (जैसे 0.75) या असांत आवर्ती (जैसे 0.333...)।"
+            }
+          }
+        },
+        {
+          "order_index": 3,
+          "block_type": "formula",
+          "content": {
+            "en": {
+              "text": "Condition for Terminating Decimals:",
+              "latex": "\\frac{p}{q} \\text{ terminates if and only if } q = 2^m \\times 5^n \\quad (m, n \\in \\mathbb{W})"
+            },
+            "hi": {
+              "text": "सांत दशमलव की शर्त:",
+              "latex": "\\frac{p}{q} \\text{ सांत होता है यदि और केवल यदि } q = 2^m \\times 5^n \\quad (m, n \\in \\mathbb{W})"
+            }
+          }
+        },
+        {
+          "order_index": 4,
+          "block_type": "example",
+          "content": {
+            "en": {
+              "text": "Example: Convert the repeating decimal 0.777... into p/q form.",
+              "latex": "x = 0.\\overline{7} \\implies 10x = 7.\\overline{7} \\implies 10x - x = 7 \\implies 9x = 7 \\implies x = \\frac{7}{9}"
+            },
+            "hi": {
+              "text": "उदाहरण: असांत आवर्ती दशमलव 0.777... को p/q रूप में बदलिए।",
+              "latex": "x = 0.\\overline{7} \\implies 10x = 7.\\overline{7} \\implies 10x - x = 7 \\implies 9x = 7 \\implies x = \\frac{7}{9}"
+            }
+          }
+        },
+        {
+          "order_index": 5,
+          "block_type": "important_point",
+          "content": {
+            "en": {
+              "text": "Distinguishing Rational vs Irrational:",
+              "points": [
+                "All integers are rational numbers because any integer z can be written as z/1.",
+                "Non-terminating and non-repeating decimals are Irrational Numbers (e.g. sqrt(2), sqrt(3), pi).",
+                "Between any two rational numbers, there are infinitely many rational and irrational numbers (Density Property)."
+              ]
+            },
+            "hi": {
+              "text": "परिमेय और अपरिमेय संख्याओं में अंतर:",
+              "points": [
+                "सभी पूर्णांक परिमेय संख्याएँ हैं क्योंकि किसी भी पूर्णांक z को z/1 के रूप में लिखा जा सकता है।",
+                "असांत अनावर्ती (non-terminating non-repeating) दशमलव अपरिमेय संख्याएँ होते हैं (जैसे sqrt(2), pi)।",
+                "किन्हीं दो परिमेय संख्याओं के बीच अनंत परिमेय और अपरिमेय संख्याएँ होती हैं।"
+              ]
+            }
+          }
+        },
+        {
+          "order_index": 6,
+          "block_type": "common_mistake",
+          "content": {
+            "en": {
+              "text": "Common Pitfall: Assuming pi is rational because 22/7 is a fraction. 22/7 is merely an approximate rational value used for calculations; the true mathematical constant pi is irrational."
+            },
+            "hi": {
+              "text": "सामान्य गलती: यह मानना कि pi एक परिमेय संख्या है क्योंकि 22/7 एक भिन्न है। 22/7 केवल गणना के लिए एक सन्निकट मान है; वास्तविक pi एक अपरिमेय संख्या है।"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "questions": [
+    {
+      "topic_key": "natural_numbers",
+      "difficulty": "easy",
+      "correct_option": 1,
+      "translations": {
+        "en": {
+          "question": "Which of the following statements is true regarding natural numbers and whole numbers?",
+          "options": [
+            "Every whole number is a natural number",
+            "Every natural number is a whole number",
+            "Zero is the smallest natural number",
+            "Natural numbers include negative integers"
+          ],
+          "explanation": "Every natural number {1, 2, 3, ...} belongs to the set of whole numbers {0, 1, 2, 3, ...}. 0 is a whole number but not a natural number."
+        },
+        "hi": {
+          "question": "प्राकृतिक संख्याओं और पूर्ण संख्याओं के संबंध में निम्नलिखित में से कौन सा कथन सत्य है?",
+          "options": [
+            "प्रत्येक पूर्ण संख्या एक प्राकृतिक संख्या होती है",
+            "प्रत्येक प्राकृतिक संख्या एक पूर्ण संख्या होती है",
+            "शून्य सबसे छोटी प्राकृतिक संख्या है",
+            "प्राकृतिक संख्याओं में ऋणात्मक पूर्णांक शामिल होते हैं"
+          ],
+          "explanation": "प्रत्येक प्राकृतिक संख्या {1, 2, 3, ...} पूर्ण संख्याओं के समुच्चय {0, 1, 2, ...} का हिस्सा होती है। 0 पूर्ण संख्या है लेकिन प्राकृतिक संख्या नहीं है।"
+        }
+      }
+    },
+    {
+      "topic_key": "natural_numbers",
+      "difficulty": "easy",
+      "correct_option": 2,
+      "translations": {
+        "en": {
+          "question": "What is the sum of the first 25 natural numbers?",
+          "options": [
+            "300",
+            "315",
+            "325",
+            "350"
+          ],
+          "explanation": "Using formula S_n = n(n+1)/2: S_25 = 25 * 26 / 2 = 25 * 13 = 325."
+        },
+        "hi": {
+          "question": "प्रथम 25 प्राकृतिक संख्याओं का योग क्या है?",
+          "options": [
+            "300",
+            "315",
+            "325",
+            "350"
+          ],
+          "explanation": "सूत्र S_n = n(n+1)/2 के अनुसार: S_25 = 25 * 26 / 2 = 25 * 13 = 325।"
+        }
+      }
+    },
+    {
+      "topic_key": "integers",
+      "difficulty": "easy",
+      "correct_option": 3,
+      "translations": {
+        "en": {
+          "question": "Which of the following integers has the greatest value?",
+          "options": [
+            "-15",
+            "-8",
+            "-1",
+            "0"
+          ],
+          "explanation": "On the number line, 0 is situated to the right of all negative numbers (-15, -8, -1), making it the greatest among them."
+        },
+        "hi": {
+          "question": "निम्नलिखित पूर्णांकों में से किसका मान सबसे अधिक है?",
+          "options": [
+            "-15",
+            "-8",
+            "-1",
+            "0"
+          ],
+          "explanation": "संख्या रेखा पर 0 सभी ऋणात्मक संख्याओं (-15, -8, -1) के दाईं ओर स्थित होता है, अतः यह सबसे बड़ा है।"
+        }
+      }
+    },
+    {
+      "topic_key": "integers",
+      "difficulty": "medium",
+      "correct_option": 0,
+      "translations": {
+        "en": {
+          "question": "Evaluate the expression: |-24| - |-9| + |12 - 17|",
+          "options": [
+            "20",
+            "10",
+            "16",
+            "25"
+          ],
+          "explanation": "|-24| = 24, |-9| = 9, and |12 - 17| = |-5| = 5. So, 24 - 9 + 5 = 15 + 5 = 20."
+        },
+        "hi": {
+          "question": "समीकरण का मान ज्ञात कीजिए: |-24| - |-9| + |12 - 17|",
+          "options": [
+            "20",
+            "10",
+            "16",
+            "25"
+          ],
+          "explanation": "|-24| = 24, |-9| = 9, तथा |12 - 17| = |-5| = 5। अतः 24 - 9 + 5 = 15 + 5 = 20।"
+        }
+      }
+    },
+    {
+      "topic_key": "rational_numbers",
+      "difficulty": "medium",
+      "correct_option": 2,
+      "translations": {
+        "en": {
+          "question": "Which of the following numbers is an irrational number?",
+          "options": [
+            "0.141414... (repeating)",
+            "3.1416 (terminating)",
+            "sqrt(7)",
+            "22/7"
+          ],
+          "explanation": "sqrt(7) is the square root of a non-perfect square, resulting in a non-terminating, non-repeating decimal, making it irrational. 22/7, 3.1416, and 0.1414... are all rational."
+        },
+        "hi": {
+          "question": "निम्नलिखित में से कौन सी एक अपरिमेय संख्या है?",
+          "options": [
+            "0.141414... (आवर्ती)",
+            "3.1416 (सांत)",
+            "sqrt(7)",
+            "22/7"
+          ],
+          "explanation": "sqrt(7) एक अपूर्ण वर्ग संख्या का वर्गमूल है, जिसका दशमलव प्रसार असांत अनावर्ती होता है। अतः यह अपरिमेय है।"
+        }
+      }
+    },
+    {
+      "topic_key": "rational_numbers",
+      "difficulty": "medium",
+      "correct_option": 1,
+      "translations": {
+        "en": {
+          "question": "What is the fractional representation (p/q form) of the repeating decimal 0.363636...?",
+          "options": [
+            "36/100",
+            "4/11",
+            "1/3",
+            "9/25"
+          ],
+          "explanation": "Let x = 0.3636... Then 100x = 36.3636... Subtracting gives 99x = 36, which simplifies to x = 36/99 = 4/11."
+        },
+        "hi": {
+          "question": "असांत आवर्ती दशमलव 0.363636... का भिन्न रूप (p/q) क्या होगा?",
+          "options": [
+            "36/100",
+            "4/11",
+            "1/3",
+            "9/25"
+          ],
+          "explanation": "माना x = 0.3636... तब 100x = 36.3636... घटाने पर: 99x = 36 प्राप्त होता है। सरल करने पर: x = 36/99 = 4/11।"
+        }
+      }
+    }
+  ]
+}
+

@@ -40,9 +40,12 @@ class GroupErrors {
         lower.contains('not authenticated')) {
       return 'Please sign in again to continue.';
     }
-    if (lower.contains('invite_not_found')) {
-      // fn_accept/decline_group_invitation: not the invitee, not pending,
-      // removed, or inaccessible — the server does not say which.
+    if (lower.contains('invite_not_found') ||
+        lower.contains('invitation_not_found') ||
+        lower.contains('invitation_not_pending')) {
+      // Live fn_accept/decline_group_invitation raise INVITATION_NOT_FOUND
+      // (not the invitee, removed, inaccessible) and INVITATION_NOT_PENDING
+      // (already accepted / declined) — the server does not say which.
       return 'This invitation is no longer available.';
     }
     if (lower.contains('join_request_not_found')) {

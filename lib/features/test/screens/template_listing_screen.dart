@@ -87,9 +87,8 @@ class _TemplateListingScreenState extends State<TemplateListingScreen> {
         itemCount: templates.length,
         itemBuilder: (_, i) => _TemplateCard(
           template: templates[i],
-          onTap: () => _pushThenRefresh(
-            '/tests/templates/${templates[i].id}/edit',
-          ),
+          onTap: () =>
+              _pushThenRefresh('/tests/templates/${templates[i].id}/edit'),
           onUse: () => _useTemplate(templates[i]),
           onDelete: () => _confirmDelete(templates[i]),
         ),
@@ -98,13 +97,6 @@ class _TemplateListingScreenState extends State<TemplateListingScreen> {
   }
 
   Future<void> _useTemplate(TestTemplate template) async {
-    final configuration = template.configuration;
-    final kindName = configuration['kind'] as String?;
-    final kind = TestKind.values.firstWhere(
-      (k) => k.name == kindName,
-      orElse: () => TestKind.self,
-    );
-
     final uri = Uri(
       path: '/tests/create',
       queryParameters: {
@@ -129,9 +121,7 @@ class _TemplateListingScreenState extends State<TemplateListingScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            style: FilledButton.styleFrom(
-              backgroundColor: AppColors.error,
-            ),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.error),
             child: const Text('Delete'),
           ),
         ],
@@ -141,9 +131,8 @@ class _TemplateListingScreenState extends State<TemplateListingScreen> {
     try {
       await _c.delete(template.id);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Template deleted')),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('Template deleted')));
       }
     } catch (e) {
       if (mounted) {
@@ -168,10 +157,7 @@ class _TemplateListingScreenState extends State<TemplateListingScreen> {
             const SizedBox(height: 12),
             Text(message, textAlign: TextAlign.center),
             const SizedBox(height: 12),
-            FilledButton(
-              onPressed: _c.refresh,
-              child: const Text('Retry'),
-            ),
+            FilledButton(onPressed: _c.refresh, child: const Text('Retry')),
           ],
         ),
       ),
@@ -226,11 +212,11 @@ class _TemplateCard extends StatelessWidget {
     final kindName = template.kind;
     final kindLabel = kindName != null
         ? TestKind.values
-            .firstWhere(
-              (k) => k.name == kindName,
-              orElse: () => TestKind.self,
-            )
-            .label
+              .firstWhere(
+                (k) => k.name == kindName,
+                orElse: () => TestKind.self,
+              )
+              .label
         : 'Unknown';
 
     return Card(
@@ -266,10 +252,7 @@ class _TemplateCard extends StatelessWidget {
                         value: 'use',
                         child: Text('Use Template'),
                       ),
-                      const PopupMenuItem(
-                        value: 'edit',
-                        child: Text('Edit'),
-                      ),
+                      const PopupMenuItem(value: 'edit', child: Text('Edit')),
                       const PopupMenuItem(
                         value: 'delete',
                         child: Text('Delete'),

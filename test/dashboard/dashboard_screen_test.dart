@@ -11,7 +11,10 @@ import 'package:my_praperation/features/performance/state/performance_controller
 
 import '../r4_restart/fakes.dart' show FakeTestRepository, FakeResultRepository;
 
-Profile _profile({String fullName = 'Rahul Sharma', List<String> examTargets = const []}) {
+Profile _profile({
+  String fullName = 'Rahul Sharma',
+  List<String> examTargets = const [],
+}) {
   return Profile(
     id: 'u-1',
     fullName: fullName,
@@ -27,7 +30,9 @@ Profile _profile({String fullName = 'Rahul Sharma', List<String> examTargets = c
 void main() {
   Widget host(Widget child) => MaterialApp(home: Scaffold(body: child));
 
-  testWidgets('shows a dynamic greeting with the profile display name', (tester) async {
+  testWidgets('shows a dynamic greeting with the profile display name', (
+    tester,
+  ) async {
     final testRepo = FakeTestRepository();
     final performance = PerformanceController(
       testRepository: testRepo,
@@ -45,15 +50,23 @@ void main() {
     );
     await tester.pump();
 
-    final greeting = tester.widget<Text>(find.byKey(const Key('dashboard_greeting')));
+    final greeting = tester.widget<Text>(
+      find.byKey(const Key('dashboard_greeting')),
+    );
     expect(greeting.data, contains('Rahul Sharma'));
     expect(
       greeting.data,
-      anyOf(contains('Good Morning'), contains('Good Afternoon'), contains('Good Evening')),
+      anyOf(
+        contains('Good Morning'),
+        contains('Good Afternoon'),
+        contains('Good Evening'),
+      ),
     );
   });
 
-  testWidgets('falls back to Student when no profile is available', (tester) async {
+  testWidgets('falls back to Student when no profile is available', (
+    tester,
+  ) async {
     final testRepo = FakeTestRepository();
     final performance = PerformanceController(
       testRepository: testRepo,
@@ -70,11 +83,108 @@ void main() {
     );
     await tester.pump();
 
-    final greeting = tester.widget<Text>(find.byKey(const Key('dashboard_greeting')));
+    final greeting = tester.widget<Text>(
+      find.byKey(const Key('dashboard_greeting')),
+    );
     expect(greeting.data, contains('Student'));
   });
 
-  testWidgets('shows empty states when there is no upcoming test and no performance data', (tester) async {
+  testWidgets(
+    'shows empty states when there is no upcoming test and no performance data',
+    (tester) async {
+      final testRepo = FakeTestRepository();
+      final performance = PerformanceController(
+        testRepository: testRepo,
+        resultRepository: FakeResultRepository(),
+      );
+
+      await tester.pumpWidget(
+        host(
+          DashboardScreen(
+            testRepository: testRepo,
+            performanceController: performance,
+            profile: _profile(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('No upcoming tests'), findsOneWidget);
+      expect(
+        find.text('Your performance will appear here after your first test.'),
+        findsOneWidget,
+      );
+      expect(find.text('No recent tests'), findsOneWidget);
+      // A failure/absence in one section (routine, groups — both hit an
+      // uninitialized Supabase client in this widget-only test) must not
+      // crash the rest of the dashboard.
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'shows the target goal strip only when the profile has an exam target',
+    (tester) async {
+      final testRepo = FakeTestRepository();
+      final performance = PerformanceController(
+        testRepository: testRepo,
+        resultRepository: FakeResultRepository(),
+      );
+
+      await tester.pumpWidget(
+        host(
+          DashboardScreen(
+            testRepository: testRepo,
+            performanceController: performance,
+            profile: _profile(examTargets: const ['UPSC CSE 2025']),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('UPSC CSE 2025'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'an upcoming test renders with a countdown and a View Test action',
+    (tester) async {
+      final testRepo = FakeTestRepository();
+      testRepo.rows['t-1'] = Test(
+        id: 't-1',
+        createdBy: 'u-1',
+        title: 'Mathematics Full Sectional Test 04',
+        status: TestStatus.scheduled,
+        startsAt: DateTime.now().add(const Duration(hours: 2)),
+        endsAt: DateTime.now().add(const Duration(hours: 3)),
+        durationSec: 1800,
+        totalQuestions: 25,
+      );
+      final performance = PerformanceController(
+        testRepository: testRepo,
+        resultRepository: FakeResultRepository(),
+      );
+
+      await tester.pumpWidget(
+        host(
+          DashboardScreen(
+            testRepository: testRepo,
+            performanceController: performance,
+            profile: _profile(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Mathematics Full Sectional Test 04'), findsOneWidget);
+      expect(find.text('View Test'), findsOneWidget);
+      expect(find.textContaining('25 Questions'), findsOneWidget);
+    },
+  );
+
+  testWidgets('renders modern quick action tiles and subtitle descriptions', (
+    tester,
+  ) async {
     final testRepo = FakeTestRepository();
     final performance = PerformanceController(
       testRepository: testRepo,
@@ -92,69 +202,66 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('No upcoming tests'), findsOneWidget);
-    expect(
-      find.text('Your performance will appear here after your first test.'),
-      findsOneWidget,
-    );
-    expect(find.text('No recent tests'), findsOneWidget);
-    // A failure/absence in one section (routine, groups — both hit an
-    // uninitialized Supabase client in this widget-only test) must not
-    // crash the rest of the dashboard.
-    expect(tester.takeException(), isNull);
+    expect(find.text('My Study'), findsOneWidget);
+    expect(find.text('Learn & revise'), findsOneWidget);
+    expect(find.text('Build Test'), findsOneWidget);
+    expect(find.text('Custom practice'), findsOneWidget);
+    expect(find.text('Question Bank'), findsOneWidget);
+    expect(find.text('Explore questions'), findsOneWidget);
+    expect(find.text('Routine'), findsOneWidget);
+    expect(find.text('Study schedule'), findsOneWidget);
+    expect(find.text('Groups'), findsOneWidget);
+    expect(find.text('Community study'), findsOneWidget);
+    expect(find.text('My Tests'), findsOneWidget);
   });
 
-  testWidgets('shows the target goal strip only when the profile has an exam target', (tester) async {
-    final testRepo = FakeTestRepository();
-    final performance = PerformanceController(
-      testRepository: testRepo,
-      resultRepository: FakeResultRepository(),
-    );
+  testWidgets(
+    'renders command center branding and profile initial in greeting header',
+    (tester) async {
+      final testRepo = FakeTestRepository();
+      final performance = PerformanceController(
+        testRepository: testRepo,
+        resultRepository: FakeResultRepository(),
+      );
 
-    await tester.pumpWidget(
-      host(
-        DashboardScreen(
-          testRepository: testRepo,
-          performanceController: performance,
-          profile: _profile(examTargets: const ['UPSC CSE 2025']),
+      await tester.pumpWidget(
+        host(
+          DashboardScreen(
+            testRepository: testRepo,
+            performanceController: performance,
+            profile: _profile(fullName: 'Ananya Roy'),
+          ),
         ),
-      ),
-    );
-    await tester.pump();
+      );
+      await tester.pumpAndSettle();
 
-    expect(find.text('UPSC CSE 2025'), findsOneWidget);
-  });
+      expect(find.text('MY PREPARATION • COMMAND CENTER'), findsOneWidget);
+      expect(find.text('A'), findsOneWidget); // Initial 'A' for Ananya Roy
+    },
+  );
 
-  testWidgets('an upcoming test renders with a countdown and a View Test action', (tester) async {
-    final testRepo = FakeTestRepository();
-    testRepo.rows['t-1'] = Test(
-      id: 't-1',
-      createdBy: 'u-1',
-      title: 'Mathematics Full Sectional Test 04',
-      status: TestStatus.scheduled,
-      startsAt: DateTime.now().add(const Duration(hours: 2)),
-      endsAt: DateTime.now().add(const Duration(hours: 3)),
-      durationSec: 1800,
-      totalQuestions: 25,
-    );
-    final performance = PerformanceController(
-      testRepository: testRepo,
-      resultRepository: FakeResultRepository(),
-    );
+  testWidgets(
+    'renders continue studying section with empty state when no recent lesson',
+    (tester) async {
+      final testRepo = FakeTestRepository();
+      final performance = PerformanceController(
+        testRepository: testRepo,
+        resultRepository: FakeResultRepository(),
+      );
 
-    await tester.pumpWidget(
-      host(
-        DashboardScreen(
-          testRepository: testRepo,
-          performanceController: performance,
-          profile: _profile(),
+      await tester.pumpWidget(
+        host(
+          DashboardScreen(
+            testRepository: testRepo,
+            performanceController: performance,
+            profile: _profile(),
+          ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    expect(find.text('Mathematics Full Sectional Test 04'), findsOneWidget);
-    expect(find.text('View Test'), findsOneWidget);
-    expect(find.textContaining('25 Questions'), findsOneWidget);
-  });
+      expect(find.text('CONTINUE STUDYING'), findsOneWidget);
+      expect(find.text('Start your first lesson'), findsOneWidget);
+    },
+  );
 }

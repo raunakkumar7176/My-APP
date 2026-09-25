@@ -130,6 +130,7 @@ abstract final class TestPdf {
     ResultDelta? deltaFromPrevious,
     int? previousAttemptNumber,
     List<AttemptHistoryEntry> history = const [],
+    String? groupName,
   }) async {
     final doc = pw.Document(
       title: 'Result — ${test?.title ?? 'Test'}',
@@ -156,6 +157,7 @@ abstract final class TestPdf {
           pw.SizedBox(height: 6),
           _kv('Student', studentName),
           _kv('Test', test?.title ?? '--'),
+          if (groupName != null) _kv('Group', groupName),
           _kv('Test type', kind.label),
           if (attemptNumber != null) _kv('Attempt', '$attemptNumber'),
           if (submittedAt != null) _kv('Submitted', _dateTime(submittedAt)),
@@ -174,6 +176,13 @@ abstract final class TestPdf {
           _kv('Wrong', '${result.wrongCount ?? '--'}'),
           _kv('Unanswered', '${result.unansweredCount ?? '--'}'),
           if (result.rank != null) _kv('Rank', '#${result.rank}'),
+          if (test?.passingMarks != null && result.score != null) ...[
+            _kv('Pass marks', n(test!.passingMarks)),
+            _kv(
+              'Result',
+              result.score! >= test.passingMarks! ? 'PASS' : 'FAIL',
+            ),
+          ],
           if (subjects.isNotEmpty) ...[
             pw.SizedBox(height: 12),
             pw.Text('Subject breakdown', style: _h2),
@@ -405,4 +414,128 @@ abstract final class TestPdf {
     String two(int v) => v.toString().padLeft(2, '0');
     return '${l.day}/${l.month}/${l.year} ${two(l.hour)}:${two(l.minute)}';
   }
+
+  /// One already-ranked row for [groupResult]. The rank and marks must come
+  /// from the server's own authoritative dataset (e.g. `rpc_get_leaderboard`
+  /// / the results table) — this builder never re-ranks or recomputes marks,
+  /// it only formats what it is given. [passFail] is a plain string
+  /// ('PASS'/'FAIL'/'--') the caller derives from `marks >= test.passingMarks`
+  /// so the arithmetic stays visible at the call site rather than hidden in
+  /// a second scoring engine here.
+  static Future<Uint8List> groupResult({
+    required Test test,
+    required String groupName,
+    required List<GroupResultRow> rows,
+    int? participants,
+    int? appeared,
+    int? passed,
+    int? failed,
+    double? averagePercentage,
+    double? highestPercentage,
+    double? lowestPercentage,
+    DateTime? generatedAt,
+  }) async {
+    final doc = pw.Document(
+      title: 'Group Result — ${test.title}',
+      author: 'My Preparation',
+    );
+    String pct(double? v) => v == null ? '--' : '${v.toStringAsFixed(1)}%';
+
+    doc.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(32),
+        footer: (ctx) => pw.Align(
+          alignment: pw.Alignment.centerRight,
+          child: pw.Text(
+            'Page ${ctx.pageNumber} / ${ctx.pagesCount}',
+            style: const pw.TextStyle(fontSize: 9),
+          ),
+        ),
+        build: (ctx) => [
+          pw.Text('Group Result', style: _h1),
+          pw.SizedBox(height: 6),
+          _kv('Test', test.title),
+          _kv('Group', groupName),
+          if (generatedAt != null) _kv('Generated', _dateTime(generatedAt)),
+          pw.SizedBox(height: 12),
+          pw.Text('Summary', style: _h2),
+          if (participants != null) _kv('Participants', '$participants'),
+          if (appeared != null) _kv('Appeared', '$appeared'),
+          if (passed != null) _kv('Passed', '$passed'),
+          if (failed != null) _kv('Failed', '$failed'),
+          _kv('Average', pct(averagePercentage)),
+          _kv('Highest', pct(highestPercentage)),
+          _kv('Lowest', pct(lowestPercentage)),
+          pw.SizedBox(height: 14),
+          pw.Text('Ranked results', style: _h2),
+          _table(
+            [
+              'Rank',
+              'Student',
+              'Marks',
+              'Total',
+              '%',
+              'Correct',
+              'Wrong',
+              'Unanswered',
+              'Result',
+            ],
+            [
+              for (final r in rows)
+                [
+                  '${r.rank}',
+                  r.studentName,
+                  r.marks == null ? '--' : r.marks!.toStringAsFixed(0),
+                  r.totalMarks == null ? '--' : r.totalMarks!.toStringAsFixed(0),
+                  pct(r.percentage),
+                  r.correctCount?.toString() ?? '--',
+                  r.wrongCount?.toString() ?? '--',
+                  r.unansweredCount?.toString() ?? '--',
+                  r.passFail ?? '--',
+                ],
+            ],
+          ),
+          pw.SizedBox(height: 16),
+          pw.Text(
+            'Ranking and marks are taken as-is from the server\'s authoritative '
+            'result dataset. This report never recomputes rank or scores.',
+            style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
+          ),
+        ],
+      ),
+    );
+    return doc.save();
+  }
+}
+
+/// A single already-ranked, already-scored row handed to [TestPdf.groupResult].
+/// Every field is data the caller already obtained from the server's own
+/// result/leaderboard dataset — this type carries no logic.
+final class GroupResultRow {
+  const GroupResultRow({
+    required this.rank,
+    required this.studentName,
+    this.marks,
+    this.totalMarks,
+    this.percentage,
+    this.correctCount,
+    this.wrongCount,
+    this.unansweredCount,
+    this.passFail,
+  });
+
+  final int rank;
+  final String studentName;
+  final double? marks;
+  final double? totalMarks;
+  final double? percentage;
+  final int? correctCount;
+  final int? wrongCount;
+  final int? unansweredCount;
+
+  /// 'PASS' / 'FAIL' / null (unknown — e.g. no passing_marks configured).
+  /// Computed by the caller from already-authoritative numbers
+  /// (`marks >= test.passingMarks`), never re-derived here.
+  final String? passFail;
 }

@@ -103,6 +103,12 @@ class TestCreationController extends DisposableNotifier {
   final List<String> syllabusNodeIds = [];
   final List<String> _serverSyllabusNodeIds = [];
   List<Group> groups = const [];
+  bool _groupsLoading = false;
+
+  /// True only while [loadGroups] is in flight. `ConfigurationStep` uses
+  /// this to show a loading state instead of a bare "no groups" message
+  /// while the real list is still on the way.
+  bool get groupsLoading => _groupsLoading;
 
   /// Current question source selection (default: manual).
   QuestionSource questionSource = QuestionSource.manual;
@@ -212,13 +218,17 @@ class TestCreationController extends DisposableNotifier {
   }
 
   Future<void> loadGroups() async {
+    _groupsLoading = true;
+    notifyListeners();
     try {
       groups = await _groups.myGroups();
     } catch (e) {
       AppLogger.warning('Groups unavailable: $e');
       groups = const [];
+    } finally {
+      _groupsLoading = false;
+      notifyListeners();
     }
-    notifyListeners();
   }
 
   void _applyTest(Test t) {

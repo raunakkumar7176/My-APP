@@ -124,6 +124,78 @@ class AttemptController extends DisposableNotifier {
   /// Server deadline; null only if the server sent none (no client fallback).
   DateTime? get deadlineAt => _attempt?.deadlineAt;
 
+  // ── integrity events (anti-cheat) ──
+  //
+  // The server (rpc_record_integrity_event) owns the count, the threshold
+  // and any resulting auto-submit; this controller only reports occurrences
+  // and reflects back whatever the server decided. It never computes or
+  // trusts a local count.
+
+  bool _recordingIntegrity = false;
+  bool _integrityAutoSubmitted = false;
+
+  /// Server-held count as of the last successful report (or attempt load).
+  int? get integrityEventCount => _attempt?.integrityEventCount;
+  int? get autoSubmitThreshold => _attempt?.autoSubmitThreshold;
+
+  /// True once the server has told this controller it auto-submitted the
+  /// attempt because the integrity threshold was reached. The screen should
+  /// stop accepting input and show the limit-reached message when this
+  /// flips true (mirrors how a normal submit() completes).
+  bool get integrityAutoSubmitted => _integrityAutoSubmitted;
+
+  /// Reports one client-observed integrity event. Fire-and-forget from the
+  /// caller's perspective (never blocks the answering UI): failures are
+  /// logged and swallowed, since a lost integrity report must not prevent
+  /// the user from continuing to answer — the server's own deadline/
+  /// idempotency checks remain the real security boundary regardless of
+  /// whether any given event report arrives. In-flight reports are
+  /// single-flighted (a report already in progress is skipped, not queued)
+  /// so a burst of lifecycle callbacks cannot fan out into a burst of RPCs.
+  void recordIntegrityEvent(String eventType, {Map<String, dynamic>? details}) {
+    if (_recordingIntegrity || !isInteractive || _attempt == null) return;
+    _recordingIntegrity = true;
+    unawaited(_recordIntegrityEvent(eventType, details));
+  }
+
+  Future<void> _recordIntegrityEvent(
+    String eventType,
+    Map<String, dynamic>? details,
+  ) async {
+    try {
+      final outcome = await _attempts.recordIntegrityEvent(
+        attemptId: attemptId,
+        testId: testId,
+        eventType: eventType,
+        details: details,
+      );
+      if (isDisposed || _attempt == null) return;
+      _attempt = Attempt(
+        id: _attempt!.id,
+        testId: _attempt!.testId,
+        userId: _attempt!.userId,
+        status: outcome.autoSubmitted
+            ? AttemptStatus.autoSubmitted
+            : _attempt!.status,
+        startedAt: _attempt!.startedAt,
+        attemptNumber: _attempt!.attemptNumber,
+        deadlineAt: _attempt!.deadlineAt,
+        submittedAt: _attempt!.submittedAt,
+        integrityEventCount: outcome.integrityEventCount,
+        autoSubmitThreshold: outcome.autoSubmitThreshold,
+      );
+      if (outcome.autoSubmitted) {
+        _autosaveTimer?.cancel();
+        _integrityAutoSubmitted = true;
+      }
+    } catch (e) {
+      AppLogger.warning('recordIntegrityEvent($eventType) failed: $e');
+    } finally {
+      _recordingIntegrity = false;
+      if (!isDisposed) notifyListeners();
+    }
+  }
+
   List<QuestionOption> optionsFor(Question q) =>
       _optionsInOrder[q.id] ?? q.options ?? const [];
 

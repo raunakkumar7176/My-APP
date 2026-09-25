@@ -156,11 +156,11 @@ class _GroupTestsScreenState extends State<GroupTestsScreen> {
                 ),
               ),
             if (_c.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 24),
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 24),
                 child: Text(
                   'No tests in this group yet.',
-                  key: const Key('group_tests_empty'),
+                  key: Key('group_tests_empty'),
                   textAlign: TextAlign.center,
                 ),
               )
@@ -229,7 +229,11 @@ class _GroupTestsScreenState extends State<GroupTestsScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, size: 48, color: Theme.of(context).colorScheme.outline),
+              Icon(
+                icon,
+                size: 48,
+                color: Theme.of(context).colorScheme.outline,
+              ),
               const SizedBox(height: 12),
               Text(title, style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 8),
@@ -237,7 +241,9 @@ class _GroupTestsScreenState extends State<GroupTestsScreen> {
               const SizedBox(height: 16),
               action ??
                   FilledButton(
-                    onPressed: () => context.go('/groups/${widget.groupId}'),
+                    onPressed: () => context.canPop()
+                        ? context.pop()
+                        : context.go('/groups/${widget.groupId}'),
                     child: const Text('Back to group'),
                   ),
             ],
@@ -327,7 +333,10 @@ class _GroupTestManageSheetState extends State<GroupTestManageSheet> {
   Future<void> _publish() async {
     final ok = await c.publish(t);
     if (!mounted) return;
-    _snack(ok ? 'Test published.' : (c.error ?? 'Could not publish.'), error: !ok);
+    _snack(
+      ok ? 'Test published.' : (c.error ?? 'Could not publish.'),
+      error: !ok,
+    );
   }
 
   Future<void> _archive() async {
@@ -355,7 +364,10 @@ class _GroupTestManageSheetState extends State<GroupTestManageSheet> {
     if (confirmed != true || !mounted) return;
     final ok = await c.archive(t);
     if (!mounted) return;
-    _snack(ok ? 'Test archived.' : (c.error ?? 'Could not archive.'), error: !ok);
+    _snack(
+      ok ? 'Test archived.' : (c.error ?? 'Could not archive.'),
+      error: !ok,
+    );
   }
 
   Future<void> _deleteDraft() async {
@@ -380,7 +392,10 @@ class _GroupTestManageSheetState extends State<GroupTestManageSheet> {
     if (confirmed != true || !mounted) return;
     final ok = await c.deleteDraft(t);
     if (!mounted) return;
-    _snack(ok ? 'Draft deleted.' : (c.error ?? 'Could not delete.'), error: !ok);
+    _snack(
+      ok ? 'Draft deleted.' : (c.error ?? 'Could not delete.'),
+      error: !ok,
+    );
   }
 
   Future<DateTime?> _pick(DateTime? initial) async {
@@ -448,7 +463,10 @@ class _GroupTestManageSheetState extends State<GroupTestManageSheet> {
     if (confirmed != true || !mounted) return;
     final ok = await c.schedule(t, startsAt: start, endsAt: end);
     if (!mounted) return;
-    _snack(ok ? 'Schedule saved.' : (c.error ?? 'Could not schedule.'), error: !ok);
+    _snack(
+      ok ? 'Schedule saved.' : (c.error ?? 'Could not schedule.'),
+      error: !ok,
+    );
   }
 
   @override

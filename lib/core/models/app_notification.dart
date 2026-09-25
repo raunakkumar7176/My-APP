@@ -15,6 +15,7 @@ final class AppNotification {
     required this.createdAt,
     this.readAt,
     this.priority = 'medium',
+    this.dedupeKey,
   });
 
   final String id;
@@ -34,6 +35,9 @@ final class AppNotification {
   final DateTime? readAt;
   final String priority;
 
+  /// Deterministic idempotency key for deduplication (server-generated).
+  final String? dedupeKey;
+
   bool get isRead => readAt != null;
 
   /// `data->>'group_id'` — the group-scope key the live triggers always set.
@@ -46,6 +50,26 @@ final class AppNotification {
   String? get messageId => data['message_id'] as String?;
   String? get announcementId => data['announcement_id'] as String?;
   String? get testId => data['test_id'] as String?;
+
+  /// Deep link path from `data->>'deep_link'`. Used for notification tap
+  /// navigation. Must be validated server-side before navigation.
+  String? get deepLink => data['deep_link'] as String?;
+
+  /// Routine ID from `data->>'routine_id'`.
+  String? get routineId => data['routine_id'] as String?;
+
+  /// Idempotency key from `data->>'idempotency_key'`.
+  String? get idempotencyKey => data['idempotency_key'] as String?;
+
+  /// Reminder key from `data->>'reminder'` (e.g. '24h', '1h', '10m').
+  String? get reminderKey => data['reminder'] as String?;
+
+  /// Spec type from `data->>'spec_type'` (e.g. 'test_reminder', 'routine_reminder').
+  String? get specType => data['spec_type'] as String?;
+
+  /// Notification category as a normalized enum-like string.
+  NotificationCategory get parsedCategory =>
+      NotificationCategory.fromString(category);
 
   factory AppNotification.fromJson(Map<String, dynamic> json) {
     final raw = json['data'];
@@ -61,6 +85,7 @@ final class AppNotification {
           ? null
           : DateTime.parse(json['read_at'] as String).toLocal(),
       priority: (json['priority'] as String?) ?? 'medium',
+      dedupeKey: json['dedupe_key'] as String?,
     );
   }
 
@@ -74,5 +99,71 @@ final class AppNotification {
     createdAt: createdAt,
     readAt: readAt ?? this.readAt,
     priority: priority,
+    dedupeKey: dedupeKey,
   );
+}
+
+/// Canonical notification categories. Maps to the `notif_category` PostgreSQL
+/// enum. Kept as a Dart enum for type safety; `fromString` is tolerant of
+/// unknown values so the client never drops rows.
+enum NotificationCategory {
+  groupMessage('GROUP_MESSAGE'),
+  groupAnnouncement('GROUP_ANNOUNCEMENT'),
+  groupJoin('GROUP_JOIN'),
+  testReminder('TEST_REMINDER'),
+  testLive('TEST_LIVE'),
+  testCompleted('TEST_COMPLETED'),
+  testInvitation('TEST_INVITATION'),
+  testScheduled('TEST_SCHEDULED'),
+  testStartingSoon('TEST_STARTING_SOON'),
+  testStarted('TEST_STARTED'),
+  testEnded('TEST_ENDED'),
+  resultsAvailable('RESULTS_AVAILABLE'),
+  leaderboardUpdated('LEADERBOARD_UPDATED'),
+  routineReminder('ROUTINE_REMINDER'),
+  routineDue('ROUTINE_DUE'),
+  routineMissed('ROUTINE_MISSED'),
+  routineCompleted('ROUTINE_COMPLETED'),
+  streakMilestone('STREAK_MILESTONE'),
+  groupTestAssigned('GROUP_TEST_ASSIGNED'),
+  groupTestReminder('GROUP_TEST_REMINDER'),
+  contentReviewResult('CONTENT_REVIEW_RESULT'),
+  reportReady('REPORT_READY'),
+  systemNotification('SYSTEM_NOTIFICATION'),
+  groupJoinRequest('GROUP_JOIN_REQUEST'),
+  joinAccepted('JOIN_ACCEPTED'),
+  joinRejected('JOIN_REJECTED'),
+  roleChanged('ROLE_CHANGED'),
+  memberRemoved('MEMBER_REMOVED'),
+  unknown('UNKNOWN');
+
+  const NotificationCategory(this.label);
+  final String label;
+
+  static NotificationCategory fromString(String? value) {
+    if (value == null) return unknown;
+    for (final cat in values) {
+      if (cat.label == value.toUpperCase()) return cat;
+    }
+    return unknown;
+  }
+
+  bool get isGroupRelated => switch (this) {
+    groupMessage || groupAnnouncement || groupJoin || groupTestAssigned ||
+    groupTestReminder || groupJoinRequest || joinAccepted || joinRejected ||
+    roleChanged || memberRemoved => true,
+    _ => false,
+  };
+
+  bool get isTestRelated => switch (this) {
+    testReminder || testLive || testCompleted || testInvitation || testScheduled ||
+    testStartingSoon || testStarted || testEnded || resultsAvailable ||
+    leaderboardUpdated || groupTestAssigned || groupTestReminder => true,
+    _ => false,
+  };
+
+  bool get isRoutineRelated => switch (this) {
+    routineReminder || routineDue || routineMissed || routineCompleted || streakMilestone => true,
+    _ => false,
+  };
 }

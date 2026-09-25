@@ -414,8 +414,9 @@ class FakeQuestionBankRepository implements QuestionBankRepository {
           .toList();
     }
     if (filter.status != null) {
-      filtered =
-          filtered.where((item) => item.status == filter.status).toList();
+      filtered = filtered
+          .where((item) => item.status == filter.status)
+          .toList();
     }
     if (filter.difficulty != null) {
       filtered = filtered
@@ -459,9 +460,7 @@ class FakeQuestionBankRepository implements QuestionBankRepository {
     String? language,
   }) async {
     calls.add('getAvailableCount');
-    return items.values
-        .where((item) => item.status == 'approved')
-        .length;
+    return items.values.where((item) => item.status == 'approved').length;
   }
 
   @override
@@ -600,15 +599,20 @@ class FakeQuestionBankRepository implements QuestionBankRepository {
   @override
   Future<List<QuestionBankItem>> checkDuplicates(String questionText) async {
     calls.add('checkDuplicates');
-    final normalizedKey = questionText
-        .toLowerCase()
-        .trim()
-        .replaceAll(RegExp(r'\s+'), ' ');
+    final normalizedKey = questionText.toLowerCase().trim().replaceAll(
+      RegExp(r'\s+'),
+      ' ',
+    );
 
     return items.values
-        .where((item) =>
-            item.question.toLowerCase().trim().replaceAll(RegExp(r'\s+'), ' ') ==
-            normalizedKey)
+        .where(
+          (item) =>
+              item.question.toLowerCase().trim().replaceAll(
+                RegExp(r'\s+'),
+                ' ',
+              ) ==
+              normalizedKey,
+        )
         .toList();
   }
 
@@ -628,6 +632,50 @@ class FakeQuestionBankRepository implements QuestionBankRepository {
     }
     _cloneCount += count;
     return count;
+  }
+
+  @override
+  Future<QuestionBankSaveResult> saveDrafts({
+    required List<QuestionDraft> drafts,
+    String? subjectId,
+    String? chapterId,
+    String source = 'upload',
+    String status = 'pending_review',
+  }) async {
+    calls.add('saveDrafts');
+    final savedIds = <String>[];
+    for (final d in drafts) {
+      final id = (nextId++).toString();
+      items[id] = QuestionBankItem(
+        id: id,
+        question: d.questionText,
+        options: d.options
+            .map((o) => QuestionBankOption(text: o.text))
+            .toList(),
+        correctOption: d.correctOptionIndex ?? 0,
+        explanation: d.explanation ?? '',
+        subjectId: d.subjectId ?? subjectId,
+        subjectName: '',
+        chapter: '',
+        topicNodeId: d.topicNodeId,
+        difficulty: 'medium',
+        language: 'en',
+        questionType: 'mcq',
+        source: source,
+        createdBy: 'user-1',
+        timesUsed: 0,
+        status: status,
+        createdAt: DateTime.now(),
+      );
+      savedIds.add(id);
+    }
+    return QuestionBankSaveResult(
+      total: drafts.length,
+      savedCount: savedIds.length,
+      savedIds: savedIds,
+      skippedDuplicateCount: 0,
+      skippedDuplicates: const [],
+    );
   }
 
   /// Helper to seed test data.
@@ -764,6 +812,8 @@ class FakeAttemptRepository implements AttemptRepository {
       deadlineAt: a.deadlineAt,
       attemptNumber: a.attemptNumber,
       submittedAt: a.startedAt.add(const Duration(minutes: 20)),
+      integrityEventCount: a.integrityEventCount,
+      autoSubmitThreshold: a.autoSubmitThreshold,
     );
   }
 
@@ -784,6 +834,111 @@ class FakeAttemptRepository implements AttemptRepository {
           maxScore: 5,
         );
   }
+
+  // ── Integrity events (mirrors rpc_record_integrity_event's server
+  // rules: ownership, test-relationship, terminal-state no-op, same-type
+  // dedup within 3s, threshold auto-submit) — a security-analog double,
+  // not a canned stub, matching this file's convention for other fakes. ──
+
+  DateTime Function() now = DateTime.now;
+  Object? failIntegrityWith;
+  final Map<String, ({String type, DateTime at})> _lastEvent = {};
+
+  @override
+  Future<IntegrityEventOutcome> recordIntegrityEvent({
+    required String attemptId,
+    required String testId,
+    required String eventType,
+    Map<String, dynamic>? details,
+  }) async {
+    calls.add('integrity:$attemptId:$eventType');
+    if (failIntegrityWith != null) throw failIntegrityWith!;
+
+    final i = rows.indexWhere(
+      (a) => a.id == attemptId && a.userId == currentUser,
+    );
+    if (i == -1) {
+      throw const DataError(message: 'ATTEMPT_NOT_FOUND');
+    }
+    var a = rows[i];
+    if (a.testId != testId) {
+      throw const DataError(message: 'TEST_MISMATCH');
+    }
+    if (a.status != AttemptStatus.inProgress) {
+      return (
+        eventRecorded: false,
+        integrityEventCount: a.integrityEventCount ?? 0,
+        autoSubmitThreshold: a.autoSubmitThreshold,
+        autoSubmitted: false,
+      );
+    }
+
+    final last = _lastEvent[attemptId];
+    final nowTime = now();
+    if (last != null &&
+        last.type == eventType &&
+        nowTime.difference(last.at) < const Duration(seconds: 3)) {
+      return (
+        eventRecorded: false,
+        integrityEventCount: a.integrityEventCount ?? 0,
+        autoSubmitThreshold: a.autoSubmitThreshold,
+        autoSubmitted: false,
+      );
+    }
+    _lastEvent[attemptId] = (type: eventType, at: nowTime);
+
+    final newCount = (a.integrityEventCount ?? 0) + 1;
+    rows[i] = Attempt(
+      id: a.id,
+      testId: a.testId,
+      userId: a.userId,
+      status: a.status,
+      startedAt: a.startedAt,
+      deadlineAt: a.deadlineAt,
+      attemptNumber: a.attemptNumber,
+      submittedAt: a.submittedAt,
+      integrityEventCount: newCount,
+      autoSubmitThreshold: a.autoSubmitThreshold,
+    );
+    a = rows[i];
+
+    var autoSubmitted = false;
+    final threshold = a.autoSubmitThreshold;
+    if (threshold != null && threshold > 0 && newCount >= threshold) {
+      complete(attemptId, status: AttemptStatus.autoSubmitted);
+      autoSubmitted = true;
+    }
+
+    return (
+      eventRecorded: true,
+      integrityEventCount: newCount,
+      autoSubmitThreshold: threshold,
+      autoSubmitted: autoSubmitted,
+    );
+  }
+
+  // ── Disclaimer acceptance: own-attempt-only, set-once (mirrors
+  // rpc_record_disclaimer_acceptance's WHERE ... disclaimer_accepted_at IS
+  // NULL idempotency). ──
+  final Map<String, ({String version, String language})> disclaimerAcceptances =
+      {};
+
+  @override
+  Future<void> recordDisclaimerAcceptance({
+    required String attemptId,
+    required String version,
+    required String language,
+  }) async {
+    calls.add('disclaimer:$attemptId:$version:$language');
+    final owned = rows.any((a) => a.id == attemptId && a.userId == currentUser);
+    if (!owned) {
+      throw const DataError(message: 'ATTEMPT_NOT_FOUND');
+    }
+    disclaimerAcceptances.putIfAbsent(
+      attemptId,
+      () => (version: version, language: language),
+    );
+  }
 }
 
 class FakeResultRepository implements ResultRepository {
@@ -795,7 +950,10 @@ class FakeResultRepository implements ResultRepository {
   @override
   Future<Result?> byAttempt(String attemptId) async {
     calls.add('byAttempt:$attemptId');
-    return byAttemptId[attemptId];
+    final r = byAttemptId[attemptId];
+    if (r == null) return null;
+    if (!_resultVisible(r.testId, r.userId)) return null;
+    return r;
   }
 
   @override
@@ -832,7 +990,8 @@ class FakeResultRepository implements ResultRepository {
     return groups!.hasPermission(g, p);
   }
 
-  bool _isCreator(String testId) => tests?.rows[testId]?.createdBy == currentUser;
+  bool _isCreator(String testId) =>
+      tests?.rows[testId]?.createdBy == currentUser;
 
   @override
   Future<ResultBatch> generateResults(String testId) async {
@@ -861,6 +1020,91 @@ class FakeResultRepository implements ResultRepository {
     return b;
   }
 
+  /// Test-only convenience: seeds an already-published, completed batch for
+  /// [testId] directly (skipping the generate step) so visibility tests can
+  /// assert post-publish behavior without re-testing the generate flow.
+  void publish(String testId) {
+    final existing = batchByTest[testId];
+    batchByTest[testId] = ResultBatch(
+      id: existing?.id ?? 'b-$testId',
+      testId: testId,
+      status: BatchStatus.completed,
+      reportsDone: existing?.reportsDone,
+      reportsTotal: existing?.reportsTotal,
+      publishedAt: DateTime(2026, 9, 22, 12),
+      publishedBy: currentUser,
+    );
+  }
+
+  Object? failPublishWith;
+
+  /// Mirrors the proposed `rpc_publish_results`: same authorization as
+  /// generate, requires a completed/partially-completed batch, idempotent.
+  @override
+  Future<ResultBatch> publishResults(String testId) async {
+    calls.add('publish:$testId');
+    if (failPublishWith != null) throw failPublishWith!;
+    if (groups == null || tests == null) {
+      final b = batch ?? batchByTest[testId];
+      if (b == null) {
+        throw const DataError(message: 'RESULTS_NOT_GENERATED');
+      }
+      final published = ResultBatch(
+        id: b.id,
+        testId: b.testId,
+        status: b.status,
+        publishedAt: b.publishedAt ?? DateTime(2026, 9, 22, 12),
+        reused: b.publishedAt != null,
+      );
+      batch = published;
+      return published;
+    }
+    if (!_isCreator(testId) && !_has(testId, GroupPermission.generateResults)) {
+      throw const DataError(message: 'GENERATE_RESULTS_FORBIDDEN');
+    }
+    final existing = batchByTest[testId];
+    if (existing == null ||
+        !(existing.isCompleted || existing.isPartiallyCompleted)) {
+      throw const DataError(message: 'RESULTS_NOT_GENERATED');
+    }
+    if (existing.isPublished) {
+      return ResultBatch(
+        id: existing.id,
+        testId: existing.testId,
+        status: existing.status,
+        publishedAt: existing.publishedAt,
+        reused: true,
+      );
+    }
+    final published = ResultBatch(
+      id: existing.id,
+      testId: existing.testId,
+      requestedBy: existing.requestedBy,
+      status: existing.status,
+      reportsDone: existing.reportsDone,
+      reportsTotal: existing.reportsTotal,
+      completedAt: existing.completedAt,
+      publishedAt: DateTime(2026, 9, 22, 12),
+      publishedBy: currentUser,
+    );
+    batchByTest[testId] = published;
+    return published;
+  }
+
+  /// Own-row visibility for a group test additionally requires the test's
+  /// batch to be published — mirrors the live `own results` RLS gate added
+  /// alongside `rpc_publish_results`. VIEW_GROUP_ANALYTICS holders are
+  /// unaffected (same asymmetry as the live "analytics holders" policy).
+  /// Self/practice tests (no `groups`/`tests` attached, or `groupId` null)
+  /// are never gated.
+  bool _resultVisible(String testId, String ownerId) {
+    if (groups == null || tests == null) return true;
+    if (_groupOf(testId) == null) return true;
+    if (_has(testId, GroupPermission.viewGroupAnalytics)) return true;
+    if (ownerId != currentUser) return false;
+    return batchByTest[testId]?.isPublished ?? false;
+  }
+
   @override
   Future<List<Result>> resultsForTest(String testId) async {
     calls.add('results:$testId');
@@ -869,6 +1113,7 @@ class FakeResultRepository implements ResultRepository {
     if (_has(testId, GroupPermission.viewGroupAnalytics)) {
       return [...rows]..sort((a, b) => (b.score ?? 0).compareTo(a.score ?? 0));
     }
+    if (!_resultVisible(testId, currentUser)) return const [];
     return rows.where((r) => r.userId == currentUser).toList();
   }
 
@@ -882,12 +1127,27 @@ class FakeResultRepository implements ResultRepository {
     final rows = resultsByTest[testId] ?? const [];
     if (groups != null) {
       final g = _groupOf(testId);
-      final member = g != null &&
+      final member =
+          g != null &&
           (groups!.groups[g]?.roles.containsKey(currentUser) ?? false);
       final participant = rows.any((r) => r.userId == currentUser);
       if (!_isCreator(testId) && !member && !participant) return const [];
+      // Same publish gate as `own results`, with the same manager preview
+      // asymmetry: the creator and VIEW_GROUP_ANALYTICS holders may see the
+      // leaderboard before publish; everyone else cannot.
+      if (g != null &&
+          !_isCreator(testId) &&
+          !_has(testId, GroupPermission.viewGroupAnalytics) &&
+          !(batchByTest[testId]?.isPublished ?? false)) {
+        return const [];
+      }
     }
-    final sorted = [...rows]..sort((a, b) => (b.score ?? double.negativeInfinity).compareTo(a.score ?? double.negativeInfinity));
+    final sorted = [...rows]
+      ..sort(
+        (a, b) => (b.score ?? double.negativeInfinity).compareTo(
+          a.score ?? double.negativeInfinity,
+        ),
+      );
     var rank = 0;
     double? prev;
     return [

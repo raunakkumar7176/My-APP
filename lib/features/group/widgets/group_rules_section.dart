@@ -10,10 +10,7 @@ import '../state/group_hub_controller.dart';
 /// group settings screen. The live RLS is the boundary: member SELECT,
 /// GROUP_SETTINGS-or-owner INSERT/UPDATE/DELETE. UI visibility is UX only.
 class GroupRulesSection extends StatelessWidget {
-  const GroupRulesSection({
-    required this.controller,
-    super.key,
-  });
+  const GroupRulesSection({required this.controller, super.key});
 
   final GroupHubController controller;
 
@@ -164,7 +161,9 @@ class GroupRulesSection extends StatelessWidget {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          done ? 'Rule added.' : (this.controller.error ?? 'Could not add rule.'),
+          done
+              ? 'Rule added.'
+              : (this.controller.error ?? 'Could not add rule.'),
         ),
         backgroundColor: done ? null : AppColors.error,
       ),
@@ -235,14 +234,14 @@ class GroupRulesSection extends StatelessWidget {
       ),
     );
     if (confirmed != true || !context.mounted) return;
-    final done = await this.controller.deleteRule(rule);
+    final done = await controller.deleteRule(rule);
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
           done
               ? 'Rule deleted.'
-              : (this.controller.error ?? 'Could not delete rule.'),
+              : (controller.error ?? 'Could not delete rule.'),
         ),
         backgroundColor: done ? null : AppColors.error,
       ),

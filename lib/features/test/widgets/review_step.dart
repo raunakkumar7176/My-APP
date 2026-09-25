@@ -6,6 +6,7 @@ import '../../../core/models/question.dart';
 import '../domain/publish_readiness.dart';
 import '../domain/test_kind.dart';
 import '../models/question_draft.dart';
+import 'section_card.dart';
 import 'test_formatters.dart';
 
 /// Review step (R4 restart): renders the shared [PublishReadiness] result
@@ -58,7 +59,11 @@ class ReviewStep extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
     final ready = readiness.where((i) => i.isValid).length;
+    final allReady = ready == readiness.length;
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -66,76 +71,128 @@ class ReviewStep extends StatelessWidget {
         children: [
           Text(
             'Review Test',
-            style: Theme.of(context).textTheme.titleLarge
-                ?.copyWith(fontWeight: FontWeight.w600),
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
           ),
-          const SizedBox(height: 16),
-          _card(context, 'Summary', [
-            _row(context, 'Title', title.isEmpty ? '--' : title),
-            _row(context, 'Test Type', kind.label),
-            _row(context, 'Duration', TestFormatters.duration(durationSec)),
-            _row(
-              context,
-              'Marks per question',
-              marksPerQuestion?.toString() ?? '--',
+          const SizedBox(height: 4),
+          Text(
+            'Review your test configuration before publishing.',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: colorScheme.onSurfaceVariant,
             ),
-            _row(
-              context,
-              'Negative marks',
-              negativeMarks?.toString() ?? 'None',
-            ),
-            if (startsAt != null)
-              _row(context, 'Starts', TestFormatters.dateTime(startsAt)),
-            if (endsAt != null)
-              _row(
-                context,
-                'Ends (calculated)',
-                TestFormatters.dateTime(endsAt),
+          ),
+          const SizedBox(height: 20),
+
+          // ── Summary Card ──
+          SectionCard(
+            title: 'Test Summary',
+            children: [
+              _SummaryRow(label: 'Title', value: title.isEmpty ? '--' : title),
+              _SummaryRow(label: 'Type', value: kind.label),
+              _SummaryRow(
+                label: 'Duration',
+                value: TestFormatters.duration(durationSec),
               ),
-            _row(
-              context,
-              'Questions',
-              '${serverQuestions.length + localQuestions.length}',
-            ),
-            _row(context, 'Syllabus nodes', '$syllabusCount'),
-            for (final (label, value) in extraRows) _row(context, label, value),
-          ]),
-          _card(context, 'Publish readiness ($ready / ${readiness.length})', [
-            for (final item in readiness)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(
-                      item.isValid ? Icons.check_circle : Icons.error_outline,
-                      size: 18,
-                      color: item.isValid ? AppColors.success : AppColors.error,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(item.label),
-                          if (!item.isValid && item.reason != null)
-                            Text(
-                              item.reason!,
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(color: AppColors.error),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ],
+              _SummaryRow(
+                label: 'Marks per question',
+                value: marksPerQuestion?.toString() ?? '--',
+              ),
+              _SummaryRow(
+                label: 'Negative marks',
+                value: negativeMarks?.toString() ?? 'None',
+              ),
+              _SummaryRow(
+                label: 'Questions',
+                value: '${serverQuestions.length + localQuestions.length}',
+              ),
+              _SummaryRow(
+                label: 'Syllabus topics',
+                value: '$syllabusCount',
+              ),
+              if (startsAt != null)
+                _SummaryRow(
+                  label: 'Starts',
+                  value: TestFormatters.dateTime(startsAt),
+                ),
+              if (endsAt != null)
+                _SummaryRow(
+                  label: 'Ends (calculated)',
+                  value: TestFormatters.dateTime(endsAt),
+                ),
+              for (final (label, value) in extraRows)
+                _SummaryRow(label: label, value: value),
+            ],
+          ),
+
+          // ── Readiness Card ──
+          SectionCard(
+            title: 'Publish Readiness',
+            subtitle: '$ready / ${readiness.length} checks passed',
+            trailing: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: allReady
+                    ? colorScheme.primaryContainer
+                    : colorScheme.errorContainer,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                allReady ? 'Ready' : 'Not Ready',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: allReady
+                      ? colorScheme.onPrimaryContainer
+                      : colorScheme.onErrorContainer,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
-          ]),
+            ),
+            children: [
+              for (final item in readiness)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        item.isValid
+                            ? Icons.check_circle
+                            : Icons.error_outline,
+                        size: 18,
+                        color: item.isValid
+                            ? AppColors.success
+                            : AppColors.error,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              item.label,
+                              style: theme.textTheme.bodyMedium,
+                            ),
+                            if (!item.isValid && item.reason != null)
+                              Text(
+                                item.reason!,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: AppColors.error,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+
+          // ── Approval Status (server questions) ──
           if (serverQuestions.isNotEmpty)
-            _card(
-              context,
-              'Approval status',
-              [for (final q in serverQuestions) _approvalTile(context, q)],
+            SectionCard(
+              title: 'Approval Status',
+              subtitle: '$_pending question${_pending == 1 ? '' : 's'} pending',
               trailing: _pending > 0
                   ? TextButton.icon(
                       onPressed: busy ? null : () => _approveAll(context),
@@ -143,31 +200,44 @@ class ReviewStep extends StatelessWidget {
                       label: const Text('Approve All'),
                     )
                   : null,
+              children: [
+                for (final q in serverQuestions) _approvalTile(context, q),
+              ],
             ),
+
+          // ── Local Questions ──
           if (localQuestions.isNotEmpty)
-            _card(context, 'New questions (approved on publish)', [
-              for (final d in localQuestions)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Row(
-                    children: [
-                      Icon(
-                        d.isValid ? Icons.check_circle : Icons.error_outline,
-                        size: 18,
-                        color: d.isValid ? AppColors.success : AppColors.error,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          d.questionText,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
+            SectionCard(
+              title: 'New Questions',
+              subtitle: 'Approved automatically on publish',
+              children: [
+                for (final d in localQuestions)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(
+                      children: [
+                        Icon(
+                          d.isValid
+                              ? Icons.check_circle
+                              : Icons.error_outline,
+                          size: 18,
+                          color: d.isValid
+                              ? AppColors.success
+                              : AppColors.error,
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            d.questionText,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-            ]),
+              ],
+            ),
         ],
       ),
     );
@@ -203,6 +273,8 @@ class ReviewStep extends StatelessWidget {
 
   Widget _approvalTile(BuildContext context, Question q) {
     final approved = q.status == PublishReadiness.approvedStatus;
+    final theme = Theme.of(context);
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
@@ -224,7 +296,7 @@ class ReviewStep extends StatelessWidget {
                 ),
                 Text(
                   approved ? 'Approved' : 'Pending Review',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  style: theme.textTheme.bodySmall?.copyWith(
                     color: approved ? AppColors.success : Colors.orange,
                     fontWeight: FontWeight.w500,
                   ),
@@ -241,53 +313,37 @@ class ReviewStep extends StatelessWidget {
       ),
     );
   }
+}
 
-  Widget _card(
-    BuildContext context,
-    String title,
-    List<Widget> children, {
-    Widget? trailing,
-  }) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    title,
-                    style: Theme.of(context).textTheme.titleSmall
-                        ?.copyWith(fontWeight: FontWeight.w600),
-                  ),
-                ),
-                ?trailing,
-              ],
-            ),
-            const SizedBox(height: 8),
-            ...children,
-          ],
-        ),
-      ),
-    );
-  }
+class _SummaryRow extends StatelessWidget {
+  const _SummaryRow({required this.label, required this.value});
 
-  Widget _row(BuildContext context, String label, String value) {
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
+      padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: Theme.of(context).textTheme.bodyMedium),
+          Text(
+            label,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(width: 16),
           Flexible(
             child: Text(
               value,
               textAlign: TextAlign.end,
-              style: Theme.of(context).textTheme.bodyMedium
-                  ?.copyWith(fontWeight: FontWeight.w500),
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
         ],

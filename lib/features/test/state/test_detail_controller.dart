@@ -328,6 +328,28 @@ class TestDetailController extends DisposableNotifier {
     return (started: started, questions: qs, test: _test!);
   }
 
+  /// Records that the student accepted the pre-test disclaimer for
+  /// [attemptId] (called only after the attempt itself already exists —
+  /// the disclaimer is shown and its checkbox gated entirely client-side
+  /// before that, so declining or backing out never creates an attempt).
+  /// Best-effort: a failure here must never block the student from
+  /// entering an attempt the server has already created — it only logs.
+  Future<void> acceptDisclaimer({
+    required String attemptId,
+    required String version,
+    required String language,
+  }) async {
+    try {
+      await _attempts.recordDisclaimerAcceptance(
+        attemptId: attemptId,
+        version: version,
+        language: language,
+      );
+    } catch (e) {
+      AppLogger.warning('recordDisclaimerAcceptance($attemptId) failed: $e');
+    }
+  }
+
   /// Question paper for the creator: questions via the safe RPC only
   /// (server-authorized, no `correct_option`). Throws [AppError] on
   /// permission/network failure and a [DataError] when there are no questions.

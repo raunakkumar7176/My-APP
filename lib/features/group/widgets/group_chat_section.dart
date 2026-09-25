@@ -8,12 +8,20 @@ import '../state/group_hub_controller.dart';
 /// (oldest → newest), "Load earlier", refresh, and a send field. Every
 /// member of the group may read and send — the live RLS (`fn_is_member`
 /// SELECT; `sender_id = auth.uid() AND fn_is_member` INSERT) is the boundary.
-/// No realtime: the list is server-backed and refreshed on demand / after
-/// every send.
+/// Realtime: new messages from other members appear here without a manual
+/// refresh — the controller subscribes once on load (see
+/// `GroupHubController._subscribeRealtime`); this widget only renders
+/// whatever is currently in `controller.messages`.
 class GroupChatSection extends StatefulWidget {
-  const GroupChatSection({required this.controller, super.key});
+  const GroupChatSection({required this.controller, this.onOpenFullScreen, super.key});
 
   final GroupHubController controller;
+
+  /// Optional — when provided, shows an "open full screen" affordance that
+  /// invokes this instead of (or alongside) using the section inline. Null
+  /// hides the button, so every existing embedding of this widget (and its
+  /// tests) is unaffected.
+  final VoidCallback? onOpenFullScreen;
 
   @override
   State<GroupChatSection> createState() => _GroupChatSectionState();
@@ -64,6 +72,13 @@ class _GroupChatSectionState extends State<GroupChatSection> {
                 style: theme.textTheme.bodySmall,
               ),
             const Spacer(),
+            if (widget.onOpenFullScreen != null)
+              IconButton(
+                key: const Key('open_discussion_fullscreen'),
+                tooltip: 'Open Discussion',
+                icon: const Icon(Icons.open_in_full, size: 18),
+                onPressed: widget.onOpenFullScreen,
+              ),
             IconButton(
               key: const Key('messages_refresh'),
               tooltip: 'Refresh chat',
@@ -178,6 +193,44 @@ class _GroupChatSectionState extends State<GroupChatSection> {
             m.body,
             style: theme.textTheme.bodySmall,
             textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    }
+    if (m.isDeleted) {
+      return Padding(
+        key: Key('message_${m.id}'),
+        padding: const EdgeInsets.symmetric(vertical: 3),
+        child: Align(
+          alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 320),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  key: Key('message_sender_${m.id}'),
+                  style: theme.textTheme.labelSmall,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Message deleted',
+                  key: Key('deleted_${m.id}'),
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontStyle: FontStyle.italic,
+                    color: theme.colorScheme.outline,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(_when(m.createdAt), style: theme.textTheme.bodySmall),
+              ],
+            ),
           ),
         ),
       );

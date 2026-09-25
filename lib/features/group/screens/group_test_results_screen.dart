@@ -92,6 +92,38 @@ class _GroupTestResultsScreenState extends State<GroupTestResultsScreen> {
     _snack(ok ? 'Results generated.' : (_c.error ?? 'Could not generate results.'), error: !ok);
   }
 
+  Future<void> _publish() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Publish Result?'),
+        content: const Text(
+          'क्या आप इस टेस्ट का अंतिम परिणाम पूरे eligible group के लिए प्रकाशित करना '
+          'चाहते हैं?\n\nपरिणाम प्रकाशित होने के बाद सभी eligible students को उनका result '
+          'उपलब्ध होगा।\n\n'
+          'Are you sure you want to publish the final result for this test?\n\n'
+          'After publishing, the result will become available to all eligible students.',
+        ),
+        actions: [
+          TextButton(
+            key: const Key('publish_cancel'),
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const Key('confirm_publish_results'),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Publish Result'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final ok = await _c.publishResults();
+    if (!mounted) return;
+    _snack(ok ? 'Result published.' : (_c.error ?? 'Could not publish result.'), error: !ok);
+  }
+
   Future<void> _requestCoach() async {
     final ok = await _c.requestCoachReports();
     if (!mounted) return;
@@ -196,7 +228,11 @@ class _GroupTestResultsScreenState extends State<GroupTestResultsScreen> {
           child: Text(
             _c.hasAnyResults
                 ? 'You have no stored result for this test.'
-                : 'No results yet. Results appear after a manager generates them.',
+                : 'Your test has been submitted successfully. '
+                      'Result will be available after publication.\n'
+                      'आपका टेस्ट सफलतापूर्वक जमा हो गया है। '
+                      'परिणाम प्रकाशित होने के बाद उपलब्ध होगा।',
+            key: const Key('result_not_published_note'),
             style: theme.textTheme.bodyMedium,
           ),
         ),
@@ -274,7 +310,7 @@ class _GroupTestResultsScreenState extends State<GroupTestResultsScreen> {
       child: FilledButton.icon(
         key: const Key('open_leaderboard'),
         onPressed: () => context.push(
-          '/groups/${widget.groupId}/tests/${widget.testId}/leaderboard',
+          '/groups/${widget.groupId}/tests/${widget.testId}/results/leaderboard',
         ),
         icon: const Icon(Icons.leaderboard_outlined, size: 18),
         label: const Text('View Leaderboard'),
@@ -407,6 +443,16 @@ class _GroupTestResultsScreenState extends State<GroupTestResultsScreen> {
                       '${b.completedAt != null ? ' · ${TestFormatters.dateTime(b.completedAt)}' : ''}',
             key: const Key('batch_status'),
           ),
+          Text(
+            b?.isPublished == true
+                ? 'Result Published'
+                : 'Result Pending Publication',
+            key: const Key('publish_status'),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: b?.isPublished == true ? AppColors.success : null,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
           if (job != null)
             Text(
               'AI coach reports: ${job.status} · ${job.reportsDone}/${job.reportsTotal} stored',
@@ -422,6 +468,16 @@ class _GroupTestResultsScreenState extends State<GroupTestResultsScreen> {
                 onPressed: busy ? null : _generate,
                 icon: const Icon(Icons.calculate_outlined, size: 18),
                 label: Text(b == null ? 'Generate results' : 'Re-run scoring'),
+              ),
+              // Publish Result is only enabled once generation has finished
+              // and the batch is not already published — same single-flight
+              // `busy` guard prevents a duplicate click, and the server is
+              // independently idempotent regardless.
+              FilledButton.icon(
+                key: const Key('publish_results_button'),
+                onPressed: busy || b?.canPublish != true ? null : _publish,
+                icon: const Icon(Icons.publish_outlined, size: 18),
+                label: const Text('Publish Result'),
               ),
               OutlinedButton.icon(
                 key: const Key('request_coach_reports_button'),
@@ -505,7 +561,9 @@ class _GroupTestResultsScreenState extends State<GroupTestResultsScreen> {
               const SizedBox(height: 16),
               action ??
                   FilledButton(
-                    onPressed: () => context.go('/groups/${widget.groupId}/tests'),
+                    onPressed: () => context.canPop()
+                        ? context.pop()
+                        : context.go('/groups/${widget.groupId}/tests'),
                     child: const Text('Back to group tests'),
                   ),
             ],

@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import '../../../core/errors/app_error.dart';
 import '../../../core/logging/app_logger.dart';
+import '../../../core/models/app_notification.dart';
 import '../../../core/models/group.dart';
 import '../../../core/models/group_announcement.dart';
 import '../../../core/models/group_invitation.dart';
@@ -7,7 +10,10 @@ import '../../../core/models/group_join_request.dart';
 import '../../../core/models/group_member.dart';
 import '../../../core/models/group_message.dart';
 import '../../../core/models/group_rule.dart';
+import '../../../core/models/test.dart';
 import '../../../core/services/auth_service.dart';
+import '../../../core/services/push_notification_service.dart';
+import '../../test/data/test_repository.dart';
 import '../../test/state/disposable_notifier.dart';
 import '../data/group_repository.dart';
 import '../data/notification_repository.dart';
@@ -16,6 +22,7 @@ import '../domain/group_errors.dart';
 import '../domain/group_privacy.dart';
 import '../domain/group_permission.dart';
 import '../domain/group_role.dart';
+import '../domain/group_test_management.dart';
 
 /// One group's core state: profile, roster, the caller's own role, and the
 /// membership mutations of G1 (leave, remove member, edit basics).
@@ -29,17 +36,27 @@ class GroupHubController extends DisposableNotifier {
     GroupRepository? repository,
     String? currentUserId,
     this.notifications,
+    this.tests,
+    DateTime Function()? now,
   }) : _repo = repository ?? const SupabaseGroupRepository(),
-       _currentUserId = currentUserId ?? AuthService.currentUser?.id;
+       _currentUserId = currentUserId ?? AuthService.currentUser?.id,
+       _now = now ?? DateTime.now;
 
   final String groupId;
   final GroupRepository _repo;
   final String? _currentUserId;
+  final DateTime Function() _now;
 
   /// G16: the live notification inbox, when the hub is wired with one (the
   /// hub screen passes the Supabase repository; tests inject a fake or
   /// nothing). Null means no badge, never a guessed count.
   final NotificationRepository? notifications;
+
+  /// Overview's upcoming-test preview source, when the hub is wired with
+  /// one (the hub screen passes the Supabase repository; tests inject a
+  /// fake or nothing). Null means no preview, never a guessed test list —
+  /// same nullable-and-skip pattern as [notifications].
+  final TestRepository? tests;
 
   /// The data source this hub uses, so flows opened from it (invite sheet)
   /// share it instead of constructing a second one.
@@ -120,6 +137,116 @@ class GroupHubController extends DisposableNotifier {
   bool get hasOlderMessages => _hasOlder;
   bool get hasMessages => _messages.isNotEmpty;
 
+  // ── Realtime (Group Hub redesign): live INSERT/UPDATE on group_messages,
+  // via Supabase Realtime (already publishes this table server-side — see
+  // migrations 0037/0049 — this wiring is the first client-side use of
+  // it). One subscription per controller instance, started once the group
+  // has loaded, stopped exactly once in [dispose]. ──
+  GroupMessageSubscription? _messageSub;
+  bool _realtimeConnected = false;
+
+  /// False while the channel is joining/reconnecting — drives a small
+  /// "Reconnecting…" indicator; never a reason to hide messages already
+  /// loaded, only to explain why new ones might be delayed.
+  bool get isRealtimeConnected => _realtimeConnected;
+
+  void _subscribeRealtime() {
+    if (_messageSub != null) return; // already subscribed for this instance
+    _messageSub = _repo.subscribeToMessages(
+      groupId: groupId,
+      onInsert: _onRealtimeInsert,
+      onUpdate: _onRealtimeUpdate,
+      onConnectionChange: (connected) {
+        _realtimeConnected = connected;
+        notifyListeners();
+      },
+    );
+  }
+
+  /// Upserts `message_reads.last_read_at = now()` for this group. Best
+  /// effort: a failure here must never surface as a hub-load error, since
+  /// unread state is a list-screen convenience, not something the hub
+  /// itself displays.
+  Future<void> _markRead() async {
+    try {
+      await _repo.markGroupRead(groupId);
+    } catch (e, st) {
+      AppLogger.warning('markGroupRead($groupId) failed: $e', error: e, stackTrace: st);
+    }
+  }
+
+  /// Merges a realtime-delivered message into the loaded window, de-duped
+  /// by id — the same row can otherwise arrive twice (once from this
+  /// device's own post-send `_loadMessages()` re-read, once from the
+  /// realtime echo of that same INSERT) without ever becoming a visible
+  /// duplicate bubble.
+  void _onRealtimeInsert(GroupMessage message) {
+    if (message.groupId != groupId) return; // defensive; filter already scopes this
+    if (_messages.any((m) => m.id == message.id)) return;
+    _messages = [..._messages, message]
+      ..sort((a, b) {
+        final byTime = a.createdAt.compareTo(b.createdAt);
+        return byTime != 0 ? byTime : a.id.compareTo(b.id);
+      });
+    notifyListeners();
+  }
+
+  /// Applies a realtime UPDATE (currently only soft-delete sets
+  /// `deleted_at`) to the matching loaded message, in place.
+  void _onRealtimeUpdate(GroupMessage message) {
+    if (message.groupId != groupId) return;
+    final idx = _messages.indexWhere((m) => m.id == message.id);
+    if (idx == -1) return; // not in the currently-loaded window; ignore
+    _messages = [
+      for (var i = 0; i < _messages.length; i++)
+        if (i == idx) message else _messages[i],
+    ];
+    notifyListeners();
+  }
+
+  Future<void> _unsubscribeRealtime() async {
+    final sub = _messageSub;
+    _messageSub = null;
+    if (sub != null) {
+      try {
+        await sub.cancel();
+      } catch (e) {
+        AppLogger.warning('Realtime unsubscribe failed (non-fatal): $e');
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    unawaited(_unsubscribeRealtime());
+    _clearActiveGroupForPush();
+    super.dispose();
+  }
+
+  /// Tells [PushNotificationService] this group's chat is on screen, so a
+  /// foreground `GROUP_MESSAGE` push about it is skipped (realtime already
+  /// shows it here) — purely a client-side toast-dedupe convenience, never
+  /// a substitute for the server's own notification rules. Best effort:
+  /// this must never affect the hub itself, so any failure (e.g. the
+  /// plugin isn't available in a test host) is swallowed.
+  void _setActiveGroupForPush() {
+    try {
+      PushNotificationService.instance.activeGroupId = groupId;
+    } catch (e) {
+      AppLogger.warning('Could not set active group for push dedupe: $e');
+    }
+  }
+
+  void _clearActiveGroupForPush() {
+    try {
+      if (PushNotificationService.instance.activeGroupId == groupId) {
+        PushNotificationService.instance.activeGroupId = null;
+      }
+    } catch (e) {
+      AppLogger.warning('Could not clear active group for push dedupe: $e');
+    }
+  }
+
   // ── G16: notification unread badge ──
   int? _unreadNotifications;
 
@@ -141,6 +268,74 @@ class GroupHubController extends DisposableNotifier {
       // A badge is never worth an error state; the inbox screen reports.
       AppLogger.warning('Unread notification count unavailable: $e');
       _unreadNotifications = null;
+    }
+  }
+
+  // ── Overview: upcoming-test preview + recent activity ──
+  // Both best-effort, additive to the existing hub load — a failure in
+  // either never blocks the hub itself from opening (same pattern as
+  // `_loadUnreadNotifications`).
+
+  List<Test> _groupTests = const [];
+  List<AppNotification>? _recentActivity;
+
+  /// The next test in [GroupTestSection.upcoming] (earliest `startsAt`
+  /// first), or null when there is none. Reuses the exact same section
+  /// logic `GroupTestsController`/`group_tests_screen.dart` use — no
+  /// second definition of "upcoming".
+  Test? get upcomingTest {
+    final now = _now();
+    final upcoming = [
+      for (final t in _groupTests)
+        if (GroupTestManagement.sectionFor(t, now) == GroupTestSection.upcoming)
+          t,
+    ]..sort((a, b) {
+      final as_ = a.startsAt;
+      final bs = b.startsAt;
+      if (as_ == null && bs == null) return 0;
+      if (as_ == null) return 1;
+      if (bs == null) return -1;
+      return as_.compareTo(bs);
+    });
+    return upcoming.isEmpty ? null : upcoming.first;
+  }
+
+  int _countInSection(GroupTestSection s) {
+    final now = _now();
+    return _groupTests
+        .where((t) => GroupTestManagement.sectionFor(t, now) == s)
+        .length;
+  }
+
+  int get liveTestCount => _countInSection(GroupTestSection.live);
+  int get upcomingTestCount => _countInSection(GroupTestSection.upcoming);
+  int get previousTestCount => _countInSection(GroupTestSection.previous);
+
+  Future<void> _loadGroupTests() async {
+    final repo = tests;
+    if (repo == null) return;
+    try {
+      _groupTests = await repo.listForGroup(groupId);
+    } catch (e) {
+      AppLogger.warning('Group tests preview unavailable: $e');
+      _groupTests = const [];
+    }
+  }
+
+  /// The caller's own recent notifications for this group (existing
+  /// `notifications.forGroup`, own rows only — see that method's doc for
+  /// why this is a personal activity view, not a shared group timeline: no
+  /// member-readable cross-user audit log exists for group events today).
+  List<AppNotification>? get recentActivity => _recentActivity;
+
+  Future<void> _loadRecentActivity() async {
+    final repo = notifications;
+    if (repo == null) return;
+    try {
+      _recentActivity = await repo.forGroup(groupId, limit: 5);
+    } catch (e) {
+      AppLogger.warning('Recent activity unavailable: $e');
+      _recentActivity = null;
     }
   }
 
@@ -440,6 +635,20 @@ class GroupHubController extends DisposableNotifier {
         await _loadMessages();
         // G16: unread badge (own `notifications` rows; one count request).
         await _loadUnreadNotifications();
+        // Overview: upcoming-test preview + recent (own) activity — both
+        // best-effort, reusing the existing tests/notifications RPCs.
+        await _loadGroupTests();
+        await _loadRecentActivity();
+        // Realtime: start (or, on a refresh, no-op — already subscribed)
+        // once membership is confirmed, so a message from another member
+        // appears here without any manual refresh.
+        _subscribeRealtime();
+        // Unread: opening the hub is "read" for chat purposes (0027's
+        // `message_reads`). Fire-and-forget — the groups list re-derives
+        // unread counts itself on its own next load, and a failure here
+        // must never block the hub from opening.
+        unawaited(_markRead());
+        _setActiveGroupForPush();
       }
     } on AppError catch (e) {
       _error = e.message;
@@ -624,6 +833,35 @@ class GroupHubController extends DisposableNotifier {
     final ok = await _run(GroupErrorContext.leave, () => _repo.leave(groupId));
     if (ok) {
       _leftGroup = true;
+      _accessDenied = true;
+      _group = null;
+      _members = const [];
+      notifyListeners();
+    }
+    return ok;
+  }
+
+  /// True only for a solo group — its owner, with no other member rows.
+  /// Mirrors `rpc_delete_group`'s own check exactly; the server re-verifies
+  /// regardless (this only decides whether to offer the action).
+  bool get canDeleteGroup =>
+      _group != null && isOwner && _members.every((m) => m.userId == _currentUserId);
+
+  /// Deletes a solo group (Phase 7). Hard delete — see
+  /// `migrations/GROUP_HUB_rpc_delete_group.sql` for why `groups` uses hard
+  /// delete rather than the soft-delete pattern `tests` uses.
+  Future<bool> deleteGroup() async {
+    if (!canDeleteGroup) {
+      _error = 'This group still has other members. Remove them first, or '
+          'transfer ownership, before deleting it.';
+      notifyListeners();
+      return false;
+    }
+    final ok = await _run(
+      GroupErrorContext.update,
+      () => _repo.deleteGroup(groupId),
+    );
+    if (ok) {
       _accessDenied = true;
       _group = null;
       _members = const [];

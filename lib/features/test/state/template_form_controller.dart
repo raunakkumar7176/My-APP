@@ -1,5 +1,4 @@
 import '../../../core/errors/app_error.dart';
-import '../../../core/logging/app_logger.dart';
 import '../../../core/models/test_template.dart';
 import '../data/test_template_repository.dart';
 import 'disposable_notifier.dart';
@@ -59,7 +58,8 @@ class TemplateFormController extends DisposableNotifier {
 
   void setTitle(String v) => _set(() => title = v);
   void setDescription(String v) => _set(() => description = v);
-  void setConfiguration(Map<String, dynamic> v) => _set(() => configuration = v);
+  void setConfiguration(Map<String, dynamic> v) =>
+      _set(() => configuration = v);
 
   void presetFromConfiguration({
     required String templateTitle,

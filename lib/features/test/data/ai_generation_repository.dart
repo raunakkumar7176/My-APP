@@ -1,5 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:http/http.dart' as http;
 
 import '../../../app/app_config.dart';
@@ -46,21 +49,19 @@ class AiGeneratedQuestion {
   bool get isInvalid => status == 'INVALID';
 
   /// Convert to a QuestionDraft for insertion into the test creation flow.
-  QuestionDraft toQuestionDraft({
-    required int marks,
-    String? negativeMarks,
-  }) {
+  QuestionDraft toQuestionDraft({required int marks, String? negativeMarks}) {
     return QuestionDraft(
       questionText: question,
-      options: options
-          .map((o) => QuestionOptionDraft(text: o))
-          .toList(),
+      options: options.map((o) => QuestionOptionDraft(text: o)).toList(),
       correctOptionIndex: correctOption,
       explanation: explanation,
       difficulty: _parseDifficulty(difficulty),
       marks: marks,
-      negativeMarks: negativeMarks != null ? double.tryParse(negativeMarks) : null,
+      negativeMarks: negativeMarks != null
+          ? double.tryParse(negativeMarks)
+          : null,
       language: language,
+      source: 'ai',
     );
   }
 
@@ -111,7 +112,8 @@ class AiGeneratedQuestion {
     return AiGeneratedQuestion(
       id: json['id'] as String? ?? '',
       question: json['question'] as String? ?? '',
-      options: (json['options'] as List<dynamic>?)
+      options:
+          (json['options'] as List<dynamic>?)
               ?.map((o) => o.toString())
               .toList() ??
           [],
@@ -206,10 +208,65 @@ class AiGenerationResult {
 /// Calls the Next.js server-side API route which handles the actual AI call.
 /// No API keys are stored or used client-side.
 class AiGenerationRepository {
-  const AiGenerationRepository();
+  /// [client] is an injection point for tests (e.g. `http.testing.MockClient`)
+  /// so the error-classification branches below (timeout/socket/non-JSON/
+  /// status-code handling) are unit-testable without a real network call;
+  /// production leaves it null and gets today's behavior — a fresh
+  /// auto-closed client per call via the top-level [http.post].
+  const AiGenerationRepository({http.Client? client})
+    : _injectedClient = client;
+
+  final http.Client? _injectedClient;
 
   /// The base URL of the Next.js API, derived from AppConfig.
   String get _baseUrl => AppConfig.current.nextApiUrl;
+
+  Future<http.Response> _post(
+    Uri uri, {
+    required Map<String, String> headers,
+    required String body,
+  }) {
+    final client = _injectedClient;
+    if (client != null) return client.post(uri, headers: headers, body: body);
+    return http.post(uri, headers: headers, body: body);
+  }
+
+  /// Maps a non-200 HTTP status (and whatever error the AI endpoint
+  /// reported) to the right [AppError] subtype — pure and exposed for
+  /// tests. The request already round-tripped by the time this runs, so
+  /// none of these are ever a connectivity/[NetworkError] classification;
+  /// only [_post]'s own catch clauses (timeout/socket/client-exception) are.
+  @visibleForTesting
+  static AppError classifyHttpError(int statusCode, Map<String, dynamic> data) {
+    final serverMessage = data['error'] as String?;
+
+    if (statusCode == 401 || statusCode == 403) {
+      return AuthError(message: serverMessage ?? 'Authentication failed');
+    }
+    if (statusCode == 429) {
+      return DataError(
+        message:
+            serverMessage ??
+            'AI is temporarily rate-limited. Please try again in a minute.',
+      );
+    }
+    if (statusCode == 503) {
+      return DataError(
+        message:
+            serverMessage ??
+            'AI service is not configured on this environment.',
+      );
+    }
+    if (statusCode >= 500) {
+      return DataError(
+        message:
+            serverMessage ??
+            'AI service temporarily unavailable. Please try again.\n'
+                'AI सेवा अभी उपलब्ध नहीं है। थोड़ी देर बाद फिर प्रयास करें।',
+      );
+    }
+    return DataError(message: serverMessage ?? 'Generation failed');
+  }
 
   /// Generates questions via the server-side AI pipeline.
   ///
@@ -231,7 +288,9 @@ class AiGenerationRepository {
   }) async {
     final session = SupabaseService.client.auth.currentSession;
     if (session == null) {
-      throw const AuthError(message: 'You must be logged in to generate questions.');
+      throw const AuthError(
+        message: 'You must be logged in to generate questions.',
+      );
     }
 
     final uri = Uri.parse('$_baseUrl/api/ai/generate-questions');
@@ -251,10 +310,23 @@ class AiGenerationRepository {
       'title': title,
     });
 
-    AppLogger.info('AI generation request: $subject > $topic ($questionCount questions)');
+    AppLogger.info(
+      'AI generation request: $subject > $topic ($questionCount questions)',
+    );
 
+    // Two distinct failure zones, classified separately so a broken/
+    // misconfigured AI server is never reported to the user as "no
+    // internet": (1) the HTTP request itself — DNS/socket/timeout errors
+    // here mean the device genuinely cannot reach the network or host, and
+    // are the ONLY case that should ever surface a connectivity message;
+    // (2) everything after a response is received — a non-200 status, a
+    // non-JSON body (e.g. a host's default error page when the AI endpoint
+    // is missing/misconfigured), or a server-reported error are all real
+    // connectivity: the request round-tripped fine, the AI service or its
+    // configuration is what failed.
+    http.Response response;
     try {
-      final response = await http.post(
+      response = await _post(
         uri,
         headers: {
           'Content-Type': 'application/json',
@@ -262,13 +334,50 @@ class AiGenerationRepository {
         },
         body: body,
       ).timeout(const Duration(seconds: 120));
+    } on TimeoutException {
+      AppLogger.error('AI generation request timed out');
+      throw const NetworkError(
+        message:
+            'The AI request took too long and timed out. Please try again.',
+      );
+    } on SocketException catch (e) {
+      AppLogger.error('AI generation socket error: $e');
+      throw const NetworkError(
+        message:
+            'No internet connection. Please check your network and try again.',
+      );
+    } on http.ClientException catch (e) {
+      AppLogger.error('AI generation client error: $e');
+      throw const NetworkError(
+        message: 'Could not reach the AI service. Please check your connection and try again.',
+      );
+    }
 
-      final data = jsonDecode(response.body) as Map<String, dynamic>;
+    try {
+      Map<String, dynamic> data;
+      try {
+        data = jsonDecode(response.body) as Map<String, dynamic>;
+      } on FormatException catch (e) {
+        // The request round-tripped — this device has network access — but
+        // the response wasn't the JSON the AI endpoint should return (e.g.
+        // a host/proxy error page because the endpoint is down or
+        // misconfigured). This is a server/config problem, not "no internet".
+        AppLogger.error(
+          'AI generation returned a non-JSON response (${response.statusCode}): $e',
+        );
+        throw const DataError(
+          message:
+              'AI service temporarily unavailable. Please try again.\n'
+              'AI सेवा अभी उपलब्ध नहीं है। थोड़ी देर बाद फिर प्रयास करें।',
+        );
+      }
 
       if (response.statusCode != 200) {
-        final error = data['error'] as String? ?? 'Generation failed';
-        AppLogger.error('AI generation failed (${response.statusCode}): $error');
-        throw DataError(message: error);
+        final error = classifyHttpError(response.statusCode, data);
+        AppLogger.error(
+          'AI generation failed (${response.statusCode}): ${error.message}',
+        );
+        throw error;
       }
 
       if (data['error'] != null) {
@@ -280,7 +389,9 @@ class AiGenerationRepository {
           .toList();
 
       final summary = data['summary'] != null
-          ? AiGenerationSummary.fromJson(data['summary'] as Map<String, dynamic>)
+          ? AiGenerationSummary.fromJson(
+              data['summary'] as Map<String, dynamic>,
+            )
           : AiGenerationSummary(
               requested: questionCount,
               generated: questions.length,
@@ -315,8 +426,13 @@ class AiGenerationRepository {
     } on AppError {
       rethrow;
     } catch (e) {
+      // The HTTP round-trip already succeeded (handled above) — anything
+      // reaching here is an unexpected parsing/shape bug in this method,
+      // not a connectivity problem, so it must not be reported as one.
       AppLogger.error('AI generation unexpected error: $e');
-      throw DataError(message: 'Network error. Please check your connection and try again.');
+      throw const DataError(
+        message: 'AI service temporarily unavailable. Please try again.',
+      );
     }
   }
 }

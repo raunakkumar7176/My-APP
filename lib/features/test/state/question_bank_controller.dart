@@ -1,5 +1,3 @@
-import 'package:flutter/foundation.dart';
-
 import '../../../core/errors/app_error.dart';
 import '../../../core/logging/app_logger.dart';
 import '../../../core/models/question_bank_item.dart';
@@ -15,9 +13,8 @@ import 'disposable_notifier.dart';
 /// - Bulk selection for test creation
 /// - Loading/error states
 class QuestionBankController extends DisposableNotifier {
-  QuestionBankController({
-    QuestionBankRepository? repository,
-  }) : _repository = repository ?? const SupabaseQuestionBankRepository();
+  QuestionBankController({QuestionBankRepository? repository})
+    : _repository = repository ?? const SupabaseQuestionBankRepository();
 
   final QuestionBankRepository _repository;
 
@@ -69,8 +66,10 @@ class QuestionBankController extends DisposableNotifier {
       AppLogger.error('QuestionBankController.load: $e');
     } catch (e, st) {
       _error = 'Failed to load question bank';
-      AppLogger.error('QuestionBankController.load unexpected: $e',
-          stackTrace: st);
+      AppLogger.error(
+        'QuestionBankController.load unexpected: $e',
+        stackTrace: st,
+      );
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -96,8 +95,10 @@ class QuestionBankController extends DisposableNotifier {
       AppLogger.error('QuestionBankController.loadMore: $e');
     } catch (e, st) {
       _error = 'Failed to load more questions';
-      AppLogger.error('QuestionBankController.loadMore unexpected: $e',
-          stackTrace: st);
+      AppLogger.error(
+        'QuestionBankController.loadMore unexpected: $e',
+        stackTrace: st,
+      );
     } finally {
       _isLoadingMore = false;
       notifyListeners();
@@ -163,7 +164,9 @@ class QuestionBankController extends DisposableNotifier {
     if (topicNodeId != null && _filter.topicNodeId == topicNodeId) return true;
     if (difficulty != null && _filter.difficulty == difficulty) return true;
     if (language != null && _filter.language == language) return true;
-    if (questionType != null && _filter.questionType == questionType) return true;
+    if (questionType != null && _filter.questionType == questionType) {
+      return true;
+    }
     if (source != null && _filter.source == source) return true;
     return false;
   }

@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/constants/theme/app_colors.dart';
 import '../../../core/models/group.dart';
 import '../../../core/models/group_join_request.dart';
+import '../data/group_repository.dart' show GroupLatestMessage;
 import '../domain/group_role.dart';
 import '../state/group_list_controller.dart';
 import '../widgets/group_avatar.dart';
@@ -157,7 +158,10 @@ class _GroupListScreenState extends State<GroupListScreen> {
                 if (i == 1) return _pendingBanner();
                 final g = _c.groups[i - 2];
                 return _GroupCard(
+                  key: ValueKey(g.id),
                   group: g,
+                  unreadCount: _c.unreadCountFor(g.id),
+                  latestMessage: _c.latestMessageFor(g.id),
                   onOpen: () async {
                     await context.push('/groups/${g.id}');
                     if (mounted) await _c.refresh();
@@ -274,14 +278,28 @@ class _GroupListScreenState extends State<GroupListScreen> {
 }
 
 class _GroupCard extends StatelessWidget {
-  const _GroupCard({required this.group, required this.onOpen});
+  const _GroupCard({
+    required this.group,
+    required this.onOpen,
+    this.unreadCount = 0,
+    this.latestMessage,
+    super.key,
+  });
 
   final Group group;
   final VoidCallback onOpen;
 
+  /// From `fn_get_group_unread_counts` — 0 shows no badge.
+  final int unreadCount;
+
+  /// From `fn_latest_group_messages` — null falls back to the member-count
+  /// subtitle (no messages yet, or the batched preview hasn't resolved).
+  final GroupLatestMessage? latestMessage;
+
   @override
   Widget build(BuildContext context) {
     final role = GroupRole.fromDb(group.userRole);
+    final preview = latestMessage;
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: ListTile(
@@ -289,10 +307,42 @@ class _GroupCard extends StatelessWidget {
         onTap: onOpen,
         leading: GroupAvatar(name: group.name, logoUrl: group.logoUrl),
         title: Text(group.name, maxLines: 2, overflow: TextOverflow.ellipsis),
-        subtitle: Text(
-          '${group.memberCount} ${group.memberCount == 1 ? 'member' : 'members'} · ${role.label}',
+        subtitle: preview == null
+            ? Text(
+                '${group.memberCount} ${group.memberCount == 1 ? 'member' : 'members'} · ${role.label}',
+              )
+            : Text(
+                '${preview.senderName}: ${preview.preview}',
+                key: Key('group_card_preview_${group.id}'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: preview.isDeleted
+                    ? const TextStyle(fontStyle: FontStyle.italic)
+                    : null,
+              ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (unreadCount > 0)
+              Container(
+                key: Key('group_card_unread_${group.id}'),
+                margin: const EdgeInsets.only(right: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primary,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  unreadCount > 99 ? '99+' : '$unreadCount',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onPrimary,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            const Icon(Icons.chevron_right),
+          ],
         ),
-        trailing: const Icon(Icons.chevron_right),
       ),
     );
   }

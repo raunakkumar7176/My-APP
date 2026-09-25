@@ -27,7 +27,8 @@ class AppLogo extends StatelessWidget {
           fit: BoxFit.contain,
           // Keep decode size tied to the display size (memory + speed).
           cacheWidth: (size * MediaQuery.devicePixelRatioOf(context)).round(),
-          errorBuilder: (_, _, _) => const CustomPaint(painter: _PLogoPainter()),
+          errorBuilder: (_, _, _) =>
+              const CustomPaint(painter: _PLogoPainter()),
         ),
       ),
     );
@@ -51,14 +52,21 @@ class _PLogoPainter extends CustomPainter {
 
     // "P" — stem plus bowl (bowl as a thick stroked arc).
     final stem = RRect.fromRectAndRadius(
-        const Rect.fromLTWH(42, 22, 9, 52), const Radius.circular(1.5));
+      const Rect.fromLTWH(42, 22, 9, 52),
+      const Radius.circular(1.5),
+    );
     canvas.drawRRect(stem, white);
     final bowl = Paint()
       ..color = Colors.white
       ..style = PaintingStyle.stroke
       ..strokeWidth = 9;
     canvas.drawArc(
-        const Rect.fromLTWH(38, 26, 40, 30), -1.5708, 3.1416, false, bowl);
+      const Rect.fromLTWH(38, 26, 40, 30),
+      -1.5708,
+      3.1416,
+      false,
+      bowl,
+    );
 
     // Rising arrow from the lower left into the bowl.
     final arrowShaft = Paint()

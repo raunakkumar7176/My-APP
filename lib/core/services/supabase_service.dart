@@ -37,8 +37,13 @@ final class SupabaseService {
         'Run with: flutter run --dart-define=SUPABASE_URL=... --dart-define=SUPABASE_ANON_KEY=...',
       );
     }
+    // Never log the URL or key values themselves (the URL is not secret,
+    // but there is no reason to put either in logs) — only that both were
+    // actually supplied, which is what a misconfigured dart-define build
+    // needs to diagnose.
+    AppLogger.info('AUTH_DEBUG: Supabase URL configured');
 
-    AppLogger.info('Initializing Supabase...');
+    AppLogger.info('AUTH_DEBUG: Initializing Supabase...');
 
     await Supabase.initialize(
       url: config.supabaseUrl,
@@ -46,7 +51,7 @@ final class SupabaseService {
     );
 
     _client = Supabase.instance.client;
-    AppLogger.info('Supabase initialized successfully.');
+    AppLogger.info('AUTH_DEBUG: Supabase initialized');
   }
 
   static Future<void> dispose() async {

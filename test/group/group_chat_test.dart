@@ -81,6 +81,8 @@ void main() {
       expect(m.body, 'hi');
       expect(m.createdAt.toUtc(), DateTime.utc(2026, 9, 1, 10));
       expect(m.isSystem, isFalse);
+      expect(m.isDeleted, isFalse);
+      expect(m.deletedAt, isNull);
       expect(m.toJson()['sender_id'], 'u-1');
 
       final sys = GroupMessage.fromJson({
@@ -92,6 +94,54 @@ void main() {
       });
       expect(sys.isSystem, isTrue);
       expect(sys.senderId, isNull);
+    });
+
+    test('fromJson parses deleted_at; isDeleted true when set', () {
+      final m = GroupMessage.fromJson({
+        'id': 'm-3',
+        'group_id': 'g-1',
+        'sender_id': 'u-1',
+        'body': 'secret content',
+        'created_at': '2026-09-01T10:00:00Z',
+        'deleted_at': '2026-09-02T12:00:00Z',
+      });
+      expect(m.isDeleted, isTrue);
+      expect(m.deletedAt, isNotNull);
+      expect(m.deletedAt!.toUtc(), DateTime.utc(2026, 9, 2, 12));
+      expect(m.body, 'secret content', reason: 'body is still in the model');
+    });
+
+    test('fromJson without deleted_at: isDeleted false', () {
+      final m = GroupMessage.fromJson({
+        'id': 'm-4',
+        'group_id': 'g-1',
+        'sender_id': 'u-1',
+        'body': 'visible',
+        'created_at': '2026-09-01T10:00:00Z',
+      });
+      expect(m.isDeleted, isFalse);
+      expect(m.deletedAt, isNull);
+    });
+
+    test('toJson includes deleted_at only when non-null', () {
+      final normal = GroupMessage(
+        id: 'm-5',
+        groupId: 'g-1',
+        senderId: 'u-1',
+        body: 'hi',
+        createdAt: DateTime(2026, 9, 1),
+      );
+      expect(normal.toJson().containsKey('deleted_at'), isFalse);
+
+      final deleted = GroupMessage(
+        id: 'm-6',
+        groupId: 'g-1',
+        senderId: 'u-1',
+        body: 'gone',
+        createdAt: DateTime(2026, 9, 1),
+        deletedAt: DateTime(2026, 9, 2),
+      );
+      expect(deleted.toJson().containsKey('deleted_at'), isTrue);
     });
 
     test('validation mirrors the live CHECK (1..2000 after trim)', () {
@@ -397,6 +447,47 @@ void main() {
       await tester.tap(find.byKey(const Key('messages_retry')));
       await tester.pumpAndSettle();
       expect(find.text('Recovered'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('soft-deleted message shows "Message deleted" placeholder', (
+      tester,
+    ) async {
+      final repo = _repo();
+      final deleted = GroupMessage(
+        id: 'm-del',
+        groupId: 'g-1',
+        senderId: 'u-owner',
+        body: 'This should not be visible',
+        createdAt: DateTime(2026, 9, 10, 9, 8),
+        deletedAt: DateTime(2026, 9, 10, 10, 0),
+      );
+      repo.groups['g-1']!.messages.add(deleted);
+      final c = await pump(tester, repo);
+      expect(find.byKey(const Key('message_m-del')), findsOneWidget);
+      expect(
+        find.text('Message deleted'),
+        findsOneWidget,
+        reason: 'deleted body is replaced by placeholder',
+      );
+      expect(
+        find.text('This should not be visible'),
+        findsNothing,
+        reason: 'original body is never rendered',
+      );
+      expect(find.byKey(const Key('deleted_m-del')), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('normal messages are not affected by deleted_at logic', (
+      tester,
+    ) async {
+      final c = await pump(tester, _repo());
+      expect(find.text('Welcome all'), findsOneWidget);
+      expect(find.text('Hello'), findsOneWidget);
+      expect(find.text('Message deleted'), findsNothing);
       await tester.pumpWidget(const SizedBox());
       c.dispose();
     });

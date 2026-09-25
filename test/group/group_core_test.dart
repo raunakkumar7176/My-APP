@@ -808,6 +808,30 @@ class _FailingRepository implements GroupRepository {
     required GroupPermission permission,
     required bool granted,
   }) async {}
+  @override
+  GroupMessageSubscription subscribeToMessages({
+    required String groupId,
+    required void Function(GroupMessage message) onInsert,
+    required void Function(GroupMessage message) onUpdate,
+    void Function(bool connected)? onConnectionChange,
+  }) => _NoopMessageSubscription();
+  @override
+  Future<void> deleteGroup(String groupId) async =>
+      throw const DataError(message: 'nope');
+  @override
+  Future<Map<String, int>> unreadCounts(List<String> groupIds) async =>
+      const {};
+  @override
+  Future<void> markGroupRead(String groupId) async {}
+  @override
+  Future<Map<String, GroupLatestMessage>> latestMessages(
+    List<String> groupIds,
+  ) async => const {};
+}
+
+class _NoopMessageSubscription implements GroupMessageSubscription {
+  @override
+  Future<void> cancel() async {}
 }
 
 /// Create takes a turn to complete, so the busy guard can be observed.

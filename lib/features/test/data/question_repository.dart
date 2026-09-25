@@ -118,6 +118,22 @@ class SupabaseQuestionRepository implements QuestionRepository {
 
   /// Shared create/update param mapping. Option ids are sent as-is (empty for
   /// new options — the server assigns ids); `correct_option` is an index.
+  ///
+  /// Deliberately NOT sent: `p_negative_marks`. `QuestionDraft.negativeMarks`
+  /// is a real, valid field (the `questions` table has its own
+  /// `negative_marks` column, separate from the test-level one), but no
+  /// live version of `rpc_create_question`/`rpc_update_question` declares a
+  /// `p_negative_marks` parameter (checked against every migration that
+  /// defines either function: R4_5_1, R4_QUESTION_OPTION_GUARD, R7_FIX/
+  /// R7_QUESTION_BANK_V1 for create; R4_5_1, R4_QUESTION_OPTION_GUARD,
+  /// R4_FIX_rpc_update_question_status_cast for update — none accept it).
+  /// Sending an unknown named parameter makes PostgREST fail to resolve the
+  /// function overload entirely, and that failure's message doesn't match
+  /// any case in TestErrors.map, so it always surfaced as the generic
+  /// "Failed to save. Please try again." — this was breaking question
+  /// creation/update for every draft with a non-null negativeMarks value.
+  /// Per-question negative marking is not currently settable via any live
+  /// RPC; re-add this only alongside a real signature change.
   static Map<String, dynamic> _draftParams(QuestionDraft d) => {
     'p_question': d.questionText,
     'p_question_type': questionTypeToRpc(d.questionType),
@@ -130,7 +146,6 @@ class SupabaseQuestionRepository implements QuestionRepository {
     if (d.topicNodeId != null) 'p_topic_node_id': d.topicNodeId,
     'p_difficulty': d.difficulty.name,
     'p_marks': d.marks,
-    if (d.negativeMarks != null) 'p_negative_marks': d.negativeMarks,
     if (d.language != null) 'p_language': d.language,
   };
 
@@ -141,7 +156,10 @@ class SupabaseQuestionRepository implements QuestionRepository {
     try {
       return await body();
     } on PostgrestException catch (e) {
-      AppLogger.error('QuestionRepository PostgrestException: ${e.message}');
+      AppLogger.error(
+        'QuestionRepository PostgrestException: code=${e.code}, '
+        'message=${e.message}, details=${e.details}, hint=${e.hint}',
+      );
       throw DataError(message: TestErrors.map(e.message, context: context));
     } on AppError {
       rethrow;

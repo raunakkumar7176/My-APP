@@ -4,6 +4,8 @@ import '../../../core/models/group.dart';
 import '../domain/attempt_policy.dart';
 import '../domain/creation_settings.dart';
 import '../domain/test_kind.dart';
+import 'section_card.dart';
+import 'setting_tile.dart';
 import 'test_formatters.dart';
 
 /// Configuration step (R4 restart): identical to the legacy StepConfiguration
@@ -134,7 +136,6 @@ class _ConfigurationStepState extends State<ConfigurationStep> {
       'testMode': widget.testMode,
       'groupId': isGroupMode ? widget.groupId : null,
       'startsAt': _startsAt,
-      // Derived: starts_at + duration (never typed by the creator).
       'endsAt': _calculatedEnd,
       'maxParticipants': int.tryParse(_maxParticipantsController.text),
       'allowLateJoin': _lateJoin.enabled,
@@ -183,6 +184,7 @@ class _ConfigurationStepState extends State<ConfigurationStep> {
   @override
   Widget build(BuildContext context) {
     final isGroupMode = widget.testMode == 'group';
+    final theme = Theme.of(context);
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -191,226 +193,265 @@ class _ConfigurationStepState extends State<ConfigurationStep> {
         children: [
           Text(
             'Test Configuration',
-            style: Theme.of(context).textTheme.titleLarge
-                ?.copyWith(fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Configure test settings, timing, and access.',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: Theme.of(context).colorScheme.onSurface
-                  .withValues(alpha: 0.6),
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w600,
             ),
-          ),
-          const SizedBox(height: 24),
-          TextFormField(
-            controller: _durationController,
-            decoration: const InputDecoration(
-              labelText: 'Duration (minutes)',
-              hintText: 'e.g., 60',
-            ),
-            keyboardType: TextInputType.number,
-            onChanged: (_) => _update(),
-          ),
-          const SizedBox(height: 16),
-          TextFormField(
-            controller: _marksController,
-            decoration: const InputDecoration(
-              labelText: 'Marks per Question',
-              hintText: 'e.g., 4',
-            ),
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            onChanged: (_) => _update(),
-          ),
-          const SizedBox(height: 16),
-          TextFormField(
-            controller: _negativeMarksController,
-            decoration: const InputDecoration(
-              labelText: 'Negative Marks',
-              hintText: 'e.g., 1',
-            ),
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            onChanged: (_) => _update(),
-          ),
-          if (isGroupMode) ...[
-            const SizedBox(height: 16),
-            _buildGroupSelection(),
-          ],
-          // ── Question configuration (target; review compares with actual) ──
-          const SizedBox(height: 24),
-          Text(
-            'Question Configuration',
-            style: Theme.of(context).textTheme.titleMedium
-                ?.copyWith(fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 4),
           Text(
-            'MCQ only in V1 (4 options each). Set a total and how many Easy / '
-            'Medium / Hard questions the test should contain; the Review step '
-            'checks the questions you add against this target.',
-            style: Theme.of(context).textTheme.bodySmall,
+            'Configure test settings, timing, and access.',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
-          const SizedBox(height: 8),
-          _QuestionConfigFields(
-            value: _questionConfig,
-            maxTotal: widget.kind.maxQuestionTarget,
-            onChanged: (v) {
-              setState(() => _questionConfig = v);
-              _update();
-            },
-          ),
-          // ── Schedule ──
-          if (widget.kind.isScheduled) ...[
-            const SizedBox(height: 24),
-            Text(
-              'Schedule',
-              style: Theme.of(context).textTheme.titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 12),
-            _buildDateTimeRow(
-              context,
-              label: 'Start Time',
-              dateTime: _startsAt,
-              onPick: () => _pickDateTime(isStart: true),
-              onClear: () {
-                setState(() => _startsAt = null);
-                _update();
-              },
-            ),
-            const SizedBox(height: 8),
-            // End time is derived, never typed: starts_at + duration.
-            ListTile(
-              key: const Key('calculated_end_time'),
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.schedule_outlined),
-              title: const Text('Calculated End Time'),
-              subtitle: Text(
-                _calculatedEnd == null
-                    ? 'Set a start time and duration'
-                    : TestFormatters.dateTime(_calculatedEnd),
+          const SizedBox(height: 20),
+
+          // ── Timing Section ──
+          SectionCard(
+            title: 'Timing',
+            children: [
+              TextFormField(
+                controller: _durationController,
+                decoration: const InputDecoration(
+                  labelText: 'Duration (minutes)',
+                  hintText: 'e.g., 60',
+                  prefixIcon: Icon(Icons.timer_outlined, size: 20),
+                  suffixText: 'minutes',
+                ),
+                keyboardType: TextInputType.number,
+                onChanged: (_) => _update(),
               ),
-            ),
-            // ── Late joining ──
-            const SizedBox(height: 16),
-            SwitchListTile(
-              key: const Key('allow_late_join'),
-              title: const Text('Allow Late Joining'),
-              subtitle: const Text(
-                'New participants may still join for a while after the start',
-              ),
-              value: _lateJoin.enabled,
-              onChanged: (value) {
-                setState(() => _lateJoin = _lateJoin.copyWith(enabled: value));
-                _update();
-              },
-              contentPadding: EdgeInsets.zero,
-            ),
-            DropdownButtonFormField<int>(
-              key: const Key('late_join_minutes'),
-              initialValue:
-                  LateJoinSettings.allowedMinutes.contains(_lateJoin.minutes)
-                  ? _lateJoin.minutes
-                  : LateJoinSettings.defaultMinutes,
-              decoration: const InputDecoration(
-                labelText: 'Late Join Window (minutes after start)',
-              ),
-              items: [
-                for (final m in LateJoinSettings.allowedMinutes)
-                  DropdownMenuItem(value: m, child: Text('$m minutes')),
+              if (widget.kind.isScheduled) ...[
+                const SizedBox(height: 16),
+                _buildDateTimeRow(
+                  context,
+                  label: 'Start Time',
+                  dateTime: _startsAt,
+                  onPick: () => _pickDateTime(isStart: true),
+                  onClear: () {
+                    setState(() => _startsAt = null);
+                    _update();
+                  },
+                ),
+                const SizedBox(height: 12),
+                SettingTile(
+                  icon: Icons.schedule_outlined,
+                  title: 'Calculated End Time',
+                  subtitle: _calculatedEnd == null
+                      ? 'Set a start time and duration'
+                      : TestFormatters.dateTime(_calculatedEnd),
+                ),
               ],
-              onChanged: _lateJoin.enabled
-                  ? (v) {
+            ],
+          ),
+
+          // ── Marks Section ──
+          SectionCard(
+            title: 'Marks',
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: TextFormField(
+                      controller: _marksController,
+                      decoration: const InputDecoration(
+                        labelText: 'Correct Answer',
+                        hintText: 'e.g., 4',
+                        prefixIcon: Icon(Icons.add_circle_outline, size: 20),
+                      ),
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      onChanged: (_) => _update(),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: TextFormField(
+                      controller: _negativeMarksController,
+                      decoration: const InputDecoration(
+                        labelText: 'Negative Marks',
+                        hintText: 'e.g., 1',
+                        prefixIcon: Icon(Icons.remove_circle_outline, size: 20),
+                      ),
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      onChanged: (_) => _update(),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+
+          // ── Question Configuration Section ──
+          SectionCard(
+            title: 'Question Configuration',
+            subtitle:
+                'MCQ only in V1 (4 options each). Set a total and difficulty '
+                'distribution; the Review step checks questions against this target.',
+            children: [
+              _QuestionConfigFields(
+                value: _questionConfig,
+                maxTotal: widget.kind.maxQuestionTarget,
+                onChanged: (v) {
+                  setState(() => _questionConfig = v);
+                  _update();
+                },
+              ),
+            ],
+          ),
+
+          // ── Group Selection (Group Test only) ──
+          if (isGroupMode) ...[
+            AnimatedSize(
+              duration: const Duration(milliseconds: 200),
+              alignment: Alignment.topCenter,
+              child: _buildGroupSelection(),
+            ),
+          ],
+
+          // ── Late Joining (Scheduled kinds) ──
+          if (widget.kind.supportsLateJoin) ...[
+            SectionCard(
+              title: 'Late Joining',
+              subtitle: 'Allow new participants after the test starts',
+              children: [
+                SettingTile(
+                  icon: Icons.timer_outlined,
+                  title: 'Allow Late Joining',
+                  trailing: Switch(
+                    value: _lateJoin.enabled,
+                    onChanged: (value) {
+                      setState(
+                        () => _lateJoin = _lateJoin.copyWith(enabled: value),
+                      );
+                      _update();
+                    },
+                  ),
+                ),
+                if (_lateJoin.enabled) ...[
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<int>(
+                    key: const Key('late_join_minutes'),
+                    initialValue: LateJoinSettings.allowedMinutes
+                            .contains(_lateJoin.minutes)
+                        ? _lateJoin.minutes
+                        : LateJoinSettings.defaultMinutes,
+                    decoration: const InputDecoration(
+                      labelText: 'Late Join Window (minutes after start)',
+                    ),
+                    items: [
+                      for (final m in LateJoinSettings.allowedMinutes)
+                        DropdownMenuItem(value: m, child: Text('$m minutes')),
+                    ],
+                    onChanged: (v) {
                       if (v == null) return;
                       setState(
                         () => _lateJoin = _lateJoin.copyWith(minutes: v),
                       );
                       _update();
-                    }
-                  : null,
-            ),
-            // ── Participants / access ──
-            const SizedBox(height: 24),
-            Text(
-              'Participants',
-              style: Theme.of(context).textTheme.titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _maxParticipantsController,
-              decoration: const InputDecoration(
-                labelText: 'Max Participants',
-                hintText: 'Leave empty for unlimited',
-              ),
-              keyboardType: TextInputType.number,
-              onChanged: (_) => _update(),
+                    },
+                  ),
+                ],
+              ],
             ),
           ],
+
+          // ── Participants (Scheduled kinds) ──
+          if (widget.kind.supportsMaxParticipants) ...[
+            SectionCard(
+              title: 'Participants',
+              children: [
+                TextFormField(
+                  controller: _maxParticipantsController,
+                  decoration: const InputDecoration(
+                    labelText: 'Max Participants',
+                    hintText: 'Leave empty for unlimited',
+                    prefixIcon: Icon(Icons.people_outline, size: 20),
+                  ),
+                  keyboardType: TextInputType.number,
+                  onChanged: (_) => _update(),
+                ),
+              ],
+            ),
+          ],
+
+          // ── Access Codes (Challenge with Friends) ──
           if (widget.kind.requiresJoinCode) ...[
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _joinCodeController,
-              decoration: const InputDecoration(
-                labelText: 'Join Code *',
-                hintText: 'Friends enter this code to join',
-              ),
-              onChanged: (_) => _update(),
-            ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _accessCodeController,
-              decoration: const InputDecoration(
-                labelText: 'Access Code',
-                hintText: 'Optional extra access code',
-              ),
-              onChanged: (_) => _update(),
+            SectionCard(
+              title: 'Access Codes',
+              children: [
+                TextFormField(
+                  controller: _joinCodeController,
+                  decoration: const InputDecoration(
+                    labelText: 'Join Code *',
+                    hintText: 'Friends enter this code to join',
+                    prefixIcon: Icon(Icons.vpn_key_outlined, size: 20),
+                  ),
+                  onChanged: (_) => _update(),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _accessCodeController,
+                  decoration: const InputDecoration(
+                    labelText: 'Access Code',
+                    hintText: 'Optional extra access code',
+                    prefixIcon: Icon(Icons.lock_outline, size: 20),
+                  ),
+                  onChanged: (_) => _update(),
+                ),
+              ],
             ),
           ],
-          // ── Attempt settings (every kind) ──
-          const SizedBox(height: 24),
-          Text(
-            'Attempt Settings',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Students can take this test once unless re-attempts are allowed. '
-            'The limit is enforced by the server.',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-          SwitchListTile(
-            key: const Key('allow_reattempt'),
-            title: const Text('Allow Re-attempt'),
-            value: _attempts.allowReattempt,
-            onChanged: (value) {
-              setState(
-                () => _attempts = _attempts.copyWith(allowReattempt: value),
-              );
-              _update();
-            },
-            contentPadding: EdgeInsets.zero,
-          ),
-          DropdownButtonFormField<int>(
-            key: const Key('max_attempts'),
-            initialValue:
-                AttemptSettings.allowedMaxValues.contains(_attempts.maxAttempts)
-                ? _attempts.maxAttempts
-                : 1,
-            decoration: const InputDecoration(labelText: 'Maximum Attempts'),
-            items: [
-              for (final n in AttemptSettings.allowedMaxValues)
-                DropdownMenuItem(value: n, child: Text('$n')),
-            ],
-            onChanged: _attempts.allowReattempt
-                ? (v) {
+
+          // ── Attempt Settings (every kind) ──
+          SectionCard(
+            title: 'Attempt Settings',
+            subtitle:
+                'Students can take this test once unless re-attempts are allowed. '
+                'The limit is enforced by the server.',
+            children: [
+              SettingTile(
+                icon: Icons.replay_outlined,
+                title: 'Allow Re-attempt',
+                trailing: Switch(
+                  value: _attempts.allowReattempt,
+                  onChanged: (value) {
+                    setState(
+                      () =>
+                          _attempts = _attempts.copyWith(allowReattempt: value),
+                    );
+                    _update();
+                  },
+                ),
+              ),
+              if (_attempts.allowReattempt) ...[
+                const SizedBox(height: 8),
+                DropdownButtonFormField<int>(
+                  key: const Key('max_attempts'),
+                  initialValue: AttemptSettings.allowedMaxValues
+                          .contains(_attempts.maxAttempts)
+                      ? _attempts.maxAttempts
+                      : 1,
+                  decoration: const InputDecoration(
+                    labelText: 'Maximum Attempts',
+                  ),
+                  items: [
+                    for (final n in AttemptSettings.allowedMaxValues)
+                      DropdownMenuItem(value: n, child: Text('$n')),
+                  ],
+                  onChanged: (v) {
                     if (v == null) return;
                     setState(
                       () => _attempts = _attempts.copyWith(maxAttempts: v),
                     );
                     _update();
-                  }
-                : null,
+                  },
+                ),
+              ],
+            ],
           ),
         ],
       ),
@@ -418,123 +459,131 @@ class _ConfigurationStepState extends State<ConfigurationStep> {
   }
 
   Widget _buildGroupSelection() {
+    final theme = Theme.of(context);
     final hasGroup = widget.groupId != null && widget.groupId!.isNotEmpty;
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Group Selection',
-              style: Theme.of(context).textTheme.titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w600),
+    return SectionCard(
+      title: 'Group Selection',
+      children: [
+        if (widget.groupsLoading && !hasGroup)
+          const Center(
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: CircularProgressIndicator(),
             ),
-            const SizedBox(height: 8),
-            if (widget.groupsLoading && !hasGroup)
-              const Center(
-                child: Padding(
-                  padding: EdgeInsets.all(16),
-                  child: CircularProgressIndicator(),
+          )
+        else if (widget.groups.isEmpty && !hasGroup)
+          Text(
+            'No groups found. Create or join a group first.',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          )
+        else if (widget.groups.isEmpty && hasGroup) ...[
+          Row(
+            children: [
+              const Icon(Icons.group, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Group: ${widget.groupId}',
+                  style: theme.textTheme.bodyMedium,
                 ),
-              )
-            else if (widget.groups.isEmpty && !hasGroup)
-              Text(
-                'No groups found. Create or join a group first.',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurface
-                      .withValues(alpha: 0.6),
-                ),
-              )
-            else if (widget.groups.isEmpty && hasGroup) ...[
-              Row(
-                children: [
-                  const Icon(Icons.group, size: 20),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Group: ${widget.groupId}',
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: () {
-                      widget.onChanged({
-                        'groupId': null,
-                        'testMode': widget.testMode,
-                      });
-                    },
-                    child: const Text('Clear'),
-                  ),
-                ],
               ),
-            ] else ...[
-              DropdownButtonFormField<String>(
-                initialValue:
-                    hasGroup && widget.groups.any((g) => g.id == widget.groupId)
-                    ? widget.groupId
-                    : null,
-                decoration: const InputDecoration(labelText: 'Select Group'),
-                items: widget.groups.map((group) {
-                  return DropdownMenuItem(
-                    value: group.id,
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            group.name,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          '${group.memberCount} member${group.memberCount == 1 ? '' : 's'}',
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(
-                                color: Theme.of(context).colorScheme.onSurface
-                                    .withValues(alpha: 0.6),
-                              ),
-                        ),
-                      ],
-                    ),
-                  );
-                }).toList(),
-                onChanged: (value) {
+              TextButton(
+                onPressed: () {
                   widget.onChanged({
-                    'groupId': value,
+                    'groupId': null,
                     'testMode': widget.testMode,
                   });
                 },
+                child: const Text('Clear'),
               ),
-              if (hasGroup) ...[
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    const Icon(Icons.group, size: 20),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Selected: ${widget.groups.firstWhere((g) => g.id == widget.groupId).name}',
-                        style: Theme.of(context).textTheme.bodyMedium,
+            ],
+          ),
+        ] else ...[
+          DropdownButtonFormField<String>(
+            initialValue:
+                hasGroup && widget.groups.any((g) => g.id == widget.groupId)
+                    ? widget.groupId
+                    : null,
+            decoration: const InputDecoration(
+              labelText: 'Select Group',
+              prefixIcon: Icon(Icons.groups_outlined, size: 20),
+            ),
+            items: widget.groups.map((group) {
+              return DropdownMenuItem(
+                value: group.id,
+                // DropdownButton lays every item out twice: once in the
+                // closed button (bounded width) and once inside an internal
+                // IndexedStack it uses to measure all items uniformly —
+                // that second pass hands each item's child UNBOUNDED width.
+                // A bare Expanded/Flexible there throws "RenderFlex
+                // children have non-zero flex but incoming width
+                // constraints are unbounded" (a well-documented
+                // DropdownMenuItem pitfall), and the resulting mid-layout
+                // exception is exactly what produces "Cannot hit test a
+                // render box with no size" (the RenderFlex left behind has
+                // size: MISSING). Fix: give the Row a fixed, finite width
+                // via SizedBox before the Expanded — it imposes a tight
+                // width on its child regardless of its own incoming
+                // constraints, so ellipsis truncation still works in both
+                // the offstage sizing pass and the real menu.
+                child: SizedBox(
+                  width: 260,
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          group.name,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                    ),
-                    TextButton(
-                      onPressed: () {
-                        widget.onChanged({
-                          'groupId': null,
-                          'testMode': widget.testMode,
-                        });
-                      },
-                      child: const Text('Clear'),
-                    ),
-                  ],
+                      const SizedBox(width: 8),
+                      Text(
+                        '${group.memberCount} member${group.memberCount == 1 ? '' : 's'}',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }).toList(),
+            onChanged: (value) {
+              widget.onChanged({
+                'groupId': value,
+                'testMode': widget.testMode,
+              });
+            },
+          ),
+          if (hasGroup) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Icon(Icons.group, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Selected: ${widget.groups.firstWhere((g) => g.id == widget.groupId).name}',
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                ),
+                TextButton(
+                  onPressed: () {
+                    widget.onChanged({
+                      'groupId': null,
+                      'testMode': widget.testMode,
+                    });
+                  },
+                  child: const Text('Clear'),
                 ),
               ],
-            ],
+            ),
           ],
-        ),
-      ),
+        ],
+      ],
     );
   }
 
@@ -641,10 +690,10 @@ class _QuestionConfigFieldsState extends State<_QuestionConfigFields> {
     final status = !v.isSet
         ? 'No target set (optional)'
         : overMax
-        ? 'Total cannot exceed ${widget.maxTotal} for this test type'
-        : v.isValid
-        ? 'Total ${v.sum} / ${v.total} ✓'
-        : 'Total ${v.sum} / ${v.total} — Easy + Medium + Hard must equal Total';
+            ? 'Total cannot exceed ${widget.maxTotal} for this test type'
+            : v.isValid
+                ? 'Total ${v.sum} / ${v.total}'
+                : 'Total ${v.sum} / ${v.total} — Easy + Medium + Hard must equal Total';
     final ok = !v.isSet || (v.isValid && !overMax);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -666,12 +715,21 @@ class _QuestionConfigFieldsState extends State<_QuestionConfigFields> {
             _field('Hard', _hard, key: const Key('qc_hard')),
           ],
         ),
-        const SizedBox(height: 4),
-        Text(
-          status,
-          key: const Key('qc_status'),
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: ok ? null : Theme.of(context).colorScheme.error,
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: ok
+                ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3)
+                : Theme.of(context).colorScheme.errorContainer.withValues(alpha: 0.3),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Text(
+            status,
+            key: const Key('qc_status'),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: ok ? null : Theme.of(context).colorScheme.error,
+            ),
           ),
         ),
       ],

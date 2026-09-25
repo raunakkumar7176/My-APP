@@ -67,6 +67,10 @@ final class Profile {
   Profile copyWith({
     String? fullName,
     String? avatarUrl,
+    // `avatarUrl: null` is ambiguous with "not passed" under the usual
+    // `??` pattern (needed to clear a photo back to the default avatar) —
+    // this flag disambiguates it.
+    bool clearAvatar = false,
     String? timezone,
     String? studentCode,
     String? bio,
@@ -76,7 +80,7 @@ final class Profile {
     return Profile(
       id: id,
       fullName: fullName ?? this.fullName,
-      avatarUrl: avatarUrl ?? this.avatarUrl,
+      avatarUrl: clearAvatar ? null : (avatarUrl ?? this.avatarUrl),
       timezone: timezone ?? this.timezone,
       createdAt: createdAt,
       studentCode: studentCode ?? this.studentCode,

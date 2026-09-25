@@ -33,12 +33,13 @@ class FakeDocumentService implements DocumentService {
   Future<PickedFile> pickDocument() async {
     calls.add('pick');
     if (pickError != null) throw pickError!;
-    return nextFile ?? PickedFile(
-      path: '/tmp/test.pdf',
-      name: 'test.pdf',
-      size: 1024,
-      bytes: Uint8List(1024),
-    );
+    return nextFile ??
+        PickedFile(
+          path: '/tmp/test.pdf',
+          name: 'test.pdf',
+          size: 1024,
+          bytes: Uint8List(1024),
+        );
   }
 
   @override
@@ -58,29 +59,64 @@ class FakeDocumentService implements DocumentService {
   }
 
   @override
+  Future<PickedFile> pickImage() async {
+    calls.add('pickImage');
+    return nextFile ??
+        PickedFile(
+          path: '/tmp/test.jpg',
+          name: 'test.jpg',
+          size: 1024,
+          bytes: Uint8List(1024),
+        );
+  }
+
+  @override
   Future<UploadedDocumentRecord> uploadFile({
     required PickedFile file,
     String? groupId,
+    bool isEphemeral = true,
   }) async {
     calls.add('upload');
     if (uploadError != null) throw uploadError!;
-    return nextUpload ?? UploadedDocumentRecord(
-      id: 'doc-1',
-      fileName: file.name,
-      storagePath: 'user-1/${file.name}',
-      mimeType: 'application/pdf',
-      fileSize: file.size,
-    );
+    return nextUpload ??
+        UploadedDocumentRecord(
+          id: 'doc-1',
+          fileName: file.name,
+          storagePath: 'user-1/${file.name}',
+          mimeType: 'application/pdf',
+          fileSize: file.size,
+          isEphemeral: isEphemeral,
+        );
   }
+
+  @override
+  Future<void> deleteDocument(UploadedDocumentRecord doc) async {
+    calls.add('delete');
+  }
+
+  @override
+  Future<void> purgeEphemeralDocument(UploadedDocumentRecord doc) async {
+    calls.add('purgeEphemeral');
+  }
+
+  @override
+  Future<int> purgeStaleEphemeralDocuments({int maxAgeMinutes = 120}) async {
+    calls.add('purgeStaleEphemeral');
+    return 0;
+  }
+
+  @override
+  Future<List<UploadedDocumentRecord>> listMyDocuments() async => [];
+
+  @override
+  Future<int> cleanupOrphanedStorage() async => 0;
 
   @override
   Future<ExtractedContent> extractContent(UploadedDocumentRecord doc) async {
     calls.add('extract');
     if (extractError != null) throw extractError!;
-    return nextContent ?? const ExtractedContent(
-      blocks: [],
-      sourceFormat: DocumentFormat.pdf,
-    );
+    return nextContent ??
+        const ExtractedContent(blocks: [], sourceFormat: DocumentFormat.pdf);
   }
 
   @override
@@ -90,21 +126,31 @@ class FakeDocumentService implements DocumentService {
   }
 
   @override
+  IngestionDetectionResult detectQuestionsWithConfidence(
+    ExtractedContent content,
+  ) {
+    calls.add('detectQuestionsWithConfidence');
+    return IngestionDetectionResult(
+      questions: detectResult,
+      confidence: IngestionConfidence.zero,
+      answersDetected: 0,
+      noiseLinesFiltered: 0,
+      rawCharacterCount: 0,
+    );
+  }
+
+  @override
   ExtractedContent extractFromBytes(Uint8List bytes, String fileName) {
     calls.add('extractFromBytes');
-    return nextContent ?? const ExtractedContent(
-      blocks: [],
-      sourceFormat: DocumentFormat.pdf,
-    );
+    return nextContent ??
+        const ExtractedContent(blocks: [], sourceFormat: DocumentFormat.pdf);
   }
 
   @override
   ExtractedContent extractFromImages(List<Uint8List> pages) {
     calls.add('extractFromImages');
-    return nextContent ?? const ExtractedContent(
-      blocks: [],
-      sourceFormat: DocumentFormat.camera,
-    );
+    return nextContent ??
+        const ExtractedContent(blocks: [], sourceFormat: DocumentFormat.camera);
   }
 }
 
@@ -150,12 +196,12 @@ void main() {
   // ──────────────────────────────────────────────────────────
   group('TestWriteInput creation_method', () {
     test('defaults to manual', () {
-      final p = TestWriteInput(title: 'T').toCreateParams();
+      final p = const TestWriteInput(title: 'T').toCreateParams();
       expect(p['p_creation_method'], 'manual');
     });
 
     test('upload when creationMethod is upload', () {
-      final p = TestWriteInput(
+      final p = const TestWriteInput(
         title: 'T',
         creationMethod: 'upload',
       ).toCreateParams();
@@ -163,7 +209,7 @@ void main() {
     });
 
     test('ai when creationMethod is ai', () {
-      final p = TestWriteInput(
+      final p = const TestWriteInput(
         title: 'T',
         creationMethod: 'ai',
       ).toCreateParams();
@@ -171,7 +217,7 @@ void main() {
     });
 
     test('creation_method is always present', () {
-      final p = TestWriteInput(title: 'T').toCreateParams();
+      final p = const TestWriteInput(title: 'T').toCreateParams();
       expect(p.containsKey('p_creation_method'), isTrue);
     });
   });
@@ -221,18 +267,12 @@ void main() {
     });
 
     test('invalid with empty question', () {
-      const dq = DetectedQuestion(
-        questionText: '',
-        options: ['A', 'B'],
-      );
+      const dq = DetectedQuestion(questionText: '', options: ['A', 'B']);
       expect(dq.hasValidStructure, isFalse);
     });
 
     test('invalid with < 2 options', () {
-      const dq = DetectedQuestion(
-        questionText: 'What is X?',
-        options: ['A'],
-      );
+      const dq = DetectedQuestion(questionText: 'What is X?', options: ['A']);
       expect(dq.hasValidStructure, isFalse);
     });
 
@@ -246,10 +286,7 @@ void main() {
     });
 
     test('no hasCorrectAnswer when index null', () {
-      const dq = DetectedQuestion(
-        questionText: 'Q?',
-        options: ['A', 'B'],
-      );
+      const dq = DetectedQuestion(questionText: 'Q?', options: ['A', 'B']);
       expect(dq.hasCorrectAnswer, isFalse);
     });
   });
@@ -259,23 +296,17 @@ void main() {
   // ──────────────────────────────────────────────────────────
   group('ContentBlock', () {
     test('isEmpty for whitespace', () {
-      final block = ContentBlock(
-        text: '   ',
-        sourceLocation: 'Line 1',
-      );
+      const block = ContentBlock(text: '   ', sourceLocation: 'Line 1');
       expect(block.isEmpty, isTrue);
     });
 
     test('is not empty for real text', () {
-      final block = ContentBlock(
-        text: 'Hello',
-        sourceLocation: 'Line 1',
-      );
+      const block = ContentBlock(text: 'Hello', sourceLocation: 'Line 1');
       expect(block.isEmpty, isFalse);
     });
 
     test('mayContainQuestion when flagged', () {
-      final block = ContentBlock(
+      const block = ContentBlock(
         text: 'What is X?',
         sourceLocation: 'Line 1',
         isQuestionLike: true,
@@ -284,7 +315,7 @@ void main() {
     });
 
     test('mayContainQuestion when blockType is question', () {
-      final block = ContentBlock(
+      const block = ContentBlock(
         text: 'Some text',
         sourceLocation: 'Line 1',
         blockType: ContentType.question,
@@ -420,10 +451,7 @@ void main() {
         sourceFormat: DocumentFormat.pdf,
       );
       fakeService.detectResult = const [
-        DetectedQuestion(
-          questionText: 'Q1?',
-          options: ['A', 'B', 'C', 'D'],
-        ),
+        DetectedQuestion(questionText: 'Q1?', options: ['A', 'B', 'C', 'D']),
       ];
 
       // First upload.
@@ -443,10 +471,7 @@ void main() {
         sourceFormat: DocumentFormat.pdf,
       );
       fakeService.detectResult = const [
-        DetectedQuestion(
-          questionText: 'Q?',
-          options: ['A', 'B', 'C', 'D'],
-        ),
+        DetectedQuestion(questionText: 'Q?', options: ['A', 'B', 'C', 'D']),
       ];
 
       await controller.pickUploadAndParse();
@@ -802,11 +827,11 @@ void main() {
   // ──────────────────────────────────────────────────────────
   group('Idempotency', () {
     test('TestWriteInput create idempotency (same params)', () {
-      final p1 = TestWriteInput(
+      final p1 = const TestWriteInput(
         title: 'T',
         creationMethod: 'upload',
       ).toCreateParams();
-      final p2 = TestWriteInput(
+      final p2 = const TestWriteInput(
         title: 'T',
         creationMethod: 'upload',
       ).toCreateParams();
@@ -819,7 +844,7 @@ void main() {
   // ──────────────────────────────────────────────────────────
   group('Manual flow regression', () {
     test('TestWriteInput defaults to manual', () {
-      final p = TestWriteInput(title: 'Manual Test').toCreateParams();
+      final p = const TestWriteInput(title: 'Manual Test').toCreateParams();
       expect(p['p_creation_method'], 'manual');
     });
 
@@ -854,17 +879,17 @@ void main() {
   // 15. Document format labels
   // ──────────────────────────────────────────────────────────
   group('QuestionSource labels', () {
-    test('document label is "Via Document"', () {
-      expect(QuestionSource.document.label, 'Via Document');
+    test('document label is "Smart Document & AI Intake"', () {
+      expect(QuestionSource.document.label, 'Smart Document & AI Intake');
     });
 
-    test('document description mentions PDF/Word/Excel', () {
+    test('document description mentions PDF/Word/Gemini AI', () {
       expect(QuestionSource.document.description, contains('PDF'));
       expect(QuestionSource.document.description, contains('Word'));
-      expect(QuestionSource.document.description, contains('Excel'));
+      expect(QuestionSource.document.description, contains('Gemini AI'));
     });
 
-    test('document icon is upload_file_outlined', () {
+    test('document icon is document_scanner_outlined', () {
       expect(QuestionSource.document.icon, isNotNull);
     });
   });

@@ -1,17 +1,20 @@
+import 'package:flutter/foundation.dart';
 import 'package:logger/logger.dart';
 
 final class AppLogger {
   AppLogger._();
 
-  static final Logger _logger = Logger(
-    printer: PrettyPrinter(
-      methodCount: 2,
-      errorMethodCount: 5,
-      lineLength: 80,
-      colors: true,
-      printEmojis: true,
-    ),
-  );
+  static final Logger _logger = kReleaseMode
+      ? Logger(level: Level.off)
+      : Logger(
+          printer: PrettyPrinter(
+            methodCount: 0,
+            errorMethodCount: 5,
+            lineLength: 80,
+            colors: true,
+            printEmojis: true,
+          ),
+        );
 
   static void debug(String message, {Object? error, StackTrace? stackTrace}) {
     _logger.d(message, error: error, stackTrace: stackTrace);

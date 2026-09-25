@@ -3,6 +3,9 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/theme/app_colors.dart';
 import '../../../core/models/group.dart';
+import '../../test/data/test_repository.dart';
+import '../../test/domain/test_lifecycle.dart';
+import '../../test/widgets/test_formatters.dart';
 import '../data/notification_repository.dart';
 import '../state/group_hub_controller.dart';
 import '../widgets/group_announcements_section.dart';
@@ -42,6 +45,8 @@ class _GroupHubScreenState extends State<GroupHubScreen> {
           groupId: widget.groupId,
           // G16: live inbox for the unread badge (tests inject their own).
           notifications: const SupabaseNotificationRepository(),
+          // Overview: live upcoming-test preview (tests inject their own).
+          tests: const SupabaseTestRepository(),
         );
     _c.addListener(_onChanged);
     _c.load();
@@ -93,6 +98,15 @@ class _GroupHubScreenState extends State<GroupHubScreen> {
     if (mounted) await _c.refresh();
   }
 
+  /// Opens the dedicated Discussion screen sharing THIS hub's controller —
+  /// same loaded messages, same realtime subscription, not a second one.
+  Future<void> _openDiscussion() async {
+    await context.push(
+      '/groups/${widget.groupId}/discussion',
+      extra: _c,
+    );
+  }
+
   Future<void> _openNotifications() async {
     await context.push('/groups/${widget.groupId}/notifications');
     // Rows were marked read there: re-read the count, never keep a stale badge.
@@ -141,6 +155,41 @@ class _GroupHubScreenState extends State<GroupHubScreen> {
       context.go('/groups');
     } else {
       _snack(_c.error ?? 'Could not leave the group.', error: true);
+    }
+  }
+
+  Future<void> _deleteGroup() async {
+    if (!_c.canDeleteGroup) {
+      _snack(_c.error ?? 'This group still has other members.', error: true);
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete this study group?'),
+        content: const Text('This action cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const Key('confirm_delete_group'),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Delete Group'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    final ok = await _c.deleteGroup();
+    if (!mounted) return;
+    if (ok) {
+      _snack('Group deleted.');
+      context.go('/groups');
+    } else {
+      _snack(_c.error ?? 'Could not delete the group.', error: true);
     }
   }
 
@@ -207,13 +256,24 @@ class _GroupHubScreenState extends State<GroupHubScreen> {
             key: const Key('group_menu'),
             onSelected: (value) {
               if (value == 'leave') _leave();
+              if (value == 'delete') _deleteGroup();
             },
             itemBuilder: (_) => [
-              PopupMenuItem(
-                value: 'leave',
-                enabled: _c.canLeave,
-                child: const Text('Leave group'),
-              ),
+              if (_c.canDeleteGroup)
+                PopupMenuItem(
+                  key: const Key('delete_group_menu_item'),
+                  value: 'delete',
+                  child: Text(
+                    'Delete group',
+                    style: TextStyle(color: Theme.of(context).colorScheme.error),
+                  ),
+                )
+              else
+                PopupMenuItem(
+                  value: 'leave',
+                  enabled: _c.canLeave,
+                  child: const Text('Leave group'),
+                ),
             ],
           ),
         ],
@@ -224,6 +284,16 @@ class _GroupHubScreenState extends State<GroupHubScreen> {
           padding: const EdgeInsets.all(16),
           children: [
             _headerCard(context, group),
+            if (_c.hasMessages && !_c.isRealtimeConnected) ...[
+              const SizedBox(height: 8),
+              _reconnectingBanner(context),
+            ],
+            const SizedBox(height: 24),
+            // Overview: "what's happening in my study group" — study-test
+            // counts, the next upcoming test, and the caller's own recent
+            // activity for this group. Additive only; every section below
+            // is unchanged.
+            _overviewSection(context),
             const SizedBox(height: 24),
             // G14: one Manage surface, rows gated by server-reported
             // permissions (owner bypass); renders nothing for a plain member.
@@ -244,7 +314,7 @@ class _GroupHubScreenState extends State<GroupHubScreen> {
             GroupRulesSection(controller: _c),
             const SizedBox(height: 24),
             // Chat: every member reads and sends; server-backed, no realtime.
-            GroupChatSection(controller: _c),
+            GroupChatSection(controller: _c, onOpenFullScreen: _openDiscussion),
             const SizedBox(height: 24),
             // G10: every member may view the group's tests; managers act there.
             OutlinedButton.icon(
@@ -302,6 +372,160 @@ class _GroupHubScreenState extends State<GroupHubScreen> {
                 key: const Key('leave_blocked_note'),
                 style: Theme.of(context).textTheme.bodySmall,
               ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// "What's happening in my study group?" — active/upcoming/completed test
+  /// counts, the next upcoming test (if any), and the caller's own recent
+  /// notifications for this group. Every count/row is real data already
+  /// loaded by the hub controller (`_loadGroupTests`/`_loadRecentActivity`,
+  /// both best-effort) — nothing here is invented or guessed.
+  Widget _overviewSection(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Overview', style: theme.textTheme.titleMedium),
+        const SizedBox(height: 8),
+        Row(
+          key: const Key('overview_stats_row'),
+          children: [
+            Expanded(
+              child: _statCard(theme, 'Live', _c.liveTestCount, Icons.podcasts_outlined),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _statCard(theme, 'Upcoming', _c.upcomingTestCount, Icons.event_outlined),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _statCard(theme, 'Completed', _c.previousTestCount, Icons.check_circle_outline),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        _upcomingTestCard(context),
+        const SizedBox(height: 12),
+        _recentActivityCard(context),
+      ],
+    );
+  }
+
+  Widget _statCard(ThemeData theme, String label, int count, IconData icon) {
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+        child: Column(
+          children: [
+            Icon(icon, size: 18, color: theme.colorScheme.primary),
+            const SizedBox(height: 6),
+            Text('$count', style: theme.textTheme.titleLarge),
+            Text(label, style: theme.textTheme.bodySmall),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _upcomingTestCard(BuildContext context) {
+    final theme = Theme.of(context);
+    final test = _c.upcomingTest;
+    if (test == null) {
+      return Card(
+        key: const Key('overview_no_upcoming_test'),
+        margin: EdgeInsets.zero,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Text(
+            "No tests yet\nYour group hasn't scheduled an upcoming test.",
+            style: theme.textTheme.bodySmall,
+          ),
+        ),
+      );
+    }
+    return Card(
+      key: Key('overview_upcoming_test_${test.id}'),
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Upcoming test', style: theme.textTheme.labelMedium),
+            const SizedBox(height: 4),
+            Text(test.title, style: theme.textTheme.titleSmall),
+            const SizedBox(height: 4),
+            Text(
+              '${TestLifecycle.statusLabel(test.status)} · '
+              '${TestFormatters.duration(test.durationSec)}'
+              '${test.startsAt != null ? ' · starts ${TestFormatters.dateTime(test.startsAt)}' : ''}',
+              style: theme.textTheme.bodySmall,
+            ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                key: Key('overview_view_test_${test.id}'),
+                onPressed: () => context.push('/tests/${test.id}'),
+                child: const Text('View Test'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// The caller's own recent notifications for this group. Labelled
+  /// honestly as personal activity — the app has no member-readable,
+  /// cross-user activity log for group events today, so this can never be a
+  /// shared "Alice joined / Bob completed a test" timeline without new
+  /// backend work.
+  Widget _recentActivityCard(BuildContext context) {
+    final theme = Theme.of(context);
+    final activity = _c.recentActivity;
+    if (activity == null) {
+      // Not loaded / failed — never worth a red error state on Overview.
+      return const SizedBox.shrink();
+    }
+    return Card(
+      key: const Key('overview_recent_activity'),
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Recent activity', style: theme.textTheme.labelMedium),
+            const SizedBox(height: 8),
+            if (activity.isEmpty)
+              Text(
+                'No recent activity',
+                key: const Key('overview_activity_empty'),
+                style: theme.textTheme.bodySmall,
+              )
+            else
+              for (final n in activity)
+                Padding(
+                  key: Key('overview_activity_${n.id}'),
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(n.title, style: theme.textTheme.bodyMedium),
+                      Text(
+                        n.body,
+                        style: theme.textTheme.bodySmall,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
           ],
         ),
       ),
@@ -377,6 +601,41 @@ class _GroupHubScreenState extends State<GroupHubScreen> {
     );
   }
 
+  /// Shown only when messages have already loaded but the realtime channel
+  /// isn't currently joined — new messages may be delayed until it
+  /// reconnects; never implies existing messages are wrong or missing.
+  Widget _reconnectingBanner(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      key: const Key('realtime_reconnecting_banner'),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            'Reconnecting…',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _statChip(ThemeData theme, IconData icon, String label) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
@@ -427,7 +686,9 @@ class _GroupHubScreenState extends State<GroupHubScreen> {
               const SizedBox(height: 16),
               action ??
                   FilledButton(
-                    onPressed: () => context.go('/groups'),
+                    onPressed: () => context.canPop()
+                        ? context.pop()
+                        : context.go('/groups'),
                     child: const Text('Back to Groups'),
                   ),
             ],

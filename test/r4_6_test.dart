@@ -36,7 +36,7 @@ void main() {
     });
 
     test('live test is live', () {
-      final test = Test(
+      const test = Test(
         id: 't-1',
         createdBy: 'user-1',
         title: 'Live Test',
@@ -47,7 +47,7 @@ void main() {
     });
 
     test('ready test is live', () {
-      final test = Test(
+      const test = Test(
         id: 't-1',
         createdBy: 'user-1',
         title: 'Ready Test',
@@ -58,7 +58,7 @@ void main() {
     });
 
     test('completed test is previous', () {
-      final test = Test(
+      const test = Test(
         id: 't-1',
         createdBy: 'user-1',
         title: 'Completed Test',
@@ -69,7 +69,7 @@ void main() {
     });
 
     test('ended test is previous', () {
-      final test = Test(
+      const test = Test(
         id: 't-1',
         createdBy: 'user-1',
         title: 'Ended Test',
@@ -80,7 +80,7 @@ void main() {
     });
 
     test('evaluated test is previous', () {
-      final test = Test(
+      const test = Test(
         id: 't-1',
         createdBy: 'user-1',
         title: 'Evaluated Test',
@@ -91,7 +91,7 @@ void main() {
     });
 
     test('cancelled test is previous', () {
-      final test = Test(
+      const test = Test(
         id: 't-1',
         createdBy: 'user-1',
         title: 'Cancelled Test',
@@ -102,7 +102,7 @@ void main() {
     });
 
     test('archived test is previous', () {
-      final test = Test(
+      const test = Test(
         id: 't-1',
         createdBy: 'user-1',
         title: 'Archived Test',
@@ -113,7 +113,7 @@ void main() {
     });
 
     test('expired test is previous', () {
-      final test = Test(
+      const test = Test(
         id: 't-1',
         createdBy: 'user-1',
         title: 'Expired Test',
@@ -124,7 +124,7 @@ void main() {
     });
 
     test('draft test should not appear in any public category', () {
-      final test = Test(
+      const test = Test(
         id: 't-1',
         createdBy: 'user-1',
         title: 'Draft Test',
@@ -250,13 +250,13 @@ void main() {
 
   group('Test Model - Equality', () {
     test('equality works', () {
-      final a = Test(
+      const a = Test(
         id: 't-1',
         createdBy: 'user-1',
         title: 'Math Quiz',
         status: TestStatus.live,
       );
-      final b = Test(
+      const b = Test(
         id: 't-1',
         createdBy: 'user-1',
         title: 'Math Quiz',
@@ -267,13 +267,13 @@ void main() {
     });
 
     test('inequality works', () {
-      final a = Test(
+      const a = Test(
         id: 't-1',
         createdBy: 'user-1',
         title: 'Math Quiz',
         status: TestStatus.live,
       );
-      final b = Test(
+      const b = Test(
         id: 't-2',
         createdBy: 'user-1',
         title: 'Science Quiz',
@@ -285,7 +285,7 @@ void main() {
 
   group('Test Model - Serialization', () {
     test('toJson serializes correctly', () {
-      final test = Test(
+      const test = Test(
         id: 't-1',
         createdBy: 'user-1',
         title: 'Math Quiz',

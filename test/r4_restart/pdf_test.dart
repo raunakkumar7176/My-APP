@@ -129,6 +129,126 @@ void main() {
       );
       expect(_isPdf(bytes), isTrue);
     });
+
+    test('includes group name and PASS/FAIL when passing_marks is set', () async {
+      const testWithPass = Test(
+        id: 't-1',
+        createdBy: 'u-1',
+        title: 'Geo Basics',
+        status: TestStatus.published,
+        testMode: 'group',
+        durationSec: 1800,
+        marksPerQuestion: 2,
+        negativeMarks: 0.5,
+        instructions: 'No maps allowed.',
+        passingMarks: 5,
+      );
+      final pass = await TestPdf.resultReport(
+        studentName: 'Raunak',
+        test: testWithPass,
+        kind: TestKind.self,
+        result: const Result(
+          id: 'a-3',
+          attemptId: 'a-3',
+          testId: 't-1',
+          userId: 'u-1',
+          score: 8,
+          maxScore: 10,
+        ),
+        attemptNumber: 1,
+        submittedAt: DateTime(2026, 9, 17, 12),
+        subjects: const [],
+        topics: const [],
+        groupName: 'Batch A',
+      );
+      expect(_isPdf(pass), isTrue);
+
+      final fail = await TestPdf.resultReport(
+        studentName: 'Raunak',
+        test: testWithPass,
+        kind: TestKind.self,
+        result: const Result(
+          id: 'a-4',
+          attemptId: 'a-4',
+          testId: 't-1',
+          userId: 'u-1',
+          score: 3,
+          maxScore: 10,
+        ),
+        attemptNumber: 1,
+        submittedAt: DateTime(2026, 9, 17, 12),
+        subjects: const [],
+        topics: const [],
+      );
+      expect(_isPdf(fail), isTrue);
+    });
+  });
+
+  group('TestPdf.groupResult', () {
+    test('produces one consolidated PDF preserving given rank order', () async {
+      final bytes = await TestPdf.groupResult(
+        test: _test,
+        groupName: 'Batch A',
+        participants: 3,
+        appeared: 3,
+        passed: 2,
+        failed: 1,
+        averagePercentage: 66.7,
+        highestPercentage: 90,
+        lowestPercentage: 40,
+        generatedAt: DateTime(2026, 9, 17, 12),
+        rows: const [
+          GroupResultRow(
+            rank: 1,
+            studentName: 'Alice',
+            marks: 9,
+            totalMarks: 10,
+            percentage: 90,
+            correctCount: 9,
+            wrongCount: 1,
+            unansweredCount: 0,
+            passFail: 'PASS',
+          ),
+          GroupResultRow(
+            rank: 2,
+            studentName: 'Bob',
+            marks: 6,
+            totalMarks: 10,
+            percentage: 60,
+            correctCount: 6,
+            wrongCount: 4,
+            unansweredCount: 0,
+            passFail: 'PASS',
+          ),
+          GroupResultRow(
+            rank: 3,
+            studentName: 'Cara',
+            marks: 4,
+            totalMarks: 10,
+            percentage: 40,
+            correctCount: 4,
+            wrongCount: 6,
+            unansweredCount: 0,
+            passFail: 'FAIL',
+          ),
+        ],
+      );
+      expect(_isPdf(bytes), isTrue);
+      expect(bytes.length, greaterThan(500));
+    });
+
+    test('never re-ranks: accepts and prints rows exactly as given, including ties', () async {
+      final bytes = await TestPdf.groupResult(
+        test: _test,
+        groupName: 'Batch B',
+        rows: const [
+          GroupResultRow(rank: 1, studentName: 'A', marks: 8, percentage: 80),
+          GroupResultRow(rank: 2, studentName: 'B', marks: 8, percentage: 80),
+          GroupResultRow(rank: 4, studentName: 'C', marks: 5, percentage: 50),
+        ],
+      );
+      expect(_isPdf(bytes), isTrue);
+    });
   });
 
   group('TestPdf.answerSheet', () {

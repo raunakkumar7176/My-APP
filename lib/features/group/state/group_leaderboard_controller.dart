@@ -2,7 +2,6 @@ import '../../../core/errors/app_error.dart';
 import '../../../core/logging/app_logger.dart';
 import '../../../core/models/group.dart';
 import '../../../core/models/group_member.dart';
-import '../../../core/models/result.dart';
 import '../../../core/models/test.dart';
 import '../../../core/services/auth_service.dart';
 import '../../test/data/result_repository.dart';
@@ -10,13 +9,15 @@ import '../../test/data/test_repository.dart';
 import '../../test/state/disposable_notifier.dart';
 import '../data/group_repository.dart';
 import '../domain/group_errors.dart';
+import '../domain/group_permission.dart';
 import '../domain/group_role.dart';
 import '../domain/group_test_results.dart';
 
-/// Group test leaderboard (G12): deterministic ranking of participants for
-/// a single completed test, derived entirely from stored `results` rows.
-/// No AI is called; no score is computed client-side. The same data the
-/// server returned under RLS is sorted and presented.
+/// Group test leaderboard (G12, F-10 remediation): the ranking comes from the
+/// live `rpc_get_leaderboard` (SECURITY DEFINER, remediated 2026-09-20). The
+/// server decides who receives rows (creator, member of the test's group, or
+/// participant) and computes the rank; the client never re-ranks, filters or
+/// reads `results` rows for other users. No AI is called.
 class GroupLeaderboardController extends DisposableNotifier {
   GroupLeaderboardController({
     required this.groupId,
@@ -40,7 +41,6 @@ class GroupLeaderboardController extends DisposableNotifier {
   Group? _group;
   Test? _test;
   List<GroupMember> _members = const [];
-  List<Result> _results_ = const [];
   List<LeaderboardEntry> _entries = const [];
   bool _loading = false;
   bool _loadedOnce = false;
@@ -55,7 +55,7 @@ class GroupLeaderboardController extends DisposableNotifier {
   String? get error => _error;
   String? get currentUserId => _currentUserId;
 
-  /// Deterministic leaderboard entries, best first.
+  /// Server-ranked entries, exactly as `rpc_get_leaderboard` returned them.
   List<LeaderboardEntry> get entries => _entries;
 
   /// The current user's leaderboard entry, if present.
@@ -71,6 +71,9 @@ class GroupLeaderboardController extends DisposableNotifier {
     isMember: isMember,
     isOwner: isOwner,
   );
+
+  bool _canSeeFullLeaderboard = false;
+  bool get canSeeFullLeaderboard => _canSeeFullLeaderboard;
 
   /// Display name from the roster — no extra profile read.
   String _labelFor(String userId) {
@@ -93,7 +96,6 @@ class GroupLeaderboardController extends DisposableNotifier {
       if (group == null) {
         _group = null;
         _test = null;
-        _results_ = const [];
         _entries = const [];
         _accessDenied = true;
       } else {
@@ -107,7 +109,16 @@ class GroupLeaderboardController extends DisposableNotifier {
           _accessDenied = true;
         } else {
           _members = await _groups.members(groupId);
-          await _readResults();
+          if (isOwner) {
+            _canSeeFullLeaderboard = true;
+          } else {
+            final perms = await _groups.permissionsFor(
+              groupId,
+              of: const [GroupPermission.viewGroupAnalytics],
+            );
+            _canSeeFullLeaderboard = perms.has(GroupPermission.viewGroupAnalytics);
+          }
+          await _readLeaderboard();
         }
       }
     } on AppError catch (e) {
@@ -123,10 +134,11 @@ class GroupLeaderboardController extends DisposableNotifier {
 
   Future<void> refresh() => load();
 
-  Future<void> _readResults() async {
-    _results_ = await _results.resultsForTest(testId);
-    _entries = LeaderboardEntry.fromResults(
-      _results_,
+  /// One read: the server-ranked rows the caller is allowed to see.
+  Future<void> _readLeaderboard() async {
+    final rows = await _results.leaderboard(testId);
+    _entries = LeaderboardEntry.fromServerRows(
+      rows,
       currentUserId: _currentUserId ?? '',
       labelFor: _labelFor,
     );

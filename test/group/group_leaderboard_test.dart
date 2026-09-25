@@ -536,6 +536,9 @@ class _Delegating implements ResultRepository {
   Future<ResultBatch> generateResults(String testId) =>
       inner.generateResults(testId);
   @override
+  Future<ResultBatch> publishResults(String testId) =>
+      inner.publishResults(testId);
+  @override
   Future<List<Result>> resultsForTest(String testId) =>
       inner.resultsForTest(testId);
   @override

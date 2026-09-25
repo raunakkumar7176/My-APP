@@ -180,8 +180,9 @@ abstract final class ScheduleMath {
     required DateTime? startsAt,
     required int? durationSec,
   }) {
-    if (startsAt == null || durationSec == null || durationSec <= 0)
+    if (startsAt == null || durationSec == null || durationSec <= 0) {
       return null;
+    }
     return startsAt.add(Duration(seconds: durationSec));
   }
 }

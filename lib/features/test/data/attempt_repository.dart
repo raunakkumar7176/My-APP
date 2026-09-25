@@ -11,6 +11,19 @@ import '../domain/test_errors.dart';
 /// the code-entry RPC may include (R4_3 shape). Null when absent.
 typedef StartedAttempt = ({Attempt attempt, String? testTitle});
 
+/// Server's response to `rpc_record_integrity_event`: whether the event was
+/// actually recorded (a terminal attempt or a suppressed duplicate is a
+/// no-op, not an error), the server's own running count, the configured
+/// threshold, and whether this call caused the server to auto-submit. The
+/// count/threshold/auto-submitted fields are the only truth — the client
+/// never computes or trusts its own copy of the count.
+typedef IntegrityEventOutcome = ({
+  bool eventRecorded,
+  int integrityEventCount,
+  int? autoSubmitThreshold,
+  bool autoSubmitted,
+});
+
 /// Attempts are created, saved and submitted ONLY through the secure RPCs;
 /// the server owns access checks, the deadline, attempt numbering, the
 /// re-attempt policy and scoring. The only direct read is the user's OWN
@@ -29,6 +42,26 @@ abstract interface class AttemptRepository {
   /// RPC includes one in its response; null otherwise (the result screen
   /// then reads the row via RLS). The live return shape is NOT VERIFIED.
   Future<Result?> submit(String attemptId, {required bool timedOut});
+
+  /// Reports one client-observed integrity event (app backgrounded,
+  /// multi-window entered, …) against the caller's own in-progress attempt.
+  /// The server owns the count, the threshold, dedup and any resulting
+  /// auto-submit — this call never sends a count, only an occurrence.
+  Future<IntegrityEventOutcome> recordIntegrityEvent({
+    required String attemptId,
+    required String testId,
+    required String eventType,
+    Map<String, dynamic>? details,
+  });
+
+  /// Records that the caller accepted the pre-test disclaimer for their own
+  /// [attemptId]. Server-side idempotent (a retry/double-call is a silent
+  /// no-op, never overwrites the original acceptance).
+  Future<void> recordDisclaimerAcceptance({
+    required String attemptId,
+    required String version,
+    required String language,
+  });
 }
 
 class SupabaseAttemptRepository implements AttemptRepository {
@@ -68,7 +101,8 @@ class SupabaseAttemptRepository implements AttemptRepository {
 
   /// Explicit live columns; never `select *`.
   static const attemptColumns =
-      'id, test_id, user_id, status, started_at, deadline_at, submitted_at, attempt_number';
+      'id, test_id, user_id, status, started_at, deadline_at, submitted_at, '
+      'attempt_number, integrity_event_count, auto_submit_threshold';
 
   @override
   Future<List<Attempt>> mine(String testId) => _guard(() async {
@@ -100,6 +134,61 @@ class SupabaseAttemptRepository implements AttemptRepository {
         AppLogger.rpcShape('rpc_submit_attempt', response);
         return resultFromSubmitResponse(response, attemptId: attemptId);
       }, TestErrorContext.submit);
+
+  @override
+  Future<IntegrityEventOutcome> recordIntegrityEvent({
+    required String attemptId,
+    required String testId,
+    required String eventType,
+    Map<String, dynamic>? details,
+  }) => _guard(() async {
+    final response = await _client.rpc(
+      'rpc_record_integrity_event',
+      params: {
+        'p_attempt': attemptId,
+        'p_test_id': testId,
+        'p_event_type': eventType,
+        'p_details': details ?? const <String, dynamic>{},
+      },
+    );
+    AppLogger.rpcShape('rpc_record_integrity_event', response);
+    return integrityOutcomeFromResponse(response);
+  }, TestErrorContext.submit);
+
+  @override
+  Future<void> recordDisclaimerAcceptance({
+    required String attemptId,
+    required String version,
+    required String language,
+  }) => _guard(() async {
+    final response = await _client.rpc(
+      'rpc_record_disclaimer_acceptance',
+      params: {
+        'p_attempt_id': attemptId,
+        'p_version': version,
+        'p_language': language,
+      },
+    );
+    AppLogger.rpcShape('rpc_record_disclaimer_acceptance', response);
+  }, TestErrorContext.save);
+
+  /// The RPC returns a single jsonb object (never a list). Missing/malformed
+  /// keys fail closed to "nothing happened" rather than fabricating a count.
+  static IntegrityEventOutcome integrityOutcomeFromResponse(dynamic response) {
+    final data = response is List && response.isNotEmpty
+        ? response.first
+        : response;
+    if (data is! Map) {
+      throw const DataError(message: 'Unexpected response from server.');
+    }
+    final json = Map<String, dynamic>.from(data);
+    return (
+      eventRecorded: json['event_recorded'] as bool? ?? false,
+      integrityEventCount: (json['integrity_event_count'] as num?)?.toInt() ?? 0,
+      autoSubmitThreshold: (json['auto_submit_threshold'] as num?)?.toInt(),
+      autoSubmitted: json['auto_submitted'] as bool? ?? false,
+    );
+  }
 
   /// A `results` row is recognised by its `attempt_id` + a score-like key;
   /// an `attempts` row, a status message or null yield null (not an error —

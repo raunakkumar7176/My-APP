@@ -1,10 +1,11 @@
 /// One row of `public.group_messages` — only the base columns the migration
 /// set has carried since 0001_init:
 /// `id, group_id, sender_id, body, created_at`.
-/// Later optional columns (message_type, metadata, deleted_at, deleted_by)
-/// are never selected, so the client stays correct whether or not they
-/// exist live. `sender_id` is nullable live (0047 dropped NOT NULL so system
-/// notices such as "History Cleared" can be inserted without an actor).
+/// Later optional columns (message_type, metadata) are never selected, so the
+/// client stays correct whether or not they exist live. `sender_id` is nullable
+/// live (0047 dropped NOT NULL so system notices such as "History Cleared" can
+/// be inserted without an actor). `deleted_at` is selected so the client can
+/// show a truthful "Message deleted" placeholder instead of the original body.
 final class GroupMessage {
   const GroupMessage({
     required this.id,
@@ -12,6 +13,7 @@ final class GroupMessage {
     required this.senderId,
     required this.body,
     required this.createdAt,
+    this.deletedAt,
   });
 
   /// Live CHECK: `char_length(body) BETWEEN 1 AND 2000`.
@@ -25,7 +27,13 @@ final class GroupMessage {
   final String body;
   final DateTime createdAt;
 
+  /// Non-null when the message has been soft-deleted. The client must show
+  /// "Message deleted" instead of [body] and must not expose the original
+  /// content.
+  final DateTime? deletedAt;
+
   bool get isSystem => senderId == null;
+  bool get isDeleted => deletedAt != null;
 
   factory GroupMessage.fromJson(Map<String, dynamic> json) {
     return GroupMessage(
@@ -34,6 +42,9 @@ final class GroupMessage {
       senderId: json['sender_id'] as String?,
       body: json['body'] as String,
       createdAt: DateTime.parse(json['created_at'] as String).toLocal(),
+      deletedAt: json['deleted_at'] == null
+          ? null
+          : DateTime.parse(json['deleted_at'] as String).toLocal(),
     );
   }
 
@@ -43,6 +54,7 @@ final class GroupMessage {
     'sender_id': senderId,
     'body': body,
     'created_at': createdAt.toUtc().toIso8601String(),
+    if (deletedAt != null) 'deleted_at': deletedAt!.toUtc().toIso8601String(),
   };
 
   @override

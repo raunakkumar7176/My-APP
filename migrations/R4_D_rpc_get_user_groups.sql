@@ -50,7 +50,7 @@ REVOKE ALL ON FUNCTION public.rpc_get_user_groups() FROM anon;
 GRANT EXECUTE ON FUNCTION public.rpc_get_user_groups() TO authenticated;
 
 NOTIFY pgrst, 'reload schema';
-
+ 
 -- ------------------------------------------------------------
 -- POSTFLIGHT (read-only; last statement → shown by the SQL Editor)
 -- Expected: rpc_get_user_groups() | '' | TABLE(id uuid, name text, owner_id uuid,
