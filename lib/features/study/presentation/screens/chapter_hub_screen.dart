@@ -64,20 +64,30 @@ class _ChapterHubScreenState extends State<ChapterHubScreen>
 
     _controller.addListener(_onControllerUpdate);
 
+    final initialTab = widget.initialTab == 0 ? 0 : 1;
     _tabController = TabController(
-      length: 3,
+      length: 2,
       vsync: this,
-      initialIndex: widget.initialTab.clamp(0, 2),
+      initialIndex: initialTab,
     );
     _tabController.addListener(() {
       if (!_tabController.indexIsChanging) {
         _controller.setActiveTab(_tabController.index);
       }
     });
+
+    if (widget.initialTab == 2) {
+      _controller.setAssessmentMode(1);
+    }
   }
 
   void _onControllerUpdate() {
-    if (mounted) setState(() {});
+    if (mounted) {
+      if (_tabController.index != _controller.activeTabIndex) {
+        _tabController.animateTo(_controller.activeTabIndex);
+      }
+      setState(() {});
+    }
   }
 
   @override
@@ -350,8 +360,7 @@ class _ChapterHubScreenState extends State<ChapterHubScreen>
             controller: _tabController,
             children: [
               KeepAliveTab(child: _buildLearnTab(isDark, isHindi)),
-              KeepAliveTab(child: _buildQuestionsTab(isDark, isHindi)),
-              KeepAliveTab(child: _buildTestTab(isDark, isHindi)),
+              KeepAliveTab(child: _buildAssessmentHubTab(isDark, isHindi)),
             ],
           ),
         ),
@@ -574,12 +583,8 @@ class _ChapterHubScreenState extends State<ChapterHubScreen>
     final tabs = [
       (icon: Icons.menu_book_rounded, title: isHindi ? 'अध्ययन' : 'Learn'),
       (
-        icon: Icons.auto_stories_rounded,
-        title: isHindi ? 'प्रश्न-उत्तर' : 'Q&A Study',
-      ),
-      (
-        icon: Icons.assignment_rounded,
-        title: isHindi ? 'टेस्ट' : 'Chapter Test',
+        icon: Icons.assignment_turned_in_rounded,
+        title: isHindi ? 'अभ्यास एवं टेस्ट' : 'Assessment Hub',
       ),
     ];
 
@@ -965,16 +970,9 @@ class _ChapterHubScreenState extends State<ChapterHubScreen>
               ),
               ElevatedButton.icon(
                 onPressed: () {
-                  if (topics.isNotEmpty) {
-                    context.push(
-                      '/study/topic/${topics.first.id}/practice?chapterId=${widget.chapterId}',
-                      extra: {
-                        'topicTitle': topics.first.title,
-                        'chapterTitle': _controller.chapter?.title ?? '',
-                        'chapterId': widget.chapterId,
-                      },
-                    );
-                  }
+                  _tabController.animateTo(1);
+                  _controller.setActiveTab(1);
+                  _controller.setAssessmentMode(0);
                 },
                 icon: const Icon(Icons.play_arrow_rounded, size: 16),
                 label: Text(
@@ -1081,6 +1079,7 @@ class _ChapterHubScreenState extends State<ChapterHubScreen>
                   onTap: () {
                     _tabController.animateTo(1);
                     _controller.setActiveTab(1);
+                    _controller.setAssessmentMode(0);
                   },
                   child: Container(
                     padding: const EdgeInsets.symmetric(
@@ -1137,8 +1136,6 @@ class _ChapterHubScreenState extends State<ChapterHubScreen>
     final textSecondary = isDark
         ? const Color(0xFF94A3B8)
         : const Color(0xFF64748B);
-    final chapter = _controller.chapter;
-    final questionCount = _controller.totalQuestionCount;
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -1204,18 +1201,9 @@ class _ChapterHubScreenState extends State<ChapterHubScreen>
                 const SizedBox(height: 10),
                 ElevatedButton.icon(
                   onPressed: () {
-                    context.pushNamed(
-                      'test-create',
-                      extra: {
-                        'prefillSubjectId': chapter?.subjectId ?? '',
-                        'prefillChapterId': chapter?.id ?? widget.chapterId,
-                        'prefillTitle':
-                            '${chapter?.title ?? "Chapter"} — Chapter Test',
-                        'initialSource': QuestionSource.books,
-                        'availableQuestionCount': questionCount,
-                        'defaultMode': 'self',
-                      },
-                    );
+                    _tabController.animateTo(1);
+                    _controller.setActiveTab(1);
+                    _controller.setAssessmentMode(1);
                   },
                   icon: const Icon(Icons.arrow_forward_rounded, size: 14),
                   label: Text(
@@ -1248,8 +1236,175 @@ class _ChapterHubScreenState extends State<ChapterHubScreen>
     );
   }
 
-  // ── Tab 2: Q&A Study (Memorization & Practice) ────────────────────────────
-  Widget _buildQuestionsTab(bool isDark, bool isHindi) {
+  // ── Tab 2: Chapter Assessment & Practice Engine ───────────────────────────
+  Widget _buildAssessmentHubTab(bool isDark, bool isHindi) {
+    return Column(
+      children: [
+        // Mode Switcher Header
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+          child: _buildAssessmentModeSwitcher(isDark, isHindi),
+        ),
+        Expanded(
+          child: _controller.assessmentMode == 0
+              ? _buildSmartPracticeView(isDark, isHindi)
+              : _buildFormalExamView(isDark, isHindi),
+        ),
+      ],
+    );
+  }
+
+  // ── Assessment Mode Switcher (Smart Practice vs Formal Exam) ──────────────
+  Widget _buildAssessmentModeSwitcher(bool isDark, bool isHindi) {
+    final isPractice = _controller.assessmentMode == 0;
+    final containerBg = isDark
+        ? const Color(0xFF1E293B)
+        : const Color(0xFFF1F5F9);
+    final activeBg = isDark ? const Color(0xFF334155) : Colors.white;
+    final activeText = isDark ? Colors.white : const Color(0xFF2563EB);
+    final inactiveText = isDark
+        ? const Color(0xFF94A3B8)
+        : const Color(0xFF64748B);
+
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: containerBg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+        ),
+      ),
+      child: Row(
+        children: [
+          // Mode A: Smart Practice
+          Expanded(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => _controller.setAssessmentMode(0),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                decoration: BoxDecoration(
+                  color: isPractice ? activeBg : Colors.transparent,
+                  borderRadius: BorderRadius.circular(8),
+                  boxShadow: isPractice && !isDark
+                      ? [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.04),
+                            blurRadius: 4,
+                            offset: const Offset(0, 1),
+                          ),
+                        ]
+                      : null,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.auto_stories_rounded,
+                      size: 15,
+                      color: isPractice ? activeText : inactiveText,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      isHindi ? 'स्मार्ट अभ्यास' : 'Smart Practice',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: isPractice
+                            ? FontWeight.w700
+                            : FontWeight.w500,
+                        color: isPractice ? activeText : inactiveText,
+                      ),
+                    ),
+                    if (_controller.answeredCount > 0) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 1.5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: isPractice
+                              ? (isDark
+                                    ? const Color(0xFF1E3A8A)
+                                    : const Color(0xFFDBEAFE))
+                              : (isDark
+                                    ? const Color(0xFF334155)
+                                    : const Color(0xFFE2E8F0)),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '${_controller.correctCount}/${_controller.answeredCount}',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: isPractice
+                                ? const Color(0xFF2563EB)
+                                : inactiveText,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+
+          // Mode B: Formal Exam
+          Expanded(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => _controller.setAssessmentMode(1),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                decoration: BoxDecoration(
+                  color: !isPractice ? activeBg : Colors.transparent,
+                  borderRadius: BorderRadius.circular(8),
+                  boxShadow: !isPractice && !isDark
+                      ? [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.04),
+                            blurRadius: 4,
+                            offset: const Offset(0, 1),
+                          ),
+                        ]
+                      : null,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.assignment_rounded,
+                      size: 15,
+                      color: !isPractice ? activeText : inactiveText,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      isHindi ? 'औपचारिक परीक्षा' : 'Formal Exam',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: !isPractice
+                            ? FontWeight.w700
+                            : FontWeight.w500,
+                        color: !isPractice ? activeText : inactiveText,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Mode A: Smart Practice View ───────────────────────────────────────────
+  Widget _buildSmartPracticeView(bool isDark, bool isHindi) {
     final questions = _controller.questions;
 
     if (_controller.isLoadingQuestions && questions.isEmpty) {
@@ -1363,6 +1518,7 @@ class _ChapterHubScreenState extends State<ChapterHubScreen>
           number: qIdx + 1,
           isDark: isDark,
           isHindi: isHindi,
+          controller: _controller,
         );
       },
     );
@@ -1469,8 +1625,8 @@ class _ChapterHubScreenState extends State<ChapterHubScreen>
     );
   }
 
-  // ── Tab 3: Chapter Test (Direct Test Creation Bridge) ─────────────────────
-  Widget _buildTestTab(bool isDark, bool isHindi) {
+  // ── Mode B: Formal Exam View (Direct Assessment Bridge) ───────────────────
+  Widget _buildFormalExamView(bool isDark, bool isHindi) {
     final chapter = _controller.chapter;
     final questionCount =
         chapter?.questionCount ?? _controller.questions.length;
@@ -1484,7 +1640,7 @@ class _ChapterHubScreenState extends State<ChapterHubScreen>
         : const Color(0xFF64748B);
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 24.0),
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 16.0),
       child: Container(
         padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
@@ -1978,7 +2134,7 @@ class _TopicCardState extends State<_TopicCard> {
   }
 }
 
-/// Study Practice Question Card with highlighted correct option and default solution box.
+/// Study Practice Question Card with interactive recall, highlighted correct option, and detailed explanation.
 class _QuestionStudyCard extends StatelessWidget {
   const _QuestionStudyCard({
     super.key,
@@ -1986,12 +2142,14 @@ class _QuestionStudyCard extends StatelessWidget {
     required this.number,
     required this.isDark,
     required this.isHindi,
+    required this.controller,
   });
 
   final StudyQuestion question;
   final int number;
   final bool isDark;
   final bool isHindi;
+  final ChapterHubController controller;
 
   @override
   Widget build(BuildContext context) {
@@ -2002,6 +2160,9 @@ class _QuestionStudyCard extends StatelessWidget {
     final textSecondary = isDark
         ? const Color(0xFF94A3B8)
         : const Color(0xFF64748B);
+
+    final selectedOpt = controller.getSelectedOption(question.id);
+    final hasUserSelection = selectedOpt != null;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 14.0),
@@ -2068,119 +2229,185 @@ class _QuestionStudyCard extends StatelessWidget {
                     ),
                   ),
                 ),
+                if (hasUserSelection) ...[
+                  const SizedBox(width: 8),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(6),
+                    onTap: () => controller.resetQuestion(question.id),
+                    child: Padding(
+                      padding: const EdgeInsets.all(4.0),
+                      child: Icon(
+                        Icons.refresh_rounded,
+                        size: 18,
+                        color: textSecondary,
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
             const SizedBox(height: 14),
 
-            // 4 Options (Pre-highlighted Correct Option)
+            // Options
             ...List.generate(question.options.length, (optIdx) {
               final optionText = question.options[optIdx];
               final isCorrect = optIdx == question.correctOption;
+              final isUserPick = selectedOpt == optIdx;
+
+              // Border and background styling
+              final Color optBg;
+              final Color optBorder;
+              final Color optText;
+
+              if (isCorrect) {
+                optBg = isDark
+                    ? const Color(0xFF064E3B).withValues(alpha: 0.5)
+                    : const Color(0xFFECFDF5);
+                optBorder = const Color(0xFF10B981);
+                optText = isDark
+                    ? const Color(0xFF6EE7B7)
+                    : const Color(0xFF065F46);
+              } else if (isUserPick) {
+                // User picked wrong option
+                optBg = isDark
+                    ? const Color(0xFF450A0A).withValues(alpha: 0.5)
+                    : const Color(0xFFFEF2F2);
+                optBorder = const Color(0xFFEF4444);
+                optText = isDark
+                    ? const Color(0xFFFCA5A5)
+                    : const Color(0xFF991B1B);
+              } else {
+                optBg = isDark
+                    ? const Color(0xFF1E293B)
+                    : const Color(0xFFF8FAFC);
+                optBorder = isDark
+                    ? const Color(0xFF334155)
+                    : const Color(0xFFE2E8F0);
+                optText = isDark ? Colors.white : const Color(0xFF1E293B);
+              }
 
               return Padding(
                 padding: const EdgeInsets.only(bottom: 8.0),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 10,
-                  ),
-                  decoration: BoxDecoration(
-                    color: isCorrect
-                        ? (isDark
-                              ? const Color(0xFF064E3B).withValues(alpha: 0.5)
-                              : const Color(0xFFECFDF5))
-                        : (isDark
-                              ? const Color(0xFF1E293B)
-                              : const Color(0xFFF8FAFC)),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: isCorrect
-                          ? const Color(0xFF10B981)
-                          : (isDark
-                                ? const Color(0xFF334155)
-                                : const Color(0xFFE2E8F0)),
-                      width: isCorrect ? 1.5 : 1.0,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(10),
+                  onTap: () => controller.selectOption(question.id, optIdx),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
                     ),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 22,
-                        height: 22,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: isCorrect
-                              ? const Color(0xFF10B981)
-                              : Colors.transparent,
-                          border: Border.all(
+                    decoration: BoxDecoration(
+                      color: optBg,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: optBorder,
+                        width: (isCorrect || isUserPick) ? 1.5 : 1.0,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 22,
+                          height: 22,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
                             color: isCorrect
                                 ? const Color(0xFF10B981)
-                                : (isDark
-                                      ? const Color(0xFF64748B)
-                                      : const Color(0xFF94A3B8)),
-                            width: 1.5,
+                                : isUserPick
+                                ? const Color(0xFFEF4444)
+                                : Colors.transparent,
+                            border: Border.all(
+                              color: isCorrect
+                                  ? const Color(0xFF10B981)
+                                  : isUserPick
+                                  ? const Color(0xFFEF4444)
+                                  : (isDark
+                                        ? const Color(0xFF64748B)
+                                        : const Color(0xFF94A3B8)),
+                              width: 1.5,
+                            ),
                           ),
-                        ),
-                        child: Center(
-                          child: isCorrect
-                              ? const Icon(
-                                  Icons.check_rounded,
-                                  size: 14,
-                                  color: Colors.white,
-                                )
-                              : Text(
-                                  String.fromCharCode(65 + optIdx),
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                    color: textSecondary,
+                          child: Center(
+                            child: isCorrect
+                                ? const Icon(
+                                    Icons.check_rounded,
+                                    size: 14,
+                                    color: Colors.white,
+                                  )
+                                : isUserPick
+                                ? const Icon(
+                                    Icons.close_rounded,
+                                    size: 14,
+                                    color: Colors.white,
+                                  )
+                                : Text(
+                                    String.fromCharCode(65 + optIdx),
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                      color: textSecondary,
+                                    ),
                                   ),
-                                ),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          optionText,
-                          style: TextStyle(
-                            fontSize: 13.5,
-                            fontWeight: isCorrect
-                                ? FontWeight.w700
-                                : FontWeight.w500,
-                            color: isCorrect
-                                ? (isDark
-                                      ? const Color(0xFF6EE7B7)
-                                      : const Color(0xFF065F46))
-                                : (isDark
-                                      ? Colors.white
-                                      : const Color(0xFF1E293B)),
                           ),
                         ),
-                      ),
-                      if (isCorrect) ...[
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 7,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: isDark
-                                ? const Color(0xFF047857)
-                                : const Color(0xFF10B981),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
+                        const SizedBox(width: 10),
+                        Expanded(
                           child: Text(
-                            isHindi ? 'सही उत्तर' : 'Correct',
-                            style: const TextStyle(
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
+                            optionText,
+                            style: TextStyle(
+                              fontSize: 13.5,
+                              fontWeight: (isCorrect || isUserPick)
+                                  ? FontWeight.w700
+                                  : FontWeight.w500,
+                              color: optText,
                             ),
                           ),
                         ),
+                        if (isCorrect) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: isDark
+                                  ? const Color(0xFF047857)
+                                  : const Color(0xFF10B981),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              isHindi ? 'सही उत्तर' : 'Correct',
+                              style: const TextStyle(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ] else if (isUserPick) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFDC2626),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              isHindi ? 'आपका चयन' : 'Your Choice',
+                              style: const TextStyle(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                 ),
               );

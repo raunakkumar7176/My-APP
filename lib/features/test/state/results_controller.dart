@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import '../../../core/errors/app_error.dart';
@@ -8,6 +9,7 @@ import '../../../core/models/question.dart';
 import '../../../core/models/result.dart';
 import '../../../core/models/result_analytics.dart';
 import '../../../core/models/test.dart';
+import '../../../core/services/gamification_service.dart';
 import '../../../core/services/subject_service.dart';
 import '../data/answer_repository.dart';
 import '../data/attempt_repository.dart';
@@ -103,6 +105,11 @@ class ResultsController extends DisposableNotifier {
         return;
       }
       final r = _result!;
+      final accuracy = r.accuracy ?? r.percentage ?? 0.0;
+      unawaited(GamificationService.awardTestCompleted(
+        testIdOrAttemptId: attemptId,
+        accuracyPercentage: accuracy,
+      ));
       final loads = await Future.wait<Object?>([
         _tests.getById(r.testId).catchError((Object e) {
           AppLogger.warning('Result test row unavailable: $e');

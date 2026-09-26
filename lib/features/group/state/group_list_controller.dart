@@ -1,3 +1,5 @@
+import 'package:shared_preferences/shared_preferences.dart';
+
 import '../../../core/errors/app_error.dart';
 import '../../../core/logging/app_logger.dart';
 import '../../../core/models/group.dart';
@@ -17,6 +19,8 @@ class GroupListController extends DisposableNotifier {
   final GroupRepository _repo;
 
   List<Group> _groups = const [];
+  Set<String> _hiddenGroupIds = {};
+  bool _showHidden = false;
   Map<String, int> _unreadCounts = const {};
   Map<String, GroupLatestMessage> _latestMessages = const {};
   List<GroupJoinRequest> _pendingRequests = const [];
@@ -31,7 +35,41 @@ class GroupListController extends DisposableNotifier {
   bool _busy = false;
   String? _error;
 
-  List<Group> get groups => _groups;
+  List<Group> get groups => _showHidden
+      ? _groups
+      : _groups.where((g) => !_hiddenGroupIds.contains(g.id)).toList();
+
+  List<Group> get allGroups => _groups;
+  bool get showHidden => _showHidden;
+  int get hiddenCount => _groups.where((g) => _hiddenGroupIds.contains(g.id)).length;
+  bool isGroupHidden(String groupId) => _hiddenGroupIds.contains(groupId);
+
+  void toggleShowHidden() {
+    _showHidden = !_showHidden;
+    notifyListeners();
+  }
+
+  Future<void> hideGroup(String groupId) async {
+    _hiddenGroupIds.add(groupId);
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList('hidden_group_ids', _hiddenGroupIds.toList());
+    } catch (e) {
+      AppLogger.warning('Failed to save hidden_group_ids: $e');
+    }
+  }
+
+  Future<void> unhideGroup(String groupId) async {
+    _hiddenGroupIds.remove(groupId);
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList('hidden_group_ids', _hiddenGroupIds.toList());
+    } catch (e) {
+      AppLogger.warning('Failed to save hidden_group_ids: $e');
+    }
+  }
 
   /// Unread chat message count for [groupId] (0027's `message_reads`,
   /// fetched batched via `fn_get_group_unread_counts`). 0 when absent —
@@ -87,6 +125,13 @@ class GroupListController extends DisposableNotifier {
     _error = null;
     notifyListeners();
     try {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final hiddenList = prefs.getStringList('hidden_group_ids') ?? [];
+        _hiddenGroupIds = hiddenList.toSet();
+      } catch (e) {
+        AppLogger.warning('Failed to load hidden_group_ids: $e');
+      }
       _groups = await _repo.myGroups();
       await _loadInvitations();
       await _loadPendingRequests();

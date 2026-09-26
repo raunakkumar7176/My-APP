@@ -174,10 +174,9 @@ void main() {
       // Smart Action CTA for in-progress chapter
       expect(find.text('Continue Learning →'), findsOneWidget);
 
-      // 3-tab segmented navigation bar
+      // 2-tab segmented navigation bar (Learn & Assessment Hub)
       expect(find.text('Learn'), findsOneWidget);
-      expect(find.text('Q&A Study'), findsOneWidget);
-      expect(find.text('Chapter Test'), findsOneWidget);
+      expect(find.text('Assessment Hub'), findsOneWidget);
 
       // "What you'll master" box in Learn Tab
       expect(find.text("What you'll master:"), findsOneWidget);
@@ -224,7 +223,7 @@ void main() {
     });
 
     testWidgets(
-      'switches to Q&A Study tab and renders active recall flashcards',
+      'switches to Assessment Hub tab and renders Smart Practice mode active recall flashcards',
       (tester) async {
         tester.view.physicalSize = const Size(1000, 1400);
         tester.view.devicePixelRatio = 1.0;
@@ -236,9 +235,13 @@ void main() {
         await tester.pumpWidget(createChapterHubScreen());
         await tester.pumpAndSettle();
 
-        // Tap "Q&A Study" tab
-        await tester.tap(find.text('Q&A Study'));
+        // Tap "Assessment Hub" tab
+        await tester.tap(find.text('Assessment Hub'));
         await tester.pumpAndSettle();
+
+        // Mode Switcher displays Smart Practice and Formal Exam
+        expect(find.text('Smart Practice'), findsOneWidget);
+        expect(find.text('Formal Exam'), findsOneWidget);
 
         // Revision notice banner
         expect(
@@ -277,7 +280,7 @@ void main() {
     );
 
     testWidgets(
-      'switches to Chapter Test tab and renders test generator hero card',
+      'switches to Formal Exam mode inside Assessment Hub and renders test generator hero card',
       (tester) async {
         tester.view.physicalSize = const Size(1000, 1400);
         tester.view.devicePixelRatio = 1.0;
@@ -289,8 +292,12 @@ void main() {
         await tester.pumpWidget(createChapterHubScreen());
         await tester.pumpAndSettle();
 
-        // Tap "Chapter Test" tab
-        await tester.tap(find.text('Chapter Test'));
+        // Tap "Assessment Hub" tab
+        await tester.tap(find.text('Assessment Hub'));
+        await tester.pumpAndSettle();
+
+        // Tap "Formal Exam" mode
+        await tester.tap(find.text('Formal Exam'));
         await tester.pumpAndSettle();
 
         // Hero card title and description
@@ -334,7 +341,7 @@ void main() {
     });
 
     testWidgets(
-      'switches to Q&A tab when Review Q&A Flashcards is tapped in Learn tab',
+      'switches to Assessment Hub when Review Q&A Flashcards is tapped in Learn tab',
       (tester) async {
         tester.view.physicalSize = const Size(1000, 1400);
         tester.view.devicePixelRatio = 1.0;
@@ -352,12 +359,39 @@ void main() {
         await tester.tap(reviewButton);
         await tester.pumpAndSettle();
 
-        // Tab should have changed to Q&A Study
+        // Tab should have changed to Assessment Hub in Smart Practice mode
+        expect(find.text('Smart Practice'), findsOneWidget);
         expect(
           find.text('Active Recall & Revision Mode (1 Questions)'),
           findsOneWidget,
         );
         expect(find.text('Q1'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'tapping option in Smart Practice gives immediate feedback and updates score',
+      (tester) async {
+        tester.view.physicalSize = const Size(1000, 1400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+
+        await tester.pumpWidget(createChapterHubScreen());
+        await tester.pumpAndSettle();
+
+        // Switch to Assessment Hub
+        await tester.tap(find.text('Assessment Hub'));
+        await tester.pumpAndSettle();
+
+        // Tap correct option '97'
+        await tester.tap(find.text('97'));
+        await tester.pumpAndSettle();
+
+        // Score badge appears in mode switcher
+        expect(find.text('1/1'), findsOneWidget);
       },
     );
 

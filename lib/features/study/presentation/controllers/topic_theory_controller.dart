@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../../../../core/logging/app_logger.dart';
 import '../../../../core/services/auth_service.dart';
+import '../../../../core/services/gamification_service.dart';
 import '../../../../core/services/supabase_service.dart';
 import '../../data/study_repository.dart';
 import '../../domain/content_block.dart';
@@ -170,6 +173,10 @@ class TopicTheoryController extends ChangeNotifier {
       }
 
       _topic = _topic!.copyWith(isCompleted: targetStatus);
+
+      if (targetStatus) {
+        unawaited(GamificationService.awardTopicCompleted(_currentTopicId));
+      }
 
       // Update in chapterTopics list as well
       final idx = _chapterTopics.indexWhere((t) => t.id == _currentTopicId);

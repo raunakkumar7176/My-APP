@@ -26,6 +26,8 @@ import '../features/notifications/screens/notification_settings_screen.dart';
 import '../features/performance/performance_screen.dart';
 import '../features/profile/profile_screen.dart';
 import '../features/profile/screens/avatar_viewer_screen.dart';
+import '../features/community/screens/community_hub_screen.dart';
+import '../features/about/screens/about_app_screen.dart';
 import '../features/settings/settings_screen.dart';
 import 'app_shell.dart';
 import '../features/study/material_detail_screen.dart';
@@ -127,7 +129,23 @@ final class AppRouter {
               );
             },
           ),
+          GoRoute(
+            path: ':userId',
+            name: 'user-profile',
+            builder: (context, state) =>
+                ProfileScreen(userId: state.pathParameters['userId']),
+          ),
         ],
+      ),
+      GoRoute(
+        path: '/community',
+        name: 'community',
+        builder: (context, state) => const CommunityHubScreen(),
+      ),
+      GoRoute(
+        path: '/about',
+        name: 'about',
+        builder: (context, state) => const AboutAppScreen(),
       ),
       GoRoute(
         path: '/performance',
@@ -312,20 +330,33 @@ final class AppRouter {
             path: ':groupId',
             name: 'group-hub',
             builder: (context, state) =>
-                GroupHubScreen(groupId: state.pathParameters['groupId']!),
+                GroupChatScreen(groupId: state.pathParameters['groupId']!),
             routes: [
+              GoRoute(
+                path: 'info',
+                name: 'group-info',
+                builder: (context, state) =>
+                    GroupInfoScreen(groupId: state.pathParameters['groupId']!),
+              ),
+              GoRoute(
+                path: 'chat',
+                name: 'group-chat',
+                builder: (context, state) =>
+                    GroupChatScreen(groupId: state.pathParameters['groupId']!),
+              ),
               GoRoute(
                 path: 'discussion',
                 name: 'group-discussion',
                 builder: (context, state) {
                   final controller = state.extra;
                   if (controller is GroupHubController) {
-                    return GroupDiscussionScreen(controller: controller);
+                    return GroupChatScreen(
+                      groupId: state.pathParameters['groupId']!,
+                      controller: controller,
+                    );
                   }
-                  // Deep link without the hub's shared controller: the
-                  // screen cannot render standalone — bounce to the hub.
-                  return const Scaffold(
-                    body: Center(child: Text('Open the group first.')),
+                  return GroupChatScreen(
+                    groupId: state.pathParameters['groupId']!,
                   );
                 },
               ),

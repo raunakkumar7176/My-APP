@@ -10,6 +10,7 @@ import '../state/group_list_controller.dart';
 import '../widgets/group_avatar.dart';
 import '../widgets/incoming_invitations_section.dart';
 import '../widgets/join_group_sheet.dart';
+import '../../profile/widgets/student_search_sheet.dart';
 
 /// Group Hub entry: the groups the caller owns or belongs to.
 /// Navigation carries ids only; the hub loads its own data.
@@ -76,8 +77,27 @@ class _GroupListScreenState extends State<GroupListScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Groups'),
+        title: Text(_c.showHidden ? 'Archived Groups' : 'Groups'),
         actions: [
+          IconButton(
+            key: const Key('search_student_action'),
+            tooltip: 'Find Student by ID',
+            icon: const Icon(Icons.person_search_outlined),
+            onPressed: () => StudentSearchSheet.show(context),
+          ),
+          if (_c.hiddenCount > 0 || _c.showHidden)
+            IconButton(
+              key: const Key('toggle_archived_groups_action'),
+              tooltip: _c.showHidden
+                  ? 'Show Active Groups'
+                  : 'Show Archived Groups (${_c.hiddenCount})',
+              icon: Icon(
+                _c.showHidden
+                    ? Icons.unarchive_outlined
+                    : Icons.archive_outlined,
+              ),
+              onPressed: _c.toggleShowHidden,
+            ),
           IconButton(
             key: const Key('join_group_action'),
             tooltip: 'Join with code',
@@ -157,11 +177,36 @@ class _GroupListScreenState extends State<GroupListScreen> {
                 if (i == 0) return _invitations();
                 if (i == 1) return _pendingBanner();
                 final g = _c.groups[i - 2];
+                final isHidden = _c.isGroupHidden(g.id);
                 return _GroupCard(
                   key: ValueKey(g.id),
                   group: g,
                   unreadCount: _c.unreadCountFor(g.id),
                   latestMessage: _c.latestMessageFor(g.id),
+                  isHidden: isHidden,
+                  onToggleHide: () async {
+                    if (isHidden) {
+                      await _c.unhideGroup(g.id);
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Restored "${g.name}" to My Groups'),
+                          ),
+                        );
+                      }
+                    } else {
+                      await _c.hideGroup(g.id);
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              'Archived "${g.name}". You can restore it anytime.',
+                            ),
+                          ),
+                        );
+                      }
+                    }
+                  },
                   onOpen: () async {
                     await context.push('/groups/${g.id}');
                     if (mounted) await _c.refresh();
@@ -283,11 +328,15 @@ class _GroupCard extends StatelessWidget {
     required this.onOpen,
     this.unreadCount = 0,
     this.latestMessage,
+    this.isHidden = false,
+    this.onToggleHide,
     super.key,
   });
 
   final Group group;
   final VoidCallback onOpen;
+  final bool isHidden;
+  final VoidCallback? onToggleHide;
 
   /// From `fn_get_group_unread_counts` — 0 shows no badge.
   final int unreadCount;
@@ -341,6 +390,37 @@ class _GroupCard extends StatelessWidget {
                 ),
               ),
             const Icon(Icons.chevron_right),
+            if (onToggleHide != null)
+              PopupMenuButton<String>(
+                icon: const Icon(Icons.more_vert, size: 20),
+                tooltip: 'More options',
+                onSelected: (value) {
+                  if (value == 'toggle_hide') {
+                    onToggleHide?.call();
+                  }
+                },
+                itemBuilder: (context) => [
+                  PopupMenuItem(
+                    value: 'toggle_hide',
+                    child: Row(
+                      children: [
+                        Icon(
+                          isHidden
+                              ? Icons.unarchive_outlined
+                              : Icons.archive_outlined,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          isHidden ? 'Restore group' : 'Archive / Hide group',
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              )
+            else
+              const Icon(Icons.chevron_right),
           ],
         ),
       ),

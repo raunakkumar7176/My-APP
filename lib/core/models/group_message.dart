@@ -13,6 +13,7 @@ final class GroupMessage {
     required this.senderId,
     required this.body,
     required this.createdAt,
+    this.messageType = 'text',
     this.deletedAt,
   });
 
@@ -26,13 +27,15 @@ final class GroupMessage {
   final String? senderId;
   final String body;
   final DateTime createdAt;
+  final String messageType;
 
   /// Non-null when the message has been soft-deleted. The client must show
   /// "Message deleted" instead of [body] and must not expose the original
   /// content.
   final DateTime? deletedAt;
 
-  bool get isSystem => senderId == null;
+  bool get isSystem => senderId == null || messageType == 'system_event';
+  bool get isSystemEvent => isSystem;
   bool get isDeleted => deletedAt != null;
 
   factory GroupMessage.fromJson(Map<String, dynamic> json) {
@@ -42,6 +45,7 @@ final class GroupMessage {
       senderId: json['sender_id'] as String?,
       body: json['body'] as String,
       createdAt: DateTime.parse(json['created_at'] as String).toLocal(),
+      messageType: (json['message_type'] as String?) ?? 'text',
       deletedAt: json['deleted_at'] == null
           ? null
           : DateTime.parse(json['deleted_at'] as String).toLocal(),
@@ -53,6 +57,7 @@ final class GroupMessage {
     'group_id': groupId,
     'sender_id': senderId,
     'body': body,
+    'message_type': messageType,
     'created_at': createdAt.toUtc().toIso8601String(),
     if (deletedAt != null) 'deleted_at': deletedAt!.toUtc().toIso8601String(),
   };

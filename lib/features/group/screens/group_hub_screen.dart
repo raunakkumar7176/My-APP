@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:image_picker/image_picker.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../../../core/constants/theme/app_colors.dart';
 import '../../../core/models/group.dart';
+import '../../../core/services/supabase_service.dart';
 import '../../test/data/test_repository.dart';
 import '../../test/domain/test_lifecycle.dart';
 import '../../test/widgets/test_formatters.dart';
@@ -18,6 +22,9 @@ import '../widgets/join_request_queue.dart';
 import '../widgets/member_tile.dart';
 import '../widgets/outgoing_invitations_section.dart';
 import '../widgets/role_permissions_sheet.dart';
+
+/// Group Info & Cohort Hub Screen
+typedef GroupInfoScreen = GroupHubScreen;
 
 /// One group's hub: profile header, roster, and the G1 membership actions.
 /// Later phases (leaderboard) attach here; nothing is stubbed for them yet.
@@ -101,10 +108,7 @@ class _GroupHubScreenState extends State<GroupHubScreen> {
   /// Opens the dedicated Discussion screen sharing THIS hub's controller —
   /// same loaded messages, same realtime subscription, not a second one.
   Future<void> _openDiscussion() async {
-    await context.push(
-      '/groups/${widget.groupId}/discussion',
-      extra: _c,
-    );
+    await context.push('/groups/${widget.groupId}/discussion', extra: _c);
   }
 
   Future<void> _openNotifications() async {
@@ -193,6 +197,116 @@ class _GroupHubScreenState extends State<GroupHubScreen> {
     }
   }
 
+  Future<void> _pickAndUploadAvatar(ImageSource source) async {
+    Navigator.of(context).pop();
+    try {
+      final picker = ImagePicker();
+      final file = await picker.pickImage(source: source, imageQuality: 85);
+      if (file == null) return;
+      final bytes = await file.readAsBytes();
+      final client = SupabaseService.client;
+      final path =
+          '${widget.groupId}/avatar_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      String? publicUrl;
+      try {
+        await client.storage
+            .from('group-avatars')
+            .uploadBinary(
+              path,
+              bytes,
+              fileOptions: const FileOptions(
+                contentType: 'image/jpeg',
+                upsert: true,
+              ),
+            );
+        publicUrl = client.storage.from('group-avatars').getPublicUrl(path);
+      } catch (_) {
+        final fallbackPath = 'groups/${widget.groupId}/avatar.jpg';
+        await client.storage
+            .from('avatars')
+            .uploadBinary(
+              fallbackPath,
+              bytes,
+              fileOptions: const FileOptions(
+                contentType: 'image/jpeg',
+                upsert: true,
+              ),
+            );
+        publicUrl = client.storage.from('avatars').getPublicUrl(fallbackPath);
+      }
+      final ok = await _c.updateLogoUrl(publicUrl);
+      if (mounted) {
+        if (ok) {
+          _snack('Group avatar updated!');
+        } else {
+          _snack(_c.error ?? 'Failed to update avatar.', error: true);
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        _snack('Could not upload group avatar: $e', error: true);
+      }
+    }
+  }
+
+  void _showAvatarEditSheet() {
+    if (!_c.canEditBasics) return;
+    showModalBottomSheet<void>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 12),
+            Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade400,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Group Avatar',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            const SizedBox(height: 8),
+            ListTile(
+              leading: const Icon(Icons.camera_alt_outlined),
+              title: const Text('Take Photo'),
+              onTap: () => _pickAndUploadAvatar(ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Choose from Gallery'),
+              onTap: () => _pickAndUploadAvatar(ImageSource.gallery),
+            ),
+            if (_c.group?.logoUrl != null)
+              ListTile(
+                leading: const Icon(
+                  Icons.delete_outline,
+                  color: AppColors.error,
+                ),
+                title: const Text(
+                  'Remove Photo',
+                  style: TextStyle(color: AppColors.error),
+                ),
+                onTap: () async {
+                  Navigator.of(ctx).pop();
+                  await _c.clearLogo();
+                  if (mounted) _snack('Group avatar removed');
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!_c.hasLoaded && _c.isLoading) {
@@ -265,7 +379,9 @@ class _GroupHubScreenState extends State<GroupHubScreen> {
                   value: 'delete',
                   child: Text(
                     'Delete group',
-                    style: TextStyle(color: Theme.of(context).colorScheme.error),
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
                   ),
                 )
               else
@@ -359,21 +475,85 @@ class _GroupHubScreenState extends State<GroupHubScreen> {
                 ),
               ),
             const SizedBox(height: 24),
-            if (_c.canLeave)
-              OutlinedButton.icon(
+            _dangerZone(context),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _dangerZone(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0x22450A0A) : const Color(0xFFFEF2F2),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isDark ? const Color(0xFF7F1D1D) : const Color(0xFFFCA5A5),
+        ),
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.warning_amber_rounded,
+                color: AppColors.error,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Danger Zone',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  color: AppColors.error,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (_c.canLeave)
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
                 key: const Key('leave_group_button'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.error,
+                  side: const BorderSide(color: AppColors.error),
+                ),
                 onPressed: _c.isBusy ? null : _leave,
                 icon: const Icon(Icons.logout),
                 label: const Text('Leave group'),
-              )
-            else
-              Text(
-                _c.leaveBlockedReason,
-                key: const Key('leave_blocked_note'),
-                style: Theme.of(context).textTheme.bodySmall,
               ),
+            )
+          else
+            Text(
+              _c.leaveBlockedReason,
+              key: const Key('leave_blocked_note'),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: isDark
+                    ? const Color(0xFFFCA5A5)
+                    : const Color(0xFF991B1B),
+              ),
+            ),
+          if (_c.canDeleteGroup) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                key: const Key('delete_group_button'),
+                style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+                onPressed: _c.isBusy ? null : _deleteGroup,
+                icon: const Icon(Icons.delete_forever),
+                label: const Text('Delete group'),
+              ),
+            ),
           ],
-        ),
+        ],
       ),
     );
   }
@@ -394,15 +574,30 @@ class _GroupHubScreenState extends State<GroupHubScreen> {
           key: const Key('overview_stats_row'),
           children: [
             Expanded(
-              child: _statCard(theme, 'Live', _c.liveTestCount, Icons.podcasts_outlined),
+              child: _statCard(
+                theme,
+                'Live',
+                _c.liveTestCount,
+                Icons.podcasts_outlined,
+              ),
             ),
             const SizedBox(width: 8),
             Expanded(
-              child: _statCard(theme, 'Upcoming', _c.upcomingTestCount, Icons.event_outlined),
+              child: _statCard(
+                theme,
+                'Upcoming',
+                _c.upcomingTestCount,
+                Icons.event_outlined,
+              ),
             ),
             const SizedBox(width: 8),
             Expanded(
-              child: _statCard(theme, 'Completed', _c.previousTestCount, Icons.check_circle_outline),
+              child: _statCard(
+                theme,
+                'Completed',
+                _c.previousTestCount,
+                Icons.check_circle_outline,
+              ),
             ),
           ],
         ),
@@ -547,7 +742,36 @@ class _GroupHubScreenState extends State<GroupHubScreen> {
           children: [
             Row(
               children: [
-                GroupAvatar(name: group.name, logoUrl: group.logoUrl, radius: 28),
+                InkWell(
+                  onTap: _c.canEditBasics ? _showAvatarEditSheet : null,
+                  borderRadius: BorderRadius.circular(32),
+                  child: Stack(
+                    children: [
+                      GroupAvatar(
+                        name: group.name,
+                        logoUrl: group.logoUrl,
+                        radius: 28,
+                      ),
+                      if (_c.canEditBasics)
+                        Positioned(
+                          right: 0,
+                          bottom: 0,
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: const BoxDecoration(
+                              color: Color(0xFF2563EB),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.camera_alt,
+                              size: 12,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
                 const SizedBox(width: 16),
                 Expanded(
                   child: Column(
@@ -560,7 +784,9 @@ class _GroupHubScreenState extends State<GroupHubScreen> {
                         '${_c.myRole.label} · ${_c.privacy.label}',
                         key: const Key('group_header_meta'),
                         style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                          color: theme.colorScheme.onSurface.withValues(
+                            alpha: 0.6,
+                          ),
                         ),
                       ),
                     ],

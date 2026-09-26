@@ -109,9 +109,9 @@ class AppDrawer extends StatelessWidget {
                   ),
                   _item(
                     context,
-                    icon: Icons.help_outline,
-                    label: 'Help / About',
-                    onTap: () => context.push('/settings'),
+                    icon: Icons.info_outline,
+                    label: 'About & Founder Desk',
+                    onTap: () => context.push('/about'),
                   ),
                 ],
               ),
@@ -167,26 +167,27 @@ class AppDrawer extends StatelessWidget {
 }
 
 Future<bool> _showLogoutConfirmation(BuildContext context) async {
-    return await showDialog<bool>(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Confirm Logout'),
-          content: const Text('Are you want to Log out'),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('No'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Yes'),
-            ),
-          ],
-        );
-      },
-    ) ?? false;
-  }
+  return await showDialog<bool>(
+        context: context,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            title: const Text('Confirm Logout'),
+            content: const Text('Are you want to Log out'),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('No'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Yes'),
+              ),
+            ],
+          );
+        },
+      ) ??
+      false;
+}
 
 class _Header extends StatelessWidget {
   const _Header({required this.profile, required this.email});

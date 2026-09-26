@@ -1150,7 +1150,7 @@ class FakeResultRepository implements ResultRepository {
       );
     var rank = 0;
     double? prev;
-    return [
+    final allEntries = [
       for (var i = 0; i < sorted.length; i++)
         {
           'rank': (() {
@@ -1172,6 +1172,12 @@ class FakeResultRepository implements ResultRepository {
           'submitted_at': sorted[i].computedAt?.toIso8601String(),
         },
     ];
+    if (groups != null &&
+        !_isCreator(testId) &&
+        !_has(testId, GroupPermission.viewGroupAnalytics)) {
+      return allEntries.where((e) => e['user_id'] == currentUser).toList();
+    }
+    return allEntries;
   }
 
   @override

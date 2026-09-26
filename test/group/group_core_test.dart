@@ -819,6 +819,16 @@ class _FailingRepository implements GroupRepository {
   Future<void> deleteGroup(String groupId) async =>
       throw const DataError(message: 'nope');
   @override
+  Future<void> updateLogoUrl({
+    required String groupId,
+    required String logoUrl,
+  }) async {}
+  @override
+  Future<void> deleteMessage({
+    required String groupId,
+    required String messageId,
+  }) async {}
+  @override
   Future<Map<String, int>> unreadCounts(List<String> groupIds) async =>
       const {};
   @override

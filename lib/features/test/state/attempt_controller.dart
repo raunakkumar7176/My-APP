@@ -7,6 +7,7 @@ import '../../../core/models/attempt.dart';
 import '../../../core/models/question.dart';
 import '../../../core/models/result.dart';
 import '../../../core/models/test.dart';
+import '../../../core/services/gamification_service.dart';
 import '../data/answer_repository.dart';
 import '../data/attempt_repository.dart';
 import '../data/question_repository.dart';
@@ -442,7 +443,14 @@ class AttemptController extends DisposableNotifier {
         }
       }
       final result = await _attempts.submit(_attempt!.id, timedOut: timedOut);
-      if (result != null) AttemptLaunchStore.putResult(result);
+      if (result != null) {
+        AttemptLaunchStore.putResult(result);
+        final accuracy = result.accuracy ?? result.percentage ?? 0.0;
+        unawaited(GamificationService.awardTestCompleted(
+          testIdOrAttemptId: _attempt!.id,
+          accuracyPercentage: accuracy,
+        ));
+      }
       _attempt = Attempt(
         id: _attempt!.id,
         testId: _attempt!.testId,

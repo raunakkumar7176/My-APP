@@ -100,6 +100,12 @@ _fixture(String user) {
       computedAt: DateTime(2026, 9, 18, 9, 55),
     ),
   ];
+  results.batchByTest['t-1'] = ResultBatch(
+    id: 'b-1',
+    testId: 't-1',
+    status: BatchStatus.completed,
+    publishedAt: DateTime(2026, 9, 18, 10),
+  );
   results.resultsByTest['t-2'] = [_r('u-other')];
   return (groups: groups, tests: tests, results: results);
 }
@@ -513,6 +519,12 @@ class _SlowResults extends _Delegating {
     await Future<void>.delayed(const Duration(milliseconds: 10));
     return inner.resultsForTest(testId);
   }
+
+  @override
+  Future<List<Map<String, dynamic>>> leaderboard(String testId) async {
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    return inner.leaderboard(testId);
+  }
 }
 
 class _FailingResults extends _Delegating {
@@ -522,6 +534,12 @@ class _FailingResults extends _Delegating {
   Future<List<Result>> resultsForTest(String testId) {
     if (fail) throw const DataError(message: 'NETWORK_DOWN');
     return inner.resultsForTest(testId);
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> leaderboard(String testId) {
+    if (fail) throw const DataError(message: 'NETWORK_DOWN');
+    return inner.leaderboard(testId);
   }
 }
 

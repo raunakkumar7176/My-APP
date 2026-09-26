@@ -52,7 +52,9 @@ class SettingsScreen extends StatelessWidget {
                 ListTile(
                   leading: const Icon(Icons.folder_open_outlined),
                   title: const Text('My Uploaded Documents'),
-                  subtitle: const Text('Manage files uploaded for test creation'),
+                  subtitle: const Text(
+                    'Manage files uploaded for test creation',
+                  ),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => context.push('/my-uploads'),
                 ),
@@ -84,11 +86,15 @@ class SettingsScreen extends StatelessWidget {
           ),
           const SizedBox(height: 24),
           _sectionLabel(context, 'About'),
-          const Card(
+          Card(
             child: ListTile(
-              leading: Icon(Icons.info_outline),
-              title: Text('My Preparation'),
-              subtitle: Text('Exam preparation app'),
+              leading: const Icon(Icons.info_outline),
+              title: const Text('About & Founder Desk'),
+              subtitle: const Text(
+                'Vision, founder message & student help desk',
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => context.push('/about'),
             ),
           ),
         ],

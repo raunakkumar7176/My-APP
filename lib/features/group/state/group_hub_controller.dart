@@ -171,7 +171,11 @@ class GroupHubController extends DisposableNotifier {
     try {
       await _repo.markGroupRead(groupId);
     } catch (e, st) {
-      AppLogger.warning('markGroupRead($groupId) failed: $e', error: e, stackTrace: st);
+      AppLogger.warning(
+        'markGroupRead($groupId) failed: $e',
+        error: e,
+        stackTrace: st,
+      );
     }
   }
 
@@ -181,8 +185,12 @@ class GroupHubController extends DisposableNotifier {
   /// realtime echo of that same INSERT) without ever becoming a visible
   /// duplicate bubble.
   void _onRealtimeInsert(GroupMessage message) {
-    if (message.groupId != groupId) return; // defensive; filter already scopes this
-    if (_messages.any((m) => m.id == message.id)) return;
+    if (message.groupId != groupId) {
+      return; // defensive; filter already scopes this
+    }
+    if (_messages.any((m) => m.id == message.id)) {
+      return;
+    }
     _messages = [..._messages, message]
       ..sort((a, b) {
         final byTime = a.createdAt.compareTo(b.createdAt);
@@ -285,18 +293,20 @@ class GroupHubController extends DisposableNotifier {
   /// second definition of "upcoming".
   Test? get upcomingTest {
     final now = _now();
-    final upcoming = [
-      for (final t in _groupTests)
-        if (GroupTestManagement.sectionFor(t, now) == GroupTestSection.upcoming)
-          t,
-    ]..sort((a, b) {
-      final as_ = a.startsAt;
-      final bs = b.startsAt;
-      if (as_ == null && bs == null) return 0;
-      if (as_ == null) return 1;
-      if (bs == null) return -1;
-      return as_.compareTo(bs);
-    });
+    final upcoming =
+        [
+          for (final t in _groupTests)
+            if (GroupTestManagement.sectionFor(t, now) ==
+                GroupTestSection.upcoming)
+              t,
+        ]..sort((a, b) {
+          final as_ = a.startsAt;
+          final bs = b.startsAt;
+          if (as_ == null && bs == null) return 0;
+          if (as_ == null) return 1;
+          if (bs == null) return -1;
+          return as_.compareTo(bs);
+        });
     return upcoming.isEmpty ? null : upcoming.first;
   }
 
@@ -446,12 +456,22 @@ class GroupHubController extends DisposableNotifier {
         'Former member';
   }
 
+  /// Sender role from the roster: 'owner', 'leader', 'moderator', 'member' or null.
+  String? messageSenderRole(GroupMessage m) {
+    final sender = m.senderId;
+    if (sender == null) return null;
+    return _members.where((x) => x.userId == sender).firstOrNull?.role;
+  }
+
   /// Author label from the roster already loaded (no extra profile read):
   /// "You", the member's display name, or null when the author is no longer
   /// a member — then nothing is shown rather than a guessed identity.
   String? announcementAuthorLabel(GroupAnnouncement a) {
     if (a.authorId == _currentUserId) return 'You';
-    return _members.where((m) => m.userId == a.authorId).firstOrNull?.displayName;
+    return _members
+        .where((m) => m.userId == a.authorId)
+        .firstOrNull
+        ?.displayName;
   }
 
   /// Re-invite is offered only for a `declined` row whose invitee is not
@@ -845,14 +865,17 @@ class GroupHubController extends DisposableNotifier {
   /// Mirrors `rpc_delete_group`'s own check exactly; the server re-verifies
   /// regardless (this only decides whether to offer the action).
   bool get canDeleteGroup =>
-      _group != null && isOwner && _members.every((m) => m.userId == _currentUserId);
+      _group != null &&
+      isOwner &&
+      _members.every((m) => m.userId == _currentUserId);
 
   /// Deletes a solo group (Phase 7). Hard delete — see
   /// `migrations/GROUP_HUB_rpc_delete_group.sql` for why `groups` uses hard
   /// delete rather than the soft-delete pattern `tests` uses.
   Future<bool> deleteGroup() async {
     if (!canDeleteGroup) {
-      _error = 'This group still has other members. Remove them first, or '
+      _error =
+          'This group still has other members. Remove them first, or '
           'transfer ownership, before deleting it.';
       notifyListeners();
       return false;
@@ -1284,10 +1307,7 @@ class GroupHubController extends DisposableNotifier {
       return false;
     }
     if (!_announcementMutationAllowed()) return false;
-    return _runAnnouncementMutation(
-      a.id,
-      () => _repo.deleteAnnouncement(a.id),
-    );
+    return _runAnnouncementMutation(a.id, () => _repo.deleteAnnouncement(a.id));
   }
 
   // ── Group Chat (G8) ──
@@ -1399,6 +1419,71 @@ class GroupHubController extends DisposableNotifier {
       return false;
     } finally {
       _sending = false;
+      notifyListeners();
+    }
+  }
+
+  /// Soft-deletes a message for everyone. Author or moderator only.
+  Future<bool> deleteMessage(GroupMessage message) async {
+    if (_busy) return false;
+    try {
+      await _repo.deleteMessage(groupId: groupId, messageId: message.id);
+      // Local optimistic update while realtime broadcast propagates:
+      final idx = _messages.indexWhere((m) => m.id == message.id);
+      if (idx != -1) {
+        _messages = [
+          for (var i = 0; i < _messages.length; i++)
+            if (i == idx)
+              GroupMessage(
+                id: message.id,
+                groupId: message.groupId,
+                senderId: message.senderId,
+                body: message.body,
+                createdAt: message.createdAt,
+                deletedAt: DateTime.now(),
+              )
+            else
+              _messages[i],
+        ];
+        notifyListeners();
+      }
+      return true;
+    } on AppError catch (e) {
+      _error = e.message;
+      notifyListeners();
+      return false;
+    } catch (e, st) {
+      AppLogger.error('Delete message failed: $e', stackTrace: st);
+      _error = GroupErrors.map(e.toString(), context: GroupErrorContext.chat);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Updates the group's logo URL in database.
+  Future<bool> updateLogoUrl(String logoUrl) async {
+    if (_busy) return false;
+    _busy = true;
+    _error = null;
+    notifyListeners();
+    try {
+      await _repo.updateLogoUrl(groupId: groupId, logoUrl: logoUrl);
+      if (_group != null) {
+        // Group copyWith doesn't have logoUrl directly, reload:
+        await refresh();
+      }
+      return true;
+    } on AppError catch (e) {
+      _error = e.message;
+      notifyListeners();
+      return false;
+    } catch (e, st) {
+      AppLogger.error('Update logo URL failed: $e', stackTrace: st);
+      _error = GroupErrors.map(e.toString(), context: GroupErrorContext.update);
+      notifyListeners();
+      return false;
+    } finally {
+      _busy = false;
       notifyListeners();
     }
   }

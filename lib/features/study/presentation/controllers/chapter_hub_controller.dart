@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../../../../core/logging/app_logger.dart';
 import '../../../../core/services/auth_service.dart';
+import '../../../../core/services/gamification_service.dart';
 import '../../data/study_repository.dart';
 import '../../domain/study_chapter.dart';
 import '../../domain/study_question.dart';
@@ -22,7 +25,8 @@ class ChapterHubController extends ChangeNotifier {
 
   // ── State ──
   String _languageCode = 'en';
-  int _activeTabIndex = 0; // 0: Learn, 1: Questions, 2: Test
+  int _activeTabIndex = 0; // 0: Learn, 1: Assessment Hub (Practice & Test)
+  int _assessmentMode = 0; // 0: Smart Practice Mode, 1: Formal Chapter Exam
 
   StudyChapter? _chapter;
   List<StudyTopic> _topics = [];
@@ -30,7 +34,7 @@ class ChapterHubController extends ChangeNotifier {
   bool _isLoadingTopics = false;
   String? _errorMessage;
 
-  // Questions tab state
+  // Questions / Assessment tab state
   List<StudyQuestion> _questions = [];
   bool _isLoadingQuestions = false;
   bool _isLoadingMoreQuestions = false;
@@ -38,13 +42,15 @@ class ChapterHubController extends ChangeNotifier {
   int _questionOffset = 0;
   static const int _questionPageSize = 20;
 
-  // Question interaction state
+  // Question interaction state for Smart Practice
   final Map<String, int> _userSelectedOptions = {};
+  final Set<String> _checkedQuestionIds = {};
   final Set<String> _expandedExplanationIds = {};
 
   // ── Getters ──
   String get languageCode => _languageCode;
   int get activeTabIndex => _activeTabIndex;
+  int get assessmentMode => _assessmentMode;
   StudyChapter? get chapter => _chapter;
   List<StudyTopic> get topics => List.unmodifiable(_topics);
   List<StudyQuestion> get questions => List.unmodifiable(_questions);
@@ -56,8 +62,24 @@ class ChapterHubController extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
 
   int? getSelectedOption(String questionId) => _userSelectedOptions[questionId];
+  bool isAnswerChecked(String questionId) =>
+      _checkedQuestionIds.contains(questionId);
   bool isExplanationExpanded(String questionId) =>
       _expandedExplanationIds.contains(questionId);
+
+  int get answeredCount => _userSelectedOptions.length;
+  int get correctCount {
+    var count = 0;
+    for (final entry in _userSelectedOptions.entries) {
+      for (final q in _questions) {
+        if (q.id == entry.key && q.correctOption == entry.value) {
+          count++;
+          break;
+        }
+      }
+    }
+    return count;
+  }
 
   // Multi-segment progress metrics
   double get theoryProgressPercentage {
@@ -99,14 +121,28 @@ class ChapterHubController extends ChangeNotifier {
     super.dispose();
   }
 
-  /// Sets the active tab (0: Learn, 1: Questions, 2: Test).
+  /// Sets the active mode inside the Assessment Hub:
+  /// 0: Smart Practice Mode, 1: Formal Chapter Exam.
+  void setAssessmentMode(int mode) {
+    if (_assessmentMode == mode) return;
+    _assessmentMode = mode;
+    notifyListeners();
+  }
+
+  /// Sets the active tab (0: Learn, 1: Assessment Hub).
+  /// Gracefully accepts 2 for backward compatibility mapping to Formal Exam mode.
   void setActiveTab(int index) {
-    if (_activeTabIndex == index) return;
-    _activeTabIndex = index;
+    final targetTab = index >= 1 ? 1 : 0;
+    if (index == 2) {
+      _assessmentMode = 1;
+    } else if (index == 1 && _activeTabIndex != 1) {
+      _assessmentMode = 0;
+    }
+    _activeTabIndex = targetTab;
     notifyListeners();
 
-    // Lazy load questions when tab 1 is selected first time
-    if (index == 1 && _questions.isEmpty && !_isLoadingQuestions) {
+    // Lazy load questions when Assessment Hub is selected first time
+    if (_activeTabIndex == 1 && _questions.isEmpty && !_isLoadingQuestions) {
       loadQuestions();
     }
   }
@@ -211,9 +247,32 @@ class ChapterHubController extends ChangeNotifier {
     }
   }
 
-  /// User selects an option for an MCQ practice card.
+  /// User selects an option for an MCQ practice card in Smart Practice Mode.
+  /// Immediate feedback: checks answer and reveals explanation on demand.
   void selectOption(String questionId, int optionIndex) {
+    final isFirstAttempt = !_userSelectedOptions.containsKey(questionId);
     _userSelectedOptions[questionId] = optionIndex;
+    _checkedQuestionIds.add(questionId);
+    _expandedExplanationIds.add(questionId);
+    notifyListeners();
+
+    if (isFirstAttempt) {
+      unawaited(GamificationService.awardPracticeQuestionAttempted(questionId));
+    }
+  }
+
+  /// Manually checks answer for a question on demand.
+  void checkAnswer(String questionId) {
+    _checkedQuestionIds.add(questionId);
+    _expandedExplanationIds.add(questionId);
+    notifyListeners();
+  }
+
+  /// Resets an answered question so the student can try active recall again.
+  void resetQuestion(String questionId) {
+    _userSelectedOptions.remove(questionId);
+    _checkedQuestionIds.remove(questionId);
+    _expandedExplanationIds.remove(questionId);
     notifyListeners();
   }
 

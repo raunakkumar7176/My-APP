@@ -123,6 +123,12 @@ abstract interface class GroupRepository {
   /// (if any) is not touched: no group-scoped storage policy exists live.
   Future<void> clearLogo(String groupId);
 
+  /// Sets `groups.logo_url` to [logoUrl]. Same UPDATE policy.
+  Future<void> updateLogoUrl({
+    required String groupId,
+    required String logoUrl,
+  });
+
   /// The group's `invite_code`, read as a single explicit column by exact id.
   /// Called only from the permission-gated settings flow; never from list,
   /// hub, members or any other screen. The value is never logged or cached.
@@ -292,6 +298,13 @@ abstract interface class GroupRepository {
   /// the server rejects any other sender and any group the caller is not in.
   Future<void> sendMessage({required String groupId, required String body});
 
+  /// Soft-deletes a message via `fn_delete_group_message` (from 0025).
+  /// Verifies membership and author/moderation permissions server-side.
+  Future<void> deleteMessage({
+    required String groupId,
+    required String messageId,
+  });
+
   /// Subscribes to live INSERT/UPDATE events on `group_messages` for
   /// [groupId] via the existing Supabase Realtime publication (already
   /// carries this table — see migrations 0037/0049; this method is the
@@ -333,9 +346,7 @@ abstract interface class GroupRepository {
   /// Batched latest-message preview per group, via
   /// `fn_latest_group_messages` (soft-delete-safe: a deleted message's
   /// `body` comes back null with `isDeleted = true`).
-  Future<Map<String, GroupLatestMessage>> latestMessages(
-    List<String> groupIds,
-  );
+  Future<Map<String, GroupLatestMessage>> latestMessages(List<String> groupIds);
 }
 
 /// One group's most recent message, for a list-screen preview. Mirrors
@@ -606,6 +617,17 @@ class SupabaseGroupRepository implements GroupRepository {
       await _client.from('groups').update({'logo_url': null}).eq('id', groupId);
     },
   );
+
+  @override
+  Future<void> updateLogoUrl({
+    required String groupId,
+    required String logoUrl,
+  }) => _guard(GroupErrorContext.update, () async {
+    await _client
+        .from('groups')
+        .update({'logo_url': logoUrl})
+        .eq('id', groupId);
+  });
 
   @override
   Future<String> inviteCode(String groupId) =>
@@ -1089,6 +1111,21 @@ class SupabaseGroupRepository implements GroupRepository {
       });
 
   @override
+  Future<void> deleteMessage({
+    required String groupId,
+    required String messageId,
+  }) => _guard(GroupErrorContext.chat, () async {
+    final uid = _uid;
+    if (uid == null) {
+      throw const AuthError(message: 'Please sign in again.');
+    }
+    await _client.rpc(
+      'fn_delete_group_message',
+      params: {'p_message_id': messageId},
+    );
+  });
+
+  @override
   GroupMessageSubscription subscribeToMessages({
     required String groupId,
     required void Function(GroupMessage message) onInsert,
@@ -1112,7 +1149,10 @@ class SupabaseGroupRepository implements GroupRepository {
           try {
             onInsert(GroupMessage.fromJson(payload.newRecord));
           } catch (e, st) {
-            AppLogger.error('Realtime group_messages INSERT decode failed: $e', stackTrace: st);
+            AppLogger.error(
+              'Realtime group_messages INSERT decode failed: $e',
+              stackTrace: st,
+            );
           }
         },
       )
@@ -1129,7 +1169,10 @@ class SupabaseGroupRepository implements GroupRepository {
           try {
             onUpdate(GroupMessage.fromJson(payload.newRecord));
           } catch (e, st) {
-            AppLogger.error('Realtime group_messages UPDATE decode failed: $e', stackTrace: st);
+            AppLogger.error(
+              'Realtime group_messages UPDATE decode failed: $e',
+              stackTrace: st,
+            );
           }
         },
       )
@@ -1144,7 +1187,8 @@ class SupabaseGroupRepository implements GroupRepository {
   }
 
   @override
-  Future<void> deleteGroup(String groupId) => _guard(GroupErrorContext.update, () async {
+  Future<void> deleteGroup(String groupId) =>
+      _guard(GroupErrorContext.update, () async {
         await _client.rpc('rpc_delete_group', params: {'p_group': groupId});
       });
 
@@ -1172,16 +1216,16 @@ class SupabaseGroupRepository implements GroupRepository {
   Future<Map<String, GroupLatestMessage>> latestMessages(
     List<String> groupIds,
   ) => _guard(GroupErrorContext.load, () async {
-        if (groupIds.isEmpty) return const {};
-        final rows = await _client.rpc(
-          'fn_latest_group_messages',
-          params: {'p_group_ids': groupIds},
-        ) as List<dynamic>;
-        return {
-          for (final r in rows.cast<Map<String, dynamic>>())
-            r['group_id'] as String: GroupLatestMessage.fromJson(r),
-        };
-      });
+    if (groupIds.isEmpty) return const {};
+    final rows = await _client.rpc(
+      'fn_latest_group_messages',
+      params: {'p_group_ids': groupIds},
+    ) as List<dynamic>;
+    return {
+      for (final r in rows.cast<Map<String, dynamic>>())
+        r['group_id'] as String: GroupLatestMessage.fromJson(r),
+    };
+  });
 
   static Future<T> _guard<T>(
     GroupErrorContext context,

@@ -126,6 +126,8 @@ class ProfileController extends DisposableNotifier {
     required String fullName,
     required String bio,
     required String mobile,
+    DateTime? dateOfBirth,
+    Map<String, String>? socialLinks,
   }) async {
     if (_isSaving) return false;
 
@@ -147,6 +149,8 @@ class ProfileController extends DisposableNotifier {
         fullName: fullName.trim(),
         bio: bio.trim(),
         mobile: mobile.trim(),
+        dateOfBirth: dateOfBirth,
+        socialLinks: socialLinks,
       );
       _isSaving = false;
       _isEditing = false;
@@ -161,6 +165,17 @@ class ProfileController extends DisposableNotifier {
     _isSaving = false;
     notifyListeners();
     return false;
+  }
+
+  Future<bool> saveSocialLinks(Map<String, String> links) async {
+    try {
+      await ProfileService.updateProfile(socialLinks: links);
+      notifyListeners();
+      return true;
+    } catch (e) {
+      AppLogger.error('Failed to update social links: $e');
+      return false;
+    }
   }
 
   Future<Uint8List?> pickAvatarFromGallery() => _pickAvatar(_avatarService.pickFromGallery);

@@ -363,8 +363,7 @@ class InMemoryGroupRepository implements GroupRepository {
     if (granted) {
       if (!manage) {
         throw const DataError(
-          message:
-              'new row violates row-level security policy for table "role_permissions"',
+          message: 'new row violates row-level security policy for table "role_permissions"',
         );
       }
       roleGrants.add(key);
@@ -447,6 +446,20 @@ class InMemoryGroupRepository implements GroupRepository {
       throw _notAuthorized(GroupErrorContext.update);
     }
     g.logoUrl = null;
+  }
+
+  @override
+  Future<void> updateLogoUrl({
+    required String groupId,
+    required String logoUrl,
+  }) async {
+    calls.add('updateLogoUrl:$groupId');
+    _maybeFail();
+    final g = groups[groupId];
+    if (g == null || !await canEditSettings(groupId)) {
+      throw _notAuthorized(GroupErrorContext.update);
+    }
+    g.logoUrl = logoUrl;
   }
 
   /// Every invite-code read/rotation, so tests can prove non-settings flows
@@ -1068,7 +1081,9 @@ class InMemoryGroupRepository implements GroupRepository {
     final existing = groups[groupId]!.messages;
     final newest = existing.isEmpty
         ? DateTime(2026, 9, 10, 9, 0)
-        : existing.map((m) => m.createdAt).reduce((a, b) => a.isAfter(b) ? a : b);
+        : existing
+              .map((m) => m.createdAt)
+              .reduce((a, b) => a.isAfter(b) ? a : b);
     final m = GroupMessage(
       id: 'm-$_messageSeq',
       groupId: groupId,
@@ -1088,13 +1103,14 @@ class InMemoryGroupRepository implements GroupRepository {
   }) async {
     calls.add('messages:$groupId${before == null ? '' : ':before'}');
     if (!_isMemberOf(groupId)) return const [];
-    final rows = [
-      for (final m in groups[groupId]!.messages)
-        if (before == null || m.createdAt.isBefore(before)) m,
-    ]..sort((a, b) {
-      final byTime = b.createdAt.compareTo(a.createdAt);
-      return byTime != 0 ? byTime : b.id.compareTo(a.id);
-    });
+    final rows =
+        [
+          for (final m in groups[groupId]!.messages)
+            if (before == null || m.createdAt.isBefore(before)) m,
+        ]..sort((a, b) {
+          final byTime = b.createdAt.compareTo(a.createdAt);
+          return byTime != 0 ? byTime : b.id.compareTo(a.id);
+        });
     return rows.take(limit).toList(growable: false);
   }
 
@@ -1121,6 +1137,30 @@ class InMemoryGroupRepository implements GroupRepository {
       throw const DataError(message: 'check constraint');
     }
     seedMessage(groupId: groupId, senderId: senderId, body: b);
+  }
+
+  @override
+  Future<void> deleteMessage({
+    required String groupId,
+    required String messageId,
+  }) async {
+    calls.add('deleteMessage:$groupId:$messageId');
+    _maybeFail();
+    final g = groups[groupId];
+    if (g == null) throw _notAuthorized(GroupErrorContext.chat);
+    final idx = g.messages.indexWhere((m) => m.id == messageId);
+    if (idx != -1) {
+      final old = g.messages[idx];
+      g.messages[idx] = GroupMessage(
+        id: old.id,
+        groupId: old.groupId,
+        senderId: old.senderId,
+        body: old.body,
+        createdAt: old.createdAt,
+        messageType: old.messageType,
+        deletedAt: DateTime.now(),
+      );
+    }
   }
 
   // ── Realtime (fake): tests drive events manually via the simulate*
@@ -1225,7 +1265,9 @@ class InMemoryGroupRepository implements GroupRepository {
     final out = <String, GroupLatestMessage>{};
     for (final id in groupIds) {
       final g = groups[id];
-      if (g == null || !g.roles.containsKey(currentUser) || g.messages.isEmpty) {
+      if (g == null ||
+          !g.roles.containsKey(currentUser) ||
+          g.messages.isEmpty) {
         continue;
       }
       final latest = g.messages.reduce(
@@ -1334,13 +1376,14 @@ class FakeNotificationRepository implements NotificationRepository {
   }) async {
     calls.add('forGroup:$groupId:$limit:${before?.toIso8601String() ?? ''}');
     _maybeFail();
-    final list = _own(groupId)
-        .where((n) => before == null || n.createdAt.isBefore(before))
-        .toList()
-      ..sort((a, b) {
-        final c = b.createdAt.compareTo(a.createdAt);
-        return c != 0 ? c : b.id.compareTo(a.id);
-      });
+    final list =
+        _own(groupId)
+            .where((n) => before == null || n.createdAt.isBefore(before))
+            .toList()
+          ..sort((a, b) {
+            final c = b.createdAt.compareTo(a.createdAt);
+            return c != 0 ? c : b.id.compareTo(a.id);
+          });
     return list.take(limit).toList();
   }
 
@@ -1408,7 +1451,15 @@ class FakeNotificationRepository implements NotificationRepository {
     for (final u in members) {
       if (u == exclude) continue;
       if (mutes['$u:$groupId'] == true) continue;
-      seed(userId: u, groupId: groupId, category: category, type: type, title: title, body: body, extra: extra);
+      seed(
+        userId: u,
+        groupId: groupId,
+        category: category,
+        type: type,
+        title: title,
+        body: body,
+        extra: extra,
+      );
     }
   }
 }
@@ -1472,13 +1523,14 @@ class FakeNotificationFeedRepository implements NotificationFeedRepository {
   }) async {
     calls.add('feed:$limit:${before?.toIso8601String() ?? ''}');
     _maybeFail();
-    final list = _ownRows
-        .where((n) => before == null || n.createdAt.isBefore(before))
-        .toList()
-      ..sort((a, b) {
-        final c = b.createdAt.compareTo(a.createdAt);
-        return c != 0 ? c : b.id.compareTo(a.id);
-      });
+    final list =
+        _ownRows
+            .where((n) => before == null || n.createdAt.isBefore(before))
+            .toList()
+          ..sort((a, b) {
+            final c = b.createdAt.compareTo(a.createdAt);
+            return c != 0 ? c : b.id.compareTo(a.id);
+          });
     return list.take(limit).toList();
   }
 
