@@ -39,6 +39,10 @@ import '../features/routine/screens/routine_list_screen.dart';
 import '../features/routine/screens/routine_create_screen.dart';
 import '../features/routine/screens/routine_detail_screen.dart';
 import '../features/routine/screens/routine_history_screen.dart';
+import '../features/test/screens/challenge_join_screen.dart';
+import '../features/test/screens/challenge_merit_list_screen.dart';
+import '../features/test/screens/challenge_waiting_room_screen.dart';
+import '../features/test/state/challenge_controller.dart';
 import '../features/test/screens/question_bank_screen.dart';
 import '../features/test/screens/question_bank_detail_screen.dart';
 import '../features/test/screens/question_review_screen.dart';
@@ -52,16 +56,8 @@ import '../features/test/screens/template_form_screen.dart';
 import '../features/test/widgets/question_source_step.dart';
 import '../features/test/screens/test_detail_screen.dart';
 import '../features/test/screens/test_listing_screen.dart';
-import '../features/test/screens/test_result_screen.dart' as legacy_test_result;
+import '../features/test/screens/test_result_screen.dart';
 import '../features/test/screens/test_taking_screen.dart';
-import '../features/tests/presentation/screens/tests_dashboard_screen.dart';
-import '../features/tests/presentation/screens/test_builder_screen.dart';
-import '../features/tests/presentation/screens/test_instructions_screen.dart';
-import '../features/tests/presentation/screens/test_attempt_screen.dart';
-import '../features/tests/presentation/screens/test_result_screen.dart';
-import '../features/tests/presentation/screens/test_leaderboard_screen.dart';
-import '../features/tests/presentation/screens/submission_pending_screen.dart';
-import '../features/tests/presentation/widgets/common/test_card.dart';
 import '../../core/models/test_template.dart';
 import '../../core/models/question_bank_item.dart';
 
@@ -438,21 +434,26 @@ final class AppRouter {
           ),
         ],
       ),
-      // ── Unified Test Ecosystem ──
+      // ── Test system (original, mature) ──
       GoRoute(
         path: '/tests',
         name: 'test-listing',
-        builder: (context, state) => const TestsDashboardScreen(),
+        builder: (context, state) {
+          final tab = int.tryParse(state.uri.queryParameters['tab'] ?? '') ?? 0;
+          return TestListingScreen(initialTab: tab);
+        },
         routes: [
-          GoRoute(
-            path: 'builder',
-            name: 'test-builder',
-            builder: (context, state) => const TestBuilderScreen(),
-          ),
           GoRoute(
             path: 'drafts',
             name: 'test-listing-drafts',
             builder: (context, state) => const TestListingScreen(initialTab: 3),
+          ),
+          // Peer Challenge (0061): join a host's session by 6-digit PIN.
+          // Declared before ':testId' so the literal wins the match.
+          GoRoute(
+            path: 'join',
+            name: 'challenge-join',
+            builder: (context, state) => const ChallengeJoinScreen(),
           ),
           // G19: test templates
           GoRoute(
@@ -554,69 +555,6 @@ final class AppRouter {
           ),
         ],
       ),
-      GoRoute(
-        path: '/tests/:id/instructions',
-        name: 'test-instructions',
-        builder: (context, state) {
-          final id =
-              state.pathParameters['id'] ??
-              state.pathParameters['testId'] ??
-              '';
-          final extra = state.extra;
-          final testData = extra is TestCardData ? extra : null;
-          return TestInstructionsScreen(testId: id, testData: testData);
-        },
-      ),
-      GoRoute(
-        path: '/tests/:id/attempt',
-        name: 'test-attempt',
-        builder: (context, state) {
-          final id =
-              state.pathParameters['id'] ??
-              state.pathParameters['testId'] ??
-              '';
-          final extra = state.extra;
-          final testData = extra is TestCardData ? extra : null;
-          return TestAttemptScreen(testId: id, testData: testData);
-        },
-      ),
-      GoRoute(
-        path: '/tests/:id/result',
-        name: 'test-result-ecosystem',
-        builder: (context, state) {
-          final id =
-              state.pathParameters['id'] ??
-              state.pathParameters['testId'] ??
-              '';
-          final extra = state.extra;
-          final resultData = extra is TestCardData ? extra : null;
-          return TestResultScreen(testId: id, resultData: resultData);
-        },
-      ),
-      GoRoute(
-        path: '/tests/:id/leaderboard',
-        name: 'test-leaderboard',
-        builder: (context, state) {
-          final id =
-              state.pathParameters['id'] ??
-              state.pathParameters['testId'] ??
-              '';
-          final extra = state.extra;
-          final testData = extra is TestCardData ? extra : null;
-          return TestLeaderboardScreen(testId: id, testData: testData);
-        },
-      ),
-      GoRoute(
-        path: '/tests/:id/submission_pending',
-        name: 'test-submission-pending',
-        builder: (context, state) {
-          final id =
-              state.pathParameters['id'] ??
-              state.pathParameters['testId'] ??
-              '';
-          return SubmissionPendingScreen(testId: id);
-        },
-      ),
       // Legacy paths kept as redirects so old links keep working.
       GoRoute(path: '/create-test', redirect: (_, _) => '/tests/create'),
       GoRoute(
@@ -630,12 +568,32 @@ final class AppRouter {
           attemptId: state.pathParameters['attemptId']!,
           testId: state.uri.queryParameters['test'] ?? '',
           accessCode: state.uri.queryParameters['code'],
+          challengeSessionId: state.uri.queryParameters['challenge'],
+        ),
+      ),
+      // ── Peer Challenge (0061): waiting room + merit list ──
+      GoRoute(
+        path: '/challenge/:sessionId/waiting-room',
+        name: 'challenge-waiting-room',
+        builder: (context, state) {
+          final extra = state.extra;
+          return ChallengeWaitingRoomScreen(
+            sessionId: state.pathParameters['sessionId'],
+            controller: extra is ChallengeController ? extra : null,
+          );
+        },
+      ),
+      GoRoute(
+        path: '/challenge/:sessionId/merit-list',
+        name: 'challenge-merit-list',
+        builder: (context, state) => ChallengeMeritListScreen(
+          sessionId: state.pathParameters['sessionId']!,
         ),
       ),
       GoRoute(
         path: '/attempts/:attemptId/result',
         name: 'attempt-result',
-        builder: (context, state) => legacy_test_result.TestResultScreen(
+        builder: (context, state) => TestResultScreen(
           attemptId: state.pathParameters['attemptId']!,
         ),
       ),
@@ -692,9 +650,12 @@ final class AppRouter {
           final onSelectionConfirmed =
               extra?['onSelectionConfirmed']
                   as ValueChanged<List<QuestionBankItem>>?;
+          final initialFilter =
+              extra?['initialFilter'] as QuestionBankFilter?;
           return QuestionBankScreen(
             selectionMode: selectionMode,
             onSelectionConfirmed: onSelectionConfirmed,
+            initialFilter: initialFilter,
           );
         },
         routes: [

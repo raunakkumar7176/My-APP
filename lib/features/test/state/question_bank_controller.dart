@@ -13,8 +13,11 @@ import 'disposable_notifier.dart';
 /// - Bulk selection for test creation
 /// - Loading/error states
 class QuestionBankController extends DisposableNotifier {
-  QuestionBankController({QuestionBankRepository? repository})
-    : _repository = repository ?? const SupabaseQuestionBankRepository();
+  QuestionBankController({
+    QuestionBankRepository? repository,
+    QuestionBankFilter? initialFilter,
+  }) : _repository = repository ?? const SupabaseQuestionBankRepository(),
+       _filter = initialFilter ?? const QuestionBankFilter();
 
   final QuestionBankRepository _repository;
 
@@ -23,7 +26,7 @@ class QuestionBankController extends DisposableNotifier {
   bool _isLoading = false;
   bool _isLoadingMore = false;
   String? _error;
-  QuestionBankFilter _filter = const QuestionBankFilter();
+  QuestionBankFilter _filter;
   int _total = 0;
   bool _hasMore = true;
 
@@ -124,6 +127,7 @@ class QuestionBankController extends DisposableNotifier {
     String? language,
     String? questionType,
     String? source,
+    bool? pyqOnly,
   }) async {
     _filter = _filter.copyWith(
       status: status,
@@ -135,6 +139,7 @@ class QuestionBankController extends DisposableNotifier {
       language: language,
       questionType: questionType,
       source: source,
+      pyqOnly: pyqOnly,
     );
     await load();
   }

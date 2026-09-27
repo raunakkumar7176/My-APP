@@ -47,11 +47,10 @@ TestCreationController _controller({
 
 void main() {
   group('V1 kinds', () {
-    test('exactly five creatable kinds; Sectional/Adaptive reserved', () {
+    test('exactly four creatable kinds; self/quick superseded, Adaptive reserved', () {
       expect(TestKind.creatable, [
-        TestKind.self,
         TestKind.practice,
-        TestKind.quick,
+        TestKind.sectional,
         TestKind.challengeWithFriends,
         TestKind.group,
       ]);
@@ -59,6 +58,12 @@ void main() {
         expect(k.label, isNot(contains('Live')));
       }
       expect(TestKind.challengeWithFriends.label, 'Challenge with Friends');
+      // self/quick still exist (drafts created before this change, and the
+      // Quick Drill preset) but are reached outside the main grid — see
+      // TestKind.tilesFor / basic_details_step.dart's _QuickDrillPreset.
+      expect(TestKind.tilesFor(TestKind.self), contains(TestKind.self));
+      expect(TestKind.tilesFor(TestKind.quick), contains(TestKind.quick));
+      expect(TestKind.tilesFor(TestKind.practice), isNot(contains(TestKind.self)));
     });
 
     test('kind rules drive the form: scheduling, scope, late join, join code, group', () {

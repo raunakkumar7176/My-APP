@@ -187,6 +187,12 @@ class _TestListingScreenState extends State<TestListingScreen>
       ),
       actions: [
         IconButton(
+          key: const Key('join_challenge_button'),
+          tooltip: 'Join a Peer Challenge',
+          icon: const Icon(Icons.pin_outlined),
+          onPressed: () => context.push('/tests/join'),
+        ),
+        IconButton(
           key: const Key('templates_button'),
           tooltip: 'Templates',
           icon: const Icon(Icons.dashboard_outlined),
@@ -541,7 +547,7 @@ class _TestListingScreenState extends State<TestListingScreen>
                         onSelected: (_) => _controller.setKindFilter(null),
                       ),
                     ),
-                    for (final k in TestKind.creatable)
+                    for (final k in TestKind.filterable)
                       Padding(
                         padding: const EdgeInsets.only(right: 6),
                         child: FilterChip(
@@ -939,7 +945,7 @@ class _TestListingScreenState extends State<TestListingScreen>
                           setSheetState(() {});
                         },
                       ),
-                      for (final k in TestKind.creatable)
+                      for (final k in TestKind.filterable)
                         FilterChip(
                           label: Text(k.label),
                           selected: _controller.kindFilter == k,

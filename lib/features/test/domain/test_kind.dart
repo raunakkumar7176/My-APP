@@ -31,12 +31,43 @@ enum TestKind {
     }
   }
 
-  /// V1 kinds a user can pick when creating a test. Sectional and Adaptive
-  /// are reserved (still parsed from stored rows; never offered).
+  /// V1 kinds a user can pick when creating a test. `self` and `quick` are
+  /// no longer offered as standalone grid tiles: `self` is superseded by
+  /// `practice` as the wizard's default general-purpose type, and `quick`
+  /// is now reached via the one-tap "Quick Drill" preset button instead of
+  /// a full grid tile (it still exists as a real [TestKind] underneath —
+  /// no schema change, only the entry point moved). `adaptive` remains
+  /// reserved (still parsed from stored rows; never offered).
   static const creatable = [
+    TestKind.practice,
+    TestKind.sectional,
+    TestKind.challengeWithFriends,
+    TestKind.group,
+  ];
+
+  /// Kinds a currently-edited draft may already hold even though they are
+  /// no longer offered for NEW creation (`self`/`quick`, superseded above).
+  /// The Basic Details tile list still renders these so an existing draft's
+  /// selection is never silently hidden.
+  static const _legacyCreatable = [TestKind.self, TestKind.quick];
+
+  /// The tiles to render for the Test Type picker: [creatable], plus the
+  /// currently-selected kind if it is a legacy one not otherwise offered.
+  static List<TestKind> tilesFor(TestKind current) => [
+        ...creatable,
+        if (_legacyCreatable.contains(current)) current,
+      ];
+
+  /// Every kind a test LISTING may need to filter by — broader than
+  /// [creatable]: existing tests can still be `self`/`quick` even though a
+  /// new test can no longer be created as either, so the listing's filter
+  /// chips must keep covering them. Only `adaptive` (never used by any real
+  /// row) is excluded.
+  static const filterable = [
     TestKind.self,
     TestKind.practice,
     TestKind.quick,
+    TestKind.sectional,
     TestKind.challengeWithFriends,
     TestKind.group,
   ];
@@ -66,10 +97,11 @@ extension TestKindCreation on TestKind {
       case TestKind.quick:
         return 'Short rapid test with a small target question count.';
       case TestKind.challengeWithFriends:
-        return 'Scheduled test friends join with a code.';
+        return 'Synchronized exam friends join with a 6-digit PIN.';
       case TestKind.group:
         return 'Scheduled test assigned to one of your groups.';
       case TestKind.sectional:
+        return 'Subject-specific mock covering one or more chosen topics.';
       case TestKind.adaptive:
         return 'Reserved for a future release.';
     }
@@ -85,7 +117,10 @@ extension TestKindCreation on TestKind {
   bool get requiresStartTime => isScheduled;
 
   /// A syllabus scope (>= 1 node) is mandatory before publishing.
-  bool get requiresScope => this == TestKind.practice || this == TestKind.quick;
+  bool get requiresScope =>
+      this == TestKind.practice ||
+      this == TestKind.quick ||
+      this == TestKind.sectional;
 
   /// Late-join window control is shown (defaults ON, 10 min).
   bool get supportsLateJoin => isScheduled;

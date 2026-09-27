@@ -3,7 +3,10 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/theme/app_colors.dart';
 import '../../../core/errors/app_error.dart';
+import '../../../core/logging/app_logger.dart';
 import '../../../core/models/answer.dart';
+import '../data/challenge_repository.dart';
+import '../domain/creation_settings.dart';
 import '../domain/test_integrity_monitor.dart';
 import '../domain/test_kind.dart';
 import '../state/attempt_controller.dart';
@@ -20,6 +23,7 @@ class TestTakingScreen extends StatefulWidget {
     required this.attemptId,
     required this.testId,
     this.accessCode,
+    this.challengeSessionId,
     this.controller,
     super.key,
   });
@@ -27,6 +31,12 @@ class TestTakingScreen extends StatefulWidget {
   final String attemptId;
   final String testId;
   final String? accessCode;
+
+  /// Present when this attempt was launched from a Peer Challenge waiting
+  /// room (migration 0061). On submit, the score/accuracy/time are written
+  /// back to `challenge_participants` and the student is routed to the
+  /// session's merit list instead of the normal result screen.
+  final String? challengeSessionId;
   final AttemptController? controller;
 
   @override
@@ -40,6 +50,7 @@ class _TestTakingScreenState extends State<TestTakingScreen> {
   final _pages = PageController();
   bool _warnedOnce = false;
   bool _handledAutoSubmit = false;
+  bool _timeExpiredManualSubmit = false;
 
   @override
   void initState() {
@@ -111,10 +122,32 @@ class _TestTakingScreenState extends State<TestTakingScreen> {
 
   Future<void> _submit({required bool timedOut}) async {
     try {
-      // The RPC may or may not return the results row; the result screen
-      // reads it by attempt id either way.
-      await _c.submit(timedOut: timedOut);
+      final scorecard = await _c.submit(timedOut: timedOut);
       if (!mounted) return;
+      final challengeSessionId = widget.challengeSessionId;
+      if (challengeSessionId != null) {
+        final started = _c.attempt?.startedAt;
+        final submitted = _c.attempt?.submittedAt ?? DateTime.now();
+        final timeTaken = started == null
+            ? 0
+            : submitted.difference(started).inSeconds.clamp(0, 1 << 30);
+        try {
+          await const SupabaseChallengeRepository().reportResult(
+            sessionId: challengeSessionId,
+            score: scorecard.score ?? 0,
+            accuracy: scorecard.accuracy ?? 0,
+            timeTakenSeconds: timeTaken,
+          );
+        } catch (e) {
+          // The attempt itself is already submitted and scored server-side;
+          // a failed merit-list write-back must never strand the student on
+          // an error implying their exam wasn't recorded.
+          AppLogger.warning('Challenge reportResult failed: $e');
+        }
+        if (!mounted) return;
+        context.pushReplacement('/challenge/$challengeSessionId/merit-list');
+        return;
+      }
       context.pushReplacement(
           '/attempts/${_c.attempt?.id ?? widget.attemptId}/result');
     } on AppError catch (e) {
@@ -353,7 +386,14 @@ class _TestTakingScreenState extends State<TestTakingScreen> {
             else
               CountdownTimer(
                 deadlineAt: _c.deadlineAt!,
-                onTimeUp: () => _submit(timedOut: true),
+                onTimeUp: () {
+                  if (AutoSubmitSettings.fromSettings(_c.test?.settings)
+                      .enabled) {
+                    _submit(timedOut: true);
+                  } else if (mounted) {
+                    setState(() => _timeExpiredManualSubmit = true);
+                  }
+                },
               ),
             const SizedBox(width: 8),
           ],
@@ -379,6 +419,22 @@ class _TestTakingScreenState extends State<TestTakingScreen> {
                   TextButton(
                     onPressed: _c.reloadSavedAnswers,
                     child: const Text('Retry'),
+                  ),
+                ],
+              ),
+            if (_timeExpiredManualSubmit && _c.isInteractive)
+              MaterialBanner(
+                key: const Key('time_expired_manual_submit_banner'),
+                padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+                backgroundColor: AppColors.warning.withValues(alpha: 0.15),
+                leading: const Icon(Icons.timer_off_outlined, size: 20),
+                content: const Text(
+                  "Time's up. Tap Submit whenever you're ready.",
+                ),
+                actions: [
+                  FilledButton(
+                    onPressed: () => _submit(timedOut: true),
+                    child: const Text('Submit'),
                   ),
                 ],
               ),

@@ -173,6 +173,43 @@ final class DistributionCheck {
       '($total/${target.total})';
 }
 
+/// Whether the timer forces a submission at 00:00 (`settings.auto_submit`).
+/// Defaults to true (matches every kind's behaviour before this setting
+/// existed, so an absent key is never a behaviour change for an existing
+/// test). When false, `TestTakingScreen` still locks further answering at
+/// the deadline but leaves the actual submit tap to the student instead of
+/// calling it automatically — the server-side deadline enforcement
+/// (`deadline_at`, late-submission handling in `rpc_submit_and_score_test`)
+/// is unaffected either way.
+final class AutoSubmitSettings {
+  const AutoSubmitSettings({this.enabled = true});
+
+  static const key = 'auto_submit';
+  static const defaults = AutoSubmitSettings();
+
+  final bool enabled;
+
+  static AutoSubmitSettings fromSettings(Map<String, dynamic>? settings) {
+    final raw = settings?[key];
+    return AutoSubmitSettings(enabled: raw is bool ? raw : true);
+  }
+
+  Map<String, dynamic> applyTo(Map<String, dynamic>? existing) => {
+    ...?existing,
+    key: enabled,
+  };
+
+  AutoSubmitSettings copyWith({bool? enabled}) =>
+      AutoSubmitSettings(enabled: enabled ?? this.enabled);
+
+  @override
+  bool operator ==(Object other) =>
+      other is AutoSubmitSettings && other.enabled == enabled;
+
+  @override
+  int get hashCode => enabled.hashCode;
+}
+
 /// Duration-driven schedule: the creator picks a start time and a duration;
 /// the end is derived (`ends_at = starts_at + duration_sec`), never typed.
 abstract final class ScheduleMath {

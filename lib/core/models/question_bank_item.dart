@@ -27,6 +27,7 @@ final class QuestionBankItem {
     this.updatedAt,
     this.archivedAt,
     this.duplicateKey,
+    this.isPyq = false,
   });
 
   final String id;
@@ -51,6 +52,10 @@ final class QuestionBankItem {
   final DateTime? updatedAt;
   final DateTime? archivedAt;
   final String? duplicateKey;
+
+  /// `question_bank.is_pyq` (migration 0064) — true for a Previous Year
+  /// Question. Defaults false for any row from before that column existed.
+  final bool isPyq;
 
   bool get isApproved => status == 'approved';
   bool get isPendingReview => status == 'pending_review';
@@ -96,6 +101,7 @@ final class QuestionBankItem {
           ? DateTime.tryParse(json['archived_at'] as String)
           : null,
       duplicateKey: json['duplicate_key'] as String?,
+      isPyq: json['is_pyq'] as bool? ?? false,
     );
   }
 
@@ -124,6 +130,7 @@ final class QuestionBankItem {
       updatedAt: updatedAt,
       archivedAt: archivedAt,
       duplicateKey: duplicateKey,
+      isPyq: isPyq,
     );
   }
 
@@ -183,6 +190,7 @@ class QuestionBankFilter {
     this.language,
     this.questionType,
     this.source,
+    this.pyqOnly = false,
     this.pageSize = 20,
     this.offset = 0,
   });
@@ -197,6 +205,10 @@ class QuestionBankFilter {
   final String? language;
   final String? questionType;
   final String? source;
+
+  /// `question_bank.is_pyq` filter (migration 0064). False (the default)
+  /// means "no filter" — never excludes non-PYQ rows.
+  final bool pyqOnly;
   final int pageSize;
   final int offset;
 
@@ -210,7 +222,8 @@ class QuestionBankFilter {
       difficulty == null &&
       language == null &&
       questionType == null &&
-      source == null;
+      source == null &&
+      !pyqOnly;
 
   QuestionBankFilter copyWith({
     String? search,
@@ -223,6 +236,7 @@ class QuestionBankFilter {
     String? language,
     String? questionType,
     String? source,
+    bool? pyqOnly,
     int? pageSize,
     int? offset,
   }) {
@@ -237,6 +251,7 @@ class QuestionBankFilter {
       language: language ?? this.language,
       questionType: questionType ?? this.questionType,
       source: source ?? this.source,
+      pyqOnly: pyqOnly ?? this.pyqOnly,
       pageSize: pageSize ?? this.pageSize,
       offset: offset ?? this.offset,
     );

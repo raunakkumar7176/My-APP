@@ -36,7 +36,7 @@ class BasicDetailsStep extends StatelessWidget {
       case TestKind.sectional:
         return 'Sectional: cover several subjects/topics via the Syllabus step.';
       case TestKind.challengeWithFriends:
-        return 'Share the join code so friends can take it with you.';
+        return 'Host a synchronized exam — friends join with a 6-digit PIN.';
       case TestKind.group:
         return 'Visible to members of the group you select.';
       case TestKind.self:
@@ -103,15 +103,49 @@ class BasicDetailsStep extends StatelessWidget {
             title: 'Test Type',
             subtitle: hintFor(kind),
             children: [
-              for (final k in TestKind.creatable)
+              for (final k in TestKind.tilesFor(kind))
                 _TestTypeTile(
                   kind: k,
                   isSelected: k == kind,
                   onSelect: () => onKindChanged(k),
                 ),
+              const SizedBox(height: 4),
+              _QuickDrillPreset(
+                isSelected: kind == TestKind.quick,
+                onTap: () => onKindChanged(TestKind.quick),
+              ),
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// One-tap shortcut that jumps straight to [TestKind.quick] (10 Qs / 5 Mins)
+/// without a full grid tile — `quick` stays a real [TestKind] underneath
+/// ([TestCreationController.setKind] already applies its duration/target
+/// defaults); only the entry point is a preset button instead of a tile.
+class _QuickDrillPreset extends StatelessWidget {
+  const _QuickDrillPreset({required this.isSelected, required this.onTap});
+
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return OutlinedButton.icon(
+      onPressed: onTap,
+      icon: Icon(
+        Icons.bolt_outlined,
+        size: 18,
+        color: isSelected ? colorScheme.primary : null,
+      ),
+      label: const Text('Quick Drill (10 Qs / 5 Mins)'),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: isSelected ? colorScheme.primary : null,
+        side: isSelected ? BorderSide(color: colorScheme.primary) : null,
       ),
     );
   }

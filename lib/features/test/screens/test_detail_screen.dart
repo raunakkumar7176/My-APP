@@ -12,6 +12,7 @@ import '../domain/attempt_policy.dart';
 import '../domain/test_kind.dart';
 import '../domain/test_lifecycle.dart';
 import '../state/attempt_launch_store.dart';
+import '../state/challenge_controller.dart';
 import '../state/test_detail_controller.dart';
 import '../widgets/test_formatters.dart';
 
@@ -140,6 +141,38 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
   Future<void> _copyJoinCode(String code) async {
     await Clipboard.setData(ClipboardData(text: code));
     if (mounted) _snack('Join code copied');
+  }
+
+  bool _hostingChallenge = false;
+
+  /// Mints a Peer Challenge session for this test (`rpc_create_challenge_session`,
+  /// migration 0061) and opens the waiting room. Supersedes the old
+  /// join-code sharing flow for challengeWithFriends tests going forward —
+  /// that flow is left in place (untouched) rather than removed.
+  Future<void> _hostChallenge() async {
+    final test = _c.test;
+    if (test == null || _hostingChallenge) return;
+    setState(() => _hostingChallenge = true);
+    final controller = ChallengeController();
+    try {
+      await controller.createSession(
+        testId: test.id,
+        title: test.title,
+        subject: 'General Studies',
+        durationMinutes: ((test.durationSec ?? 1800) / 60).round(),
+      );
+      if (!mounted) return;
+      if (controller.error != null) {
+        _snack(controller.error!, error: true);
+        return;
+      }
+      context.push(
+        '/challenge/${controller.session!.id}/waiting-room',
+        extra: controller,
+      );
+    } finally {
+      if (mounted) setState(() => _hostingChallenge = false);
+    }
   }
 
   Future<void> _launch(
@@ -430,6 +463,22 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
                     ),
                   ),
               ]),
+            if (_c.isOwner && _c.kind == TestKind.challengeWithFriends)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: FilledButton.icon(
+                  key: const Key('host_peer_challenge_btn'),
+                  onPressed: _hostingChallenge ? null : _hostChallenge,
+                  icon: _hostingChallenge
+                      ? _spinner()
+                      : const Icon(Icons.pin_outlined),
+                  label: Text(
+                    _hostingChallenge
+                        ? 'Creating session…'
+                        : 'Host as Peer Challenge (Get PIN)',
+                  ),
+                ),
+              ),
             if (_c.isOwner && _c.latestBatch != null)
               _section(context, 'Batch results', [
                 _row('Status', _c.latestBatch!.status.name),

@@ -34,6 +34,7 @@ abstract interface class QuestionBankRepository {
     String? chapter,
     String? difficulty,
     String? language,
+    bool pyqOnly = false,
   });
 
   /// Creates a new question in the bank.
@@ -201,6 +202,9 @@ class SupabaseQuestionBankRepository implements QuestionBankRepository {
     if (filter.source != null && filter.source!.isNotEmpty) {
       query = query.eq('source', filter.source!);
     }
+    if (filter.pyqOnly) {
+      query = query.eq('is_pyq', true);
+    }
 
     // Apply order and range for paginated data
     final data = await query
@@ -267,6 +271,9 @@ class SupabaseQuestionBankRepository implements QuestionBankRepository {
     if (filter.source != null && filter.source!.isNotEmpty) {
       filteredCountQuery = filteredCountQuery.eq('source', filter.source!);
     }
+    if (filter.pyqOnly) {
+      filteredCountQuery = filteredCountQuery.eq('is_pyq', true);
+    }
 
     // Execute count query (fetch all ids, count client-side)
     final countData = await filteredCountQuery;
@@ -302,47 +309,54 @@ class SupabaseQuestionBankRepository implements QuestionBankRepository {
     String? chapter,
     String? difficulty,
     String? language,
+    bool pyqOnly = false,
   }) => _guard(() async {
-    // Try the RPC first (server-side count)
-    try {
-      final response = await _client.rpc(
-        'fn_bank_available',
-        params: {
-          'p_subject_name': subjectName ?? '',
-          'p_chapter': chapter ?? '',
-          'p_difficulty': difficulty ?? '',
-          'p_language': language ?? '',
-        },
-      );
-      return (response as num?)?.toInt() ?? 0;
-    } catch (e) {
-      // Fallback to PostgREST count
-      AppLogger.warning(
-        'fn_bank_available RPC failed, using PostgREST count: $e',
-      );
-      var query = _client
-          .from('question_bank')
-          .select('id')
-          .eq('status', 'approved');
-
-      if (subjectName != null && subjectName.isNotEmpty) {
-        query = query.ilike('subject_name', '%${subjectName.trim()}%');
+    // fn_bank_available has no PYQ parameter (no live signature accepts one);
+    // go straight to the direct query when that filter is requested rather
+    // than silently ignoring it via the RPC.
+    if (!pyqOnly) {
+      try {
+        final response = await _client.rpc(
+          'fn_bank_available',
+          params: {
+            'p_subject_name': subjectName ?? '',
+            'p_chapter': chapter ?? '',
+            'p_difficulty': difficulty ?? '',
+            'p_language': language ?? '',
+          },
+        );
+        return (response as num?)?.toInt() ?? 0;
+      } catch (e) {
+        AppLogger.warning(
+          'fn_bank_available RPC failed, using PostgREST count: $e',
+        );
       }
-      if (chapter != null && chapter.isNotEmpty) {
-        query = query.ilike('chapter', '%${chapter.trim()}%');
-      }
-      if (difficulty != null &&
-          difficulty.isNotEmpty &&
-          difficulty != 'mixed') {
-        query = query.eq('difficulty', difficulty);
-      }
-      if (language != null && language.isNotEmpty) {
-        query = query.eq('language', language);
-      }
-
-      final response = await query;
-      return (response as List<dynamic>).length;
     }
+    var query = _client
+        .from('question_bank')
+        .select('id')
+        .eq('status', 'approved');
+
+    if (subjectName != null && subjectName.isNotEmpty) {
+      query = query.ilike('subject_name', '%${subjectName.trim()}%');
+    }
+    if (chapter != null && chapter.isNotEmpty) {
+      query = query.ilike('chapter', '%${chapter.trim()}%');
+    }
+    if (difficulty != null &&
+        difficulty.isNotEmpty &&
+        difficulty != 'mixed') {
+      query = query.eq('difficulty', difficulty);
+    }
+    if (language != null && language.isNotEmpty) {
+      query = query.eq('language', language);
+    }
+    if (pyqOnly) {
+      query = query.eq('is_pyq', true);
+    }
+
+    final response = await query;
+    return (response as List<dynamic>).length;
   }, TestErrorContext.load);
 
   @override

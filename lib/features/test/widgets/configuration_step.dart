@@ -29,6 +29,7 @@ class ConfigurationStep extends StatefulWidget {
     this.kind = TestKind.self,
     this.lateJoin = LateJoinSettings.defaults,
     this.questionConfig = QuestionConfig.none,
+    this.autoSubmit = AutoSubmitSettings.defaults,
     this.groups = const [],
     this.groupsLoading = false,
     super.key,
@@ -49,6 +50,7 @@ class ConfigurationStep extends StatefulWidget {
   final TestKind kind;
   final LateJoinSettings lateJoin;
   final QuestionConfig questionConfig;
+  final AutoSubmitSettings autoSubmit;
   final ValueChanged<Map<String, dynamic>> onChanged;
 
   /// Groups the user belongs to (loaded by the controller).
@@ -69,7 +71,11 @@ class _ConfigurationStepState extends State<ConfigurationStep> {
   late AttemptSettings _attempts;
   late LateJoinSettings _lateJoin;
   late QuestionConfig _questionConfig;
+  late AutoSubmitSettings _autoSubmit;
   DateTime? _startsAt;
+
+  static const _minDurationMinutes = 10;
+  static const _maxDurationMinutes = 180;
 
   /// Derived from start + duration; kept only for the calculated display.
   DateTime? get _calculatedEnd => ScheduleMath.endFor(
@@ -103,6 +109,7 @@ class _ConfigurationStepState extends State<ConfigurationStep> {
     _attempts = widget.attemptSettings;
     _lateJoin = widget.lateJoin;
     _questionConfig = widget.questionConfig;
+    _autoSubmit = widget.autoSubmit;
     _startsAt = widget.startsAt;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -142,6 +149,7 @@ class _ConfigurationStepState extends State<ConfigurationStep> {
       'attemptSettings': _attempts,
       'lateJoin': _lateJoin,
       'questionConfig': _questionConfig,
+      'autoSubmit': _autoSubmit,
       'accessCode': _accessCodeController.text.isNotEmpty
           ? _accessCodeController.text
           : null,
@@ -149,6 +157,25 @@ class _ConfigurationStepState extends State<ConfigurationStep> {
           ? _joinCodeController.text
           : null,
     });
+  }
+
+  void _setDurationMinutes(int minutes) {
+    setState(() {
+      _durationController.text = minutes.toString();
+    });
+    _update();
+  }
+
+  void _applyMarkingPreset({required double correct, required double negative}) {
+    setState(() {
+      _marksController.text = correct % 1 == 0
+          ? correct.toInt().toString()
+          : correct.toString();
+      _negativeMarksController.text = negative % 1 == 0
+          ? negative.toInt().toString()
+          : negative.toString();
+    });
+    _update();
   }
 
   /// Start time only (local picker → local DateTime; the repository writes
@@ -221,6 +248,25 @@ class _ConfigurationStepState extends State<ConfigurationStep> {
                 keyboardType: TextInputType.number,
                 onChanged: (_) => _update(),
               ),
+              const SizedBox(height: 4),
+              Slider(
+                value: (int.tryParse(_durationController.text) ??
+                        _minDurationMinutes)
+                    .clamp(_minDurationMinutes, _maxDurationMinutes)
+                    .toDouble(),
+                min: _minDurationMinutes.toDouble(),
+                max: _maxDurationMinutes.toDouble(),
+                divisions: (_maxDurationMinutes - _minDurationMinutes) ~/ 5,
+                label: '${_durationController.text} min',
+                onChanged: (v) => _setDurationMinutes(v.round()),
+              ),
+              Text(
+                '$_minDurationMinutes – $_maxDurationMinutes minutes '
+                '(type a value above for anything shorter, e.g. Quick Drill)',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
               if (widget.kind.isScheduled) ...[
                 const SizedBox(height: 16),
                 _buildDateTimeRow(
@@ -242,6 +288,24 @@ class _ConfigurationStepState extends State<ConfigurationStep> {
                       : TestFormatters.dateTime(_calculatedEnd),
                 ),
               ],
+              const SizedBox(height: 12),
+              SettingTile(
+                icon: Icons.timer_off_outlined,
+                title: 'Auto-submit on Timer Expiry',
+                subtitle: _autoSubmit.enabled
+                    ? 'Submits automatically when time runs out'
+                    : 'At 00:00 the student is prompted to submit manually '
+                        'instead of being auto-submitted',
+                trailing: Switch(
+                  value: _autoSubmit.enabled,
+                  onChanged: (value) {
+                    setState(
+                      () => _autoSubmit = _autoSubmit.copyWith(enabled: value),
+                    );
+                    _update();
+                  },
+                ),
+              ),
             ],
           ),
 
@@ -249,6 +313,28 @@ class _ConfigurationStepState extends State<ConfigurationStep> {
           SectionCard(
             title: 'Marks',
             children: [
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  ActionChip(
+                    label: const Text('UPSC Pattern (+2 / -0.66)'),
+                    onPressed: () =>
+                        _applyMarkingPreset(correct: 2, negative: 0.66),
+                  ),
+                  ActionChip(
+                    label: const Text('SSC Pattern (+2 / -0.5)'),
+                    onPressed: () =>
+                        _applyMarkingPreset(correct: 2, negative: 0.5),
+                  ),
+                  ActionChip(
+                    label: const Text('Standard (+1 / 0)'),
+                    onPressed: () =>
+                        _applyMarkingPreset(correct: 1, negative: 0),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
               Row(
                 children: [
                   Expanded(

@@ -50,7 +50,7 @@ class TestCreationController extends DisposableNotifier {
   // ── Kind defaults (server always applies duration_sec as the deadline;
   //    no untimed mode exists, so Practice gets a generous limit) ──
   static const practiceDefaultDurationSec = 3 * 60 * 60;
-  static const quickDefaultDurationSec = 10 * 60;
+  static const quickDefaultDurationSec = 5 * 60;
   static const quickTargetQuestionCount = 10;
   static const targetQuestionCountKey = 'target_question_count';
 
@@ -77,6 +77,9 @@ class TestCreationController extends DisposableNotifier {
 
   /// Mixed-difficulty distribution target (`settings.question_config`).
   QuestionConfig questionConfig = QuestionConfig.none;
+
+  /// Whether the timer forces submission at 00:00 (`settings.auto_submit`).
+  AutoSubmitSettings autoSubmit = AutoSubmitSettings.defaults;
 
   /// Derived, never typed: `starts_at + duration_sec` (null without a start).
   DateTime? get calculatedEndsAt =>
@@ -252,6 +255,7 @@ class TestCreationController extends DisposableNotifier {
       settings: t.settings,
     );
     questionConfig = QuestionConfig.fromSettings(t.settings);
+    autoSubmit = AutoSubmitSettings.fromSettings(t.settings);
   }
 
   // ── G19: template preloading ──
@@ -372,6 +376,7 @@ class TestCreationController extends DisposableNotifier {
     AttemptSettings? attemptSettings,
     LateJoinSettings? lateJoin,
     QuestionConfig? questionConfig,
+    AutoSubmitSettings? autoSubmit,
   }) => _set(() {
     if (attemptSettings != null) this.attemptSettings = attemptSettings;
     if (lateJoin != null) {
@@ -379,6 +384,7 @@ class TestCreationController extends DisposableNotifier {
       this.allowLateJoin = lateJoin.enabled;
     }
     if (questionConfig != null) this.questionConfig = questionConfig;
+    if (autoSubmit != null) this.autoSubmit = autoSubmit;
     this.durationSec = durationSec;
     this.marksPerQuestion = marksPerQuestion;
     this.negativeMarks = negativeMarks;
@@ -512,6 +518,7 @@ class TestCreationController extends DisposableNotifier {
     settings = attemptSettings.applyTo(settings);
     if (kind.supportsLateJoin) settings = lateJoin.applyTo(settings);
     settings = questionConfig.applyTo(settings);
+    settings = autoSubmit.applyTo(settings);
     String? clean(String? s) =>
         (s == null || s.trim().isEmpty) ? null : s.trim();
     return TestWriteInput(

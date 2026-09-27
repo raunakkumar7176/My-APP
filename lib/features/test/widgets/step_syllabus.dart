@@ -11,12 +11,21 @@ class StepSyllabus extends StatefulWidget {
     required this.selectedNodeIds,
     required this.serverSelectedNodeIds,
     required this.onChanged,
+    this.initialSubjectId,
     super.key,
   });
 
   final List<String> selectedNodeIds;
   final List<String> serverSelectedNodeIds;
   final ValueChanged<List<String>> onChanged;
+
+  /// Auto-selects this subject on first load (e.g. "Take a Chapter Test"
+  /// from Chapter Hub). Chapter/topic-level prefill is deliberately NOT
+  /// attempted: `chapters` (the Study module's hierarchy) and
+  /// `syllabus_nodes` (this step's topic-scoping hierarchy) are separate
+  /// tables with no shared id or FK between them — only `subject_id` is a
+  /// genuinely shared key (both read from the same `subjects` table).
+  final String? initialSubjectId;
 
   @override
   State<StepSyllabus> createState() => _StepSyllabusState();
@@ -49,6 +58,11 @@ class _StepSyllabusState extends State<StepSyllabus> {
               _subjects = subjects;
               _isLoadingSubjects = false;
             });
+            final prefillId = widget.initialSubjectId;
+            if (prefillId != null && _selectedSubject == null) {
+              final match = subjects.where((s) => s.id == prefillId);
+              if (match.isNotEmpty) _loadNodesForSubject(match.first);
+            }
           }
         })
         .catchError((e) {

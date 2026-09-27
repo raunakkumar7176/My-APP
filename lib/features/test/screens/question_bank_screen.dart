@@ -20,6 +20,7 @@ class QuestionBankScreen extends StatefulWidget {
     this.controller,
     this.selectionMode = false,
     this.onSelectionConfirmed,
+    this.initialFilter,
     super.key,
   });
 
@@ -30,6 +31,11 @@ class QuestionBankScreen extends StatefulWidget {
 
   /// Called when user confirms selection in selection mode.
   final ValueChanged<List<QuestionBankItem>>? onSelectionConfirmed;
+
+  /// Pre-applied filter (e.g. from the Question Source step's inline
+  /// difficulty/PYQ/subject choices). Ignored when [controller] is injected
+  /// (the caller already configured that controller's filter).
+  final QuestionBankFilter? initialFilter;
 
   @override
   State<QuestionBankScreen> createState() => _QuestionBankScreenState();
@@ -45,7 +51,8 @@ class _QuestionBankScreenState extends State<QuestionBankScreen> {
   void initState() {
     super.initState();
     _ownsController = widget.controller == null;
-    _controller = widget.controller ?? QuestionBankController();
+    _controller = widget.controller ??
+        QuestionBankController(initialFilter: widget.initialFilter);
     _controller.addListener(_onChanged);
     _scrollController.addListener(_onScroll);
 

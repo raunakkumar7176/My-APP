@@ -459,6 +459,7 @@ class FakeQuestionBankRepository implements QuestionBankRepository {
     String? chapter,
     String? difficulty,
     String? language,
+    bool pyqOnly = false,
   }) async {
     calls.add('getAvailableCount');
     return items.values.where((item) => item.status == 'approved').length;

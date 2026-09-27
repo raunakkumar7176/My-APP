@@ -28,7 +28,7 @@ void main() {
 
     test('creatable kinds exclude adaptive', () {
       expect(TestKind.creatable, isNot(contains(TestKind.adaptive)));
-      expect(TestKind.creatable.length, 5);
+      expect(TestKind.creatable.length, 4);
     });
   });
 

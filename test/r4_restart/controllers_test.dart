@@ -301,6 +301,7 @@ void main() {
           'test_kind': 'practice',
           'allow_reattempt': true,
           'max_attempts': 3,
+          'auto_submit': true,
         }); // Practice default
 
         final c2 =
@@ -320,6 +321,7 @@ void main() {
           'allow_reattempt': false,
           'max_attempts': 1,
           'late_join_minutes': 10,
+          'auto_submit': true,
         });
       },
     );
@@ -335,6 +337,7 @@ void main() {
           'target_question_count': 10,
           'allow_reattempt': false,
           'max_attempts': 1,
+          'auto_submit': true,
         });
         expect(c.questionsGuidance, contains('5–10'));
       },
