@@ -7,6 +7,7 @@ import 'package:my_praperation/core/models/question.dart';
 import 'package:my_praperation/core/models/question_bank_item.dart';
 import 'package:my_praperation/core/models/result.dart';
 import 'package:my_praperation/core/models/result_batch.dart';
+import 'package:my_praperation/core/models/submit_scorecard.dart';
 import 'package:my_praperation/core/models/test.dart';
 import 'package:my_praperation/core/models/test_syllabus.dart';
 import 'package:my_praperation/features/test/data/attempt_repository.dart';
@@ -709,7 +710,7 @@ class FakeGroupRepository extends InMemoryGroupRepository {
 class FakeAttemptRepository implements AttemptRepository {
   final List<String> calls = [];
   Attempt? next;
-  Result? submitResult;
+  SubmitScorecard? submitResult;
   Object? failStartWith;
 
   /// Server-side state: every attempt row, all users.
@@ -818,20 +819,21 @@ class FakeAttemptRepository implements AttemptRepository {
   }
 
   @override
-  Future<Result> submit(String attemptId, {required bool timedOut}) async {
+  Future<SubmitScorecard> submit(String attemptId, {required bool timedOut}) async {
     calls.add('submit:$attemptId:$timedOut');
     complete(
       attemptId,
       status: timedOut ? AttemptStatus.autoSubmitted : AttemptStatus.scored,
     );
     return submitResult ??
-        Result(
-          id: 'r-1',
+        SubmitScorecard(
+          success: true,
           attemptId: attemptId,
+          pointsAwarded: 15,
           testId: 't-1',
-          userId: 'u-1',
           score: 3,
           maxScore: 5,
+          resultPublished: true,
         );
   }
 

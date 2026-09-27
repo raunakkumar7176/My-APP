@@ -6,8 +6,8 @@ import '../../../core/models/answer.dart';
 import '../../../core/models/attempt.dart';
 import '../../../core/models/question.dart';
 import '../../../core/models/result.dart';
+import '../../../core/models/submit_scorecard.dart';
 import '../../../core/models/test.dart';
-import '../../../core/services/gamification_service.dart';
 import '../data/answer_repository.dart';
 import '../data/attempt_repository.dart';
 import '../data/question_repository.dart';
@@ -24,6 +24,10 @@ import 'disposable_notifier.dart';
 /// answers have reached it.
 enum SaveStatus { idle, saving, saved, failed }
 
+/// One question's palette state, derived from its [Answer] — never stored
+/// separately, so it can't drift from the actual answer data.
+enum QuestionPaletteStatus { unanswered, answered, markedForReview, answeredAndMarked }
+
 /// Owns one attempt on the client: questions (safe RPC), answers, dirty
 /// tracking, autosave and submission. The server owns access, the deadline,
 /// answer validation and scoring; nothing here computes a score or a
@@ -37,7 +41,7 @@ class AttemptController extends DisposableNotifier {
     QuestionRepository? questions,
     AnswerRepository? answers,
     TestRepository? tests,
-    this.autosaveInterval = const Duration(seconds: 5),
+    this.autosaveInterval = const Duration(milliseconds: 2500),
   }) : _attempts = attempts ?? const SupabaseAttemptRepository(),
        _questions = questions ?? const SupabaseQuestionRepository(),
        _answers = answers ?? const SupabaseAnswerRepository(),
@@ -206,6 +210,25 @@ class AttemptController extends DisposableNotifier {
       _answersById.values.where((a) => a.isAnswered).length;
   int get markedCount =>
       _answersById.values.where((a) => a.markedForReview).length;
+
+  /// This question's palette state, derived on demand from [answerFor] —
+  /// there is no separate stored map, so the palette can never disagree
+  /// with the actual answer.
+  QuestionPaletteStatus paletteStatusFor(String questionId) {
+    final a = _answersById[questionId];
+    final answered = a?.isAnswered ?? false;
+    final marked = a?.markedForReview ?? false;
+    if (answered && marked) return QuestionPaletteStatus.answeredAndMarked;
+    if (answered) return QuestionPaletteStatus.answered;
+    if (marked) return QuestionPaletteStatus.markedForReview;
+    return QuestionPaletteStatus.unanswered;
+  }
+
+  /// The whole question palette as a `questionId -> status` map, in test
+  /// order — a computed view, not additional state.
+  Map<String, QuestionPaletteStatus> get questionPalette => {
+        for (final q in _questionsInOrder) q.id: paletteStatusFor(q.id),
+      };
 
   // ── loading ──
 
@@ -409,10 +432,33 @@ class AttemptController extends DisposableNotifier {
     notifyListeners();
   }
 
-  /// Flushes answers and submits. Returns the server result when the RPC
-  /// includes it, else null (the result screen reads the row via RLS).
+  /// Alias of [submit] under the requested name — `isAutoSubmit` is exactly
+  /// [submit]'s existing `timedOut` flag; this delegates to the same,
+  /// already-tested submission path rather than a second implementation.
+  Future<SubmitScorecard> submitAttempt({bool isAutoSubmit = false}) =>
+      submit(timedOut: isAutoSubmit);
+
+  // ── last submission outcome (set by [submit], read by the screen for the
+  // celebratory-points snackbar and the publish-aware result navigation) ──
+  int? _lastPointsAwarded;
+  bool? _lastResultPublished;
+
+  /// `points_awarded` from the last successful [submit] call — 0 on an
+  /// idempotent repeat submit or a hit daily cap, null before any submit.
+  int? get lastPointsAwarded => _lastPointsAwarded;
+
+  /// `result_published` from the last successful [submit] call — always
+  /// true for a self/practice test; only ever false for an unpublished
+  /// group test. Null before any submit.
+  bool? get lastResultPublished => _lastResultPublished;
+
+  /// Flushes answers and submits via `rpc_submit_and_score_test`. Scoring,
+  /// the +15 `test_completion` points award, and the publish gate are all
+  /// server-side — this never re-awards points itself (that used to happen
+  /// here via GamificationService.awardTestCompleted, which is now removed
+  /// to avoid double-awarding on top of the RPC's own award).
   /// Re-entrancy safe: a second call while submitting throws.
-  Future<Result?> submit({required bool timedOut}) async {
+  Future<SubmitScorecard> submit({required bool timedOut}) async {
     if (_submitting) {
       throw const ValidationError(message: 'Submission already in progress.');
     }
@@ -442,15 +488,27 @@ class AttemptController extends DisposableNotifier {
           AppLogger.warning('Final save failed before timed-out submit: $e');
         }
       }
-      final result = await _attempts.submit(_attempt!.id, timedOut: timedOut);
-      if (result != null) {
-        AttemptLaunchStore.putResult(result);
-        final accuracy = result.accuracy ?? result.percentage ?? 0.0;
-        unawaited(GamificationService.awardTestCompleted(
-          testIdOrAttemptId: _attempt!.id,
-          accuracyPercentage: accuracy,
-        ));
-      }
+      final scorecard = await _attempts.submit(_attempt!.id, timedOut: timedOut);
+      _lastPointsAwarded = scorecard.pointsAwarded;
+      _lastResultPublished = scorecard.resultPublished;
+      // Park a Result for the existing result-screen handoff (same
+      // AttemptLaunchStore/ResultsController path as before) — userId comes
+      // from the attempt itself since the scorecard never carries it (the
+      // RPC always operates on the caller's own attempt).
+      AttemptLaunchStore.putResult(Result(
+        id: scorecard.attemptId,
+        attemptId: scorecard.attemptId,
+        testId: scorecard.testId,
+        userId: _attempt!.userId,
+        correctCount: scorecard.correctCount,
+        wrongCount: scorecard.incorrectCount,
+        unansweredCount: scorecard.unansweredCount,
+        totalQuestions: scorecard.totalQuestions,
+        score: scorecard.score,
+        maxScore: scorecard.maxScore,
+        percentage: scorecard.percentage,
+        accuracy: scorecard.accuracy,
+      ));
       _attempt = Attempt(
         id: _attempt!.id,
         testId: _attempt!.testId,
@@ -461,8 +519,9 @@ class AttemptController extends DisposableNotifier {
         startedAt: _attempt!.startedAt,
         attemptNumber: _attempt!.attemptNumber,
         deadlineAt: _attempt!.deadlineAt,
+        submittedAt: _attempt!.submittedAt ?? DateTime.now(),
       );
-      return result;
+      return scorecard;
     } finally {
       _submitting = false;
       notifyListeners();

@@ -1,3 +1,10 @@
+// Chapter Hub — streamlined to exactly 3 modes (Learn, Read MCQ, Chapter
+// Practice). No test-builder navigation exists anywhere in this screen:
+// the old "Assessment Hub" / "Formal Exam" mode (which bridged to
+// /tests/create) has been removed entirely, per the explicit product
+// requirement that Chapter Hub never opens the standalone test-creation
+// flow.
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:my_praperation/features/study/data/study_repository.dart';
@@ -143,7 +150,7 @@ void main() {
     );
   }
 
-  group('ChapterHubScreen UI Modernization Tests', () {
+  group('ChapterHubScreen — 3-mode structure', () {
     testWidgets('renders chapter header, breadcrumbs, and progress hero card', (
       tester,
     ) async {
@@ -157,31 +164,22 @@ void main() {
       await tester.pumpWidget(createChapterHubScreen());
       await tester.pumpAndSettle();
 
-      // Header title & breadcrumb
       expect(find.text('Number Systems & Divisibility'), findsOneWidget);
       expect(find.text('Part 1: Arithmetic • Chapter 01'), findsOneWidget);
       expect(find.text('EN'), findsOneWidget);
 
-      // Chapter progress hero card: 1 of 2 topics completed -> 50%
       expect(find.text('Chapter Mastery'), findsOneWidget);
       expect(find.text('50% Completed'), findsOneWidget);
       expect(find.text('1 of 2 Topics completed'), findsOneWidget);
-      expect(
-        find.text('Est. Time: 20 mins'),
-        findsOneWidget,
-      ); // 8 + 12 = 20 mins
-
-      // Smart Action CTA for in-progress chapter
+      expect(find.text('Est. Time: 20 mins'), findsOneWidget);
       expect(find.text('Continue Learning →'), findsOneWidget);
 
-      // 2-tab segmented navigation bar (Learn & Assessment Hub)
+      // Exactly 3 tabs: Learn, Read MCQ, Practice — no 4th "test" tab.
       expect(find.text('Learn'), findsOneWidget);
-      expect(find.text('Assessment Hub'), findsOneWidget);
+      expect(find.text('Read MCQ'), findsOneWidget);
+      expect(find.text('Practice'), findsWidgets); // tab label + card title
 
-      // "What you'll master" box in Learn Tab
       expect(find.text("What you'll master:"), findsOneWidget);
-
-      // Both topics rendered with 2-digit badges and status pills (present in overview and list card)
       expect(
         find.text('Prime Numbers & Prime Factorization'),
         findsNWidgets(2),
@@ -195,10 +193,6 @@ void main() {
       expect(find.text('8 mins'), findsOneWidget);
       expect(find.text('12 mins'), findsOneWidget);
 
-      // Topic cards render Practice secondary action button
-      expect(find.text('Practice'), findsNWidgets(2));
-
-      // Chapter-Wide Practice Card
       expect(find.text('Chapter Practice'), findsOneWidget);
       expect(
         find.text('Practice questions across all topics in this chapter.'),
@@ -207,109 +201,138 @@ void main() {
       expect(find.text('15 Questions Available'), findsOneWidget);
       expect(find.text('Practice Chapter'), findsOneWidget);
 
-      // Revision & Weak Areas Card
       expect(find.text('Revision & Recall'), findsOneWidget);
+      expect(find.text('Review Q&A Flashcards'), findsOneWidget);
+
+      // The old "Official Assessment" / test-builder bridge card is gone.
+      expect(find.text('Official Assessment'), findsNothing);
+      expect(find.text('Take Assessment →'), findsNothing);
+      expect(find.text('Start Chapter Test →'), findsNothing);
+    });
+
+    testWidgets('Read MCQ tab shows the question, highlighted correct answer, and explanation — read-only', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1000, 1400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      await tester.pumpWidget(createChapterHubScreen());
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('chapter_hub_tab_read_mcq')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Q1'), findsOneWidget);
+      expect(
+        find.text('Which of the following numbers is prime?'),
+        findsOneWidget,
+      );
+      expect(find.text('91'), findsOneWidget);
+      expect(find.text('97'), findsOneWidget);
+      expect(find.text('Correct'), findsOneWidget);
+      expect(find.text('Explanation & Concept Note:'), findsOneWidget);
       expect(
         find.text(
-          'No incorrect questions to review. Review key formulas and concept notes.',
+          '91 = 7 x 13, 51 = 3 x 17, 87 = 3 x 29. 97 has no divisors other than 1 and 97.',
         ),
         findsOneWidget,
       );
-      expect(find.text('Review Q&A Flashcards'), findsOneWidget);
 
-      // Official Assessment Bridge Card
-      expect(find.text('Official Assessment'), findsOneWidget);
-      expect(find.text('Take Assessment →'), findsOneWidget);
+      // Read-only: tapping an option does nothing (no InkWell/selection
+      // state on options in this tab) — the correct answer was already
+      // shown before any tap, and remains the only "Correct" badge.
+      await tester.tap(find.text('91'));
+      await tester.pumpAndSettle();
+      expect(find.text('Correct'), findsOneWidget);
+      expect(find.text('Your Choice'), findsNothing);
     });
 
-    testWidgets(
-      'switches to Assessment Hub tab and renders Smart Practice mode active recall flashcards',
-      (tester) async {
-        tester.view.physicalSize = const Size(1000, 1400);
-        tester.view.devicePixelRatio = 1.0;
-        addTearDown(() {
-          tester.view.resetPhysicalSize();
-          tester.view.resetDevicePixelRatio();
-        });
+    testWidgets('Chapter Practice tab is interactive: tapping the correct option shows feedback and a Next button', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1000, 1400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
 
-        await tester.pumpWidget(createChapterHubScreen());
-        await tester.pumpAndSettle();
+      await tester.pumpWidget(createChapterHubScreen());
+      await tester.pumpAndSettle();
 
-        // Tap "Assessment Hub" tab
-        await tester.tap(find.text('Assessment Hub'));
-        await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('chapter_hub_tab_practice')));
+      await tester.pumpAndSettle();
 
-        // Mode Switcher displays Smart Practice and Formal Exam
-        expect(find.text('Smart Practice'), findsOneWidget);
-        expect(find.text('Formal Exam'), findsOneWidget);
+      expect(find.byKey(const Key('practice_question_q-01')), findsOneWidget);
+      expect(find.byKey(const Key('practice_bookmark_button')), findsOneWidget);
 
-        // Revision notice banner
-        expect(
-          find.text('Active Recall & Revision Mode (1 Questions)'),
-          findsOneWidget,
-        );
+      await tester.tap(find.byKey(const Key('practice_option_q-01_2')));
+      await tester.pumpAndSettle();
 
-        // Question rendered with Q1 badge
-        expect(find.text('Q1'), findsOneWidget);
-        expect(
-          find.text('Which of the following numbers is prime?'),
-          findsOneWidget,
-        );
+      // Feedback snackbar + finish button (this is the last/only question).
+      expect(find.textContaining('Correct'), findsWidgets);
+      expect(find.byKey(const Key('practice_next_button')), findsOneWidget);
 
-        // 4 options rendered
-        expect(find.text('91'), findsOneWidget);
-        expect(find.text('51'), findsOneWidget);
-        expect(find.text('97'), findsOneWidget);
-        expect(find.text('87'), findsOneWidget);
+      // Explanation stays collapsed until explicitly expanded.
+      expect(find.byKey(const Key('practice_explanation_text')), findsNothing);
+      await tester.tap(find.byKey(const Key('practice_toggle_explanation')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('practice_explanation_text')), findsOneWidget);
+    });
 
-        // Correct option marked with "Correct" badge
-        expect(find.text('Correct'), findsOneWidget);
+    testWidgets('bookmarking a question in Chapter Practice is a local-only toggle', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1000, 1400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
 
-        // Interactive practice button in Q&A banner
-        expect(find.text('Interactive Practice Mode ⚡'), findsOneWidget);
+      await tester.pumpWidget(createChapterHubScreen());
+      await tester.pumpAndSettle();
 
-        // Explanation callout open by default
-        expect(find.text('Explanation & Concept Note:'), findsOneWidget);
-        expect(
-          find.text(
-            '91 = 7 x 13, 51 = 3 x 17, 87 = 3 x 29. 97 has no divisors other than 1 and 97.',
-          ),
-          findsOneWidget,
-        );
-      },
-    );
+      await tester.tap(find.byKey(const Key('chapter_hub_tab_practice')));
+      await tester.pumpAndSettle();
 
-    testWidgets(
-      'switches to Formal Exam mode inside Assessment Hub and renders test generator hero card',
-      (tester) async {
-        tester.view.physicalSize = const Size(1000, 1400);
-        tester.view.devicePixelRatio = 1.0;
-        addTearDown(() {
-          tester.view.resetPhysicalSize();
-          tester.view.resetDevicePixelRatio();
-        });
+      await tester.tap(find.byKey(const Key('practice_bookmark_button')));
+      await tester.pumpAndSettle();
+      expect(find.text('Saved to bookmarks'), findsOneWidget);
 
-        await tester.pumpWidget(createChapterHubScreen());
-        await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('practice_bookmark_button')));
+      await tester.pumpAndSettle();
+      expect(find.text('Bookmark removed'), findsOneWidget);
+    });
 
-        // Tap "Assessment Hub" tab
-        await tester.tap(find.text('Assessment Hub'));
-        await tester.pumpAndSettle();
+    testWidgets('completing Chapter Practice shows the session summary with a restart option', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1000, 1400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
 
-        // Tap "Formal Exam" mode
-        await tester.tap(find.text('Formal Exam'));
-        await tester.pumpAndSettle();
+      await tester.pumpWidget(createChapterHubScreen());
+      await tester.pumpAndSettle();
 
-        // Hero card title and description
-        expect(find.text('Test Your Knowledge'), findsOneWidget);
-        expect(find.text('Timed Mode'), findsOneWidget);
-        expect(find.text('Hidden Solutions'), findsOneWidget);
-        expect(find.text('Instant Scorecard'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('chapter_hub_tab_practice')));
+      await tester.pumpAndSettle();
 
-        // CTA button
-        expect(find.text('Start Chapter Test →'), findsOneWidget);
-      },
-    );
+      await tester.tap(find.byKey(const Key('practice_option_q-01_2')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('practice_next_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('chapter_practice_summary')), findsOneWidget);
+      expect(find.text('1 / 1 Correct'), findsOneWidget);
+    });
 
     testWidgets('displays error state with retry button on failure', (
       tester,
@@ -340,60 +363,50 @@ void main() {
       );
     });
 
-    testWidgets(
-      'switches to Assessment Hub when Review Q&A Flashcards is tapped in Learn tab',
-      (tester) async {
-        tester.view.physicalSize = const Size(1000, 1400);
-        tester.view.devicePixelRatio = 1.0;
-        addTearDown(() {
-          tester.view.resetPhysicalSize();
-          tester.view.resetDevicePixelRatio();
-        });
+    testWidgets('tapping Review Q&A Flashcards in Learn tab switches to Read MCQ', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1000, 1400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
 
-        await tester.pumpWidget(createChapterHubScreen());
-        await tester.pumpAndSettle();
+      await tester.pumpWidget(createChapterHubScreen());
+      await tester.pumpAndSettle();
 
-        // Tap "Review Q&A Flashcards" in Revision & Recall card
-        final reviewButton = find.text('Review Q&A Flashcards');
-        expect(reviewButton, findsOneWidget);
-        await tester.tap(reviewButton);
-        await tester.pumpAndSettle();
+      final reviewButton = find.text('Review Q&A Flashcards');
+      expect(reviewButton, findsOneWidget);
+      await tester.tap(reviewButton);
+      await tester.pumpAndSettle();
 
-        // Tab should have changed to Assessment Hub in Smart Practice mode
-        expect(find.text('Smart Practice'), findsOneWidget);
-        expect(
-          find.text('Active Recall & Revision Mode (1 Questions)'),
-          findsOneWidget,
-        );
-        expect(find.text('Q1'), findsOneWidget);
-      },
-    );
+      expect(find.text('Q1'), findsOneWidget);
+      expect(
+        find.text('Which of the following numbers is prime?'),
+        findsOneWidget,
+      );
+      expect(find.text('Correct'), findsOneWidget);
+    });
 
-    testWidgets(
-      'tapping option in Smart Practice gives immediate feedback and updates score',
-      (tester) async {
-        tester.view.physicalSize = const Size(1000, 1400);
-        tester.view.devicePixelRatio = 1.0;
-        addTearDown(() {
-          tester.view.resetPhysicalSize();
-          tester.view.resetDevicePixelRatio();
-        });
+    testWidgets('tapping Practice Chapter in Learn tab switches to Chapter Practice', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1000, 1400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
 
-        await tester.pumpWidget(createChapterHubScreen());
-        await tester.pumpAndSettle();
+      await tester.pumpWidget(createChapterHubScreen());
+      await tester.pumpAndSettle();
 
-        // Switch to Assessment Hub
-        await tester.tap(find.text('Assessment Hub'));
-        await tester.pumpAndSettle();
+      await tester.tap(find.text('Practice Chapter'));
+      await tester.pumpAndSettle();
 
-        // Tap correct option '97'
-        await tester.tap(find.text('97'));
-        await tester.pumpAndSettle();
-
-        // Score badge appears in mode switcher
-        expect(find.text('1/1'), findsOneWidget);
-      },
-    );
+      expect(find.byKey(const Key('practice_question_q-01')), findsOneWidget);
+    });
 
     testWidgets('toggles language between EN and HI smoothly', (tester) async {
       tester.view.physicalSize = const Size(1000, 1400);
@@ -406,17 +419,14 @@ void main() {
       await tester.pumpWidget(createChapterHubScreen());
       await tester.pumpAndSettle();
 
-      // Initially EN
       expect(find.text('EN'), findsOneWidget);
       expect(find.text('Chapter Mastery'), findsOneWidget);
       expect(find.text('Chapter Practice'), findsOneWidget);
       expect(find.text('Revision & Recall'), findsOneWidget);
 
-      // Tap language switch button
       await tester.tap(find.text('EN'));
       await tester.pumpAndSettle();
 
-      // Now HI
       expect(find.text('HI'), findsOneWidget);
       expect(find.text('अध्याय प्रगति समीक्षा'), findsOneWidget);
       expect(find.text('अध्याय अभ्यास'), findsOneWidget);

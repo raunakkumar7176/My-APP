@@ -335,12 +335,77 @@ void main() {
 
         expect(answers.saves.length, 1);
         expect(attempts.calls, ['submit:a-1:false']);
-        expect(result?.attemptId, 'a-1');
-        expect(AttemptLaunchStore.takeResult('a-1')?.id, result?.id);
+        expect(result.attemptId, 'a-1');
+        expect(AttemptLaunchStore.takeResult('a-1')?.id, result.attemptId);
+        expect(c.lastPointsAwarded, result.pointsAwarded);
+        expect(c.lastResultPublished, result.resultPublished);
         expect(c.isInteractive, isFalse);
         c.dispose();
       },
     );
+
+    test(
+      'submitAttempt delegates to submit(timedOut:) — same RPC call, isAutoSubmit maps to timedOut',
+      () async {
+        final attempts = FakeAttemptRepository();
+        AttemptLaunchStore.putLaunch(
+          started: (attempt: _attempt('a-1'), testTitle: null),
+          questions: const [_q1],
+          test: _test(),
+        );
+        final c = AttemptController(
+          attemptId: 'a-1',
+          testId: 't-1',
+          attempts: attempts,
+          questions: FakeQuestionRepository(),
+          answers: FakeAnswerRepository(),
+          tests: FakeTestRepository(),
+          autosaveInterval: const Duration(hours: 1),
+        );
+        await c.load();
+
+        await c.submitAttempt(isAutoSubmit: true);
+
+        expect(attempts.calls, ['submit:a-1:true']);
+        c.dispose();
+      },
+    );
+
+    test('questionPalette reflects answered/marked/answeredAndMarked/unanswered per question', () async {
+      AttemptLaunchStore.putLaunch(
+        started: (attempt: _attempt('a-1'), testTitle: null),
+        questions: const [_q1, _q2],
+        test: _test(),
+      );
+      final c = AttemptController(
+        attemptId: 'a-1',
+        testId: 't-1',
+        attempts: FakeAttemptRepository(),
+        questions: FakeQuestionRepository(),
+        answers: FakeAnswerRepository(),
+        tests: FakeTestRepository(),
+        autosaveInterval: const Duration(hours: 1),
+      );
+      await c.load();
+
+      expect(c.paletteStatusFor('q-1'), QuestionPaletteStatus.unanswered);
+      expect(c.paletteStatusFor('q-2'), QuestionPaletteStatus.unanswered);
+
+      c.selectOption('q-1', 0);
+      expect(c.paletteStatusFor('q-1'), QuestionPaletteStatus.answered);
+
+      c.toggleMarkForReview('q-1');
+      expect(c.paletteStatusFor('q-1'), QuestionPaletteStatus.answeredAndMarked);
+
+      c.toggleMarkForReview('q-2');
+      expect(c.paletteStatusFor('q-2'), QuestionPaletteStatus.markedForReview);
+
+      expect(c.questionPalette, {
+        'q-1': QuestionPaletteStatus.answeredAndMarked,
+        'q-2': QuestionPaletteStatus.markedForReview,
+      });
+      c.dispose();
+    });
 
     test('non-interactive attempt from the server is not editable', () async {
       AttemptLaunchStore.putLaunch(

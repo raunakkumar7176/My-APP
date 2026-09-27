@@ -100,6 +100,7 @@ final class Question {
     this.bankId,
     this.language,
     this.questionType,
+    this.questionSource,
   });
 
   final String id;
@@ -118,6 +119,12 @@ final class Question {
   final String? bankId;
   final String? language;
   final QuestionType? questionType;
+
+  /// Extension point only: no live `question_source` column is confirmed
+  /// today (this is distinct from [sourceBatch], which is the live AI
+  /// generation-batch integer). Pass-through from JSON if a future
+  /// migration adds one; null until then — never fabricated.
+  final String? questionSource;
 
   /// Returns a copy with [status] replaced; every other field is kept as-is
   /// (no answer-key data exists on this model to copy).
@@ -139,6 +146,7 @@ final class Question {
       bankId: bankId,
       language: language,
       questionType: questionType,
+      questionSource: questionSource,
     );
   }
 
@@ -175,6 +183,7 @@ final class Question {
       bankId: json['bank_id'] as String?,
       language: json['language'] as String?,
       questionType: _parseQuestionType(json['question_type'] as String?),
+      questionSource: json['question_source'] as String?,
     );
   }
 
@@ -196,6 +205,7 @@ final class Question {
       'bank_id': bankId,
       'language': language,
       'question_type': questionType?.name,
+      'question_source': questionSource,
     };
   }
 

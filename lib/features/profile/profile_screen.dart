@@ -10,6 +10,7 @@ import '../../core/services/profile_service.dart';
 import '../../core/services/supabase_service.dart';
 import '../community/widgets/unique_id_search_sheet.dart';
 import 'domain/age_calculator.dart';
+import 'domain/social_platform.dart';
 import 'state/profile_controller.dart';
 import 'widgets/profile_avatar.dart';
 
@@ -20,6 +21,7 @@ class ProfileScreen extends StatefulWidget {
     this.controller,
     this.currentUserEmail,
     this.userId,
+    this.initialProfile,
     super.key,
   });
 
@@ -32,6 +34,9 @@ class ProfileScreen extends StatefulWidget {
 
   /// Target user ID if viewing another student's profile.
   final String? userId;
+
+  /// Optional initial profile data when navigating directly (e.g. Founder profile).
+  final Profile? initialProfile;
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -51,6 +56,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _isApplyingVerification = false;
 
   bool get _isViewingOther {
+    if (_c.isViewingOther) return true;
     if (widget.userId == null || widget.userId!.isEmpty) return false;
     if (!SupabaseService.isInitialized) return false;
     try {
@@ -65,7 +71,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void initState() {
     super.initState();
     _ownsController = widget.controller == null;
-    _c = widget.controller ?? ProfileController();
+    _c =
+        widget.controller ??
+        ProfileController(
+          targetUserId: widget.userId,
+          initialProfile: widget.initialProfile,
+        );
     _fullNameController = TextEditingController();
     _bioController = TextEditingController();
     _mobileController = TextEditingController();
@@ -314,7 +325,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _launchSocialUrl(String url) async {
-    final uri = Uri.tryParse(url.trim());
+    var formatted = url.trim();
+    if (formatted.isEmpty) return;
+    if (!formatted.startsWith('http://') && !formatted.startsWith('https://')) {
+      formatted = 'https://$formatted';
+    }
+    final uri = Uri.tryParse(formatted);
     if (uri == null) {
       _snack('Invalid link URL', error: true);
       return;
@@ -333,112 +349,214 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _openSocialLinksEditor(Profile profile) {
-    final linkedInCtrl = TextEditingController(
-      text: profile.socialLinks['linkedin'] ?? '',
-    );
-    final xCtrl = TextEditingController(
-      text: profile.socialLinks['twitter'] ?? profile.socialLinks['x'] ?? '',
-    );
-    final githubCtrl = TextEditingController(
-      text: profile.socialLinks['github'] ?? '',
-    );
-    final instagramCtrl = TextEditingController(
-      text: profile.socialLinks['instagram'] ?? '',
-    );
-    final youtubeCtrl = TextEditingController(
-      text: profile.socialLinks['youtube'] ?? '',
-    );
+    final items = <_SocialLinkItem>[];
+    for (final entry in profile.socialLinks.entries) {
+      final platform =
+          SocialPlatform.fromKey(entry.key) ?? SocialPlatform.website;
+      items.add(_SocialLinkItem(platform: platform, initialValue: entry.value));
+    }
+    if (items.isEmpty) {
+      items.add(
+        _SocialLinkItem(platform: SocialPlatform.linkedin, initialValue: ''),
+      );
+    }
 
     showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Social Media Handles'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: linkedInCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'LinkedIn URL / username',
-                  prefixIcon: Icon(Icons.link, color: Color(0xFF0A66C2)),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: xCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'X / Twitter profile URL',
-                  prefixIcon: Icon(Icons.alternate_email),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: githubCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'GitHub profile URL',
-                  prefixIcon: Icon(Icons.code),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: instagramCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Instagram username / link',
-                  prefixIcon: Icon(
-                    Icons.camera_alt_outlined,
-                    color: Color(0xFFE4405F),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: youtubeCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'YouTube channel URL',
-                  prefixIcon: Icon(
-                    Icons.play_arrow_outlined,
-                    color: Color(0xFFFF0000),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              Navigator.of(ctx).pop();
-              final updated = <String, String>{};
-              if (linkedInCtrl.text.trim().isNotEmpty) {
-                updated['linkedin'] = linkedInCtrl.text.trim();
-              }
-              if (xCtrl.text.trim().isNotEmpty) {
-                updated['twitter'] = xCtrl.text.trim();
-              }
-              if (githubCtrl.text.trim().isNotEmpty) {
-                updated['github'] = githubCtrl.text.trim();
-              }
-              if (instagramCtrl.text.trim().isNotEmpty) {
-                updated['instagram'] = instagramCtrl.text.trim();
-              }
-              if (youtubeCtrl.text.trim().isNotEmpty) {
-                updated['youtube'] = youtubeCtrl.text.trim();
-              }
+      barrierDismissible: false,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (dialogCtx, setDialogState) {
+            final isDark = Theme.of(context).brightness == Brightness.dark;
 
-              final ok = await _c.saveSocialLinks(updated);
-              if (ok) {
-                _snack('Social handles saved.');
-              }
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
+            return AlertDialog(
+              title: const Row(
+                children: [
+                  Icon(Icons.share_rounded, size: 20, color: Color(0xFF2563EB)),
+                  SizedBox(width: 8),
+                  Text('Social Media Handles'),
+                ],
+              ),
+              content: SizedBox(
+                width: 460,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Select a platform and enter your handle or profile URL.',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Color(0xFF64748B),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      ...items.asMap().entries.map((indexed) {
+                        final index = indexed.key;
+                        final item = indexed.value;
+
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: isDark
+                                ? const Color(0xFF1E293B)
+                                : const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: isDark
+                                  ? const Color(0xFF334155)
+                                  : const Color(0xFFE2E8F0),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  DropdownButton<SocialPlatform>(
+                                    value: item.platform,
+                                    underline: const SizedBox.shrink(),
+                                    borderRadius: BorderRadius.circular(10),
+                                    onChanged: (newPlat) {
+                                      if (newPlat != null) {
+                                        setDialogState(() {
+                                          item.platform = newPlat;
+                                        });
+                                      }
+                                    },
+                                    items: SocialPlatform.values.map((p) {
+                                      return DropdownMenuItem<SocialPlatform>(
+                                        value: p,
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              p.icon,
+                                              color: p.color,
+                                              size: 16,
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Text(
+                                              p.displayName,
+                                              style: const TextStyle(
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    }).toList(),
+                                  ),
+                                  const Spacer(),
+                                  IconButton(
+                                    icon: const Icon(
+                                      Icons.close_rounded,
+                                      size: 18,
+                                    ),
+                                    tooltip: 'Remove',
+                                    onPressed: () {
+                                      setDialogState(() {
+                                        item.dispose();
+                                        items.removeAt(index);
+                                      });
+                                    },
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              TextField(
+                                controller: item.controller,
+                                decoration: InputDecoration(
+                                  hintText: item.platform.hint,
+                                  isDense: true,
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 10,
+                                  ),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                ),
+                                style: const TextStyle(fontSize: 13),
+                              ),
+                            ],
+                          ),
+                        );
+                      }),
+                      if (items.length < SocialPlatform.values.length)
+                        Center(
+                          child: OutlinedButton.icon(
+                            onPressed: () {
+                              setDialogState(() {
+                                final used = items
+                                    .map((i) => i.platform)
+                                    .toSet();
+                                final next = SocialPlatform.values.firstWhere(
+                                  (p) => !used.contains(p),
+                                  orElse: () => SocialPlatform.website,
+                                );
+                                items.add(
+                                  _SocialLinkItem(
+                                    platform: next,
+                                    initialValue: '',
+                                  ),
+                                );
+                              });
+                            },
+                            icon: const Icon(Icons.add_rounded, size: 16),
+                            label: const Text('+ Add Social Link'),
+                            style: OutlinedButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    for (final item in items) {
+                      item.dispose();
+                    }
+                    Navigator.of(ctx).pop();
+                  },
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () async {
+                    final updated = <String, String>{};
+                    for (final item in items) {
+                      final raw = item.controller.text.trim();
+                      if (raw.isNotEmpty) {
+                        final norm = SocialPlatform.normalizeUrl(
+                          item.platform,
+                          raw,
+                        );
+                        updated[item.platform.key] = norm;
+                      }
+                      item.dispose();
+                    }
+                    Navigator.of(ctx).pop();
+                    final ok = await _c.saveSocialLinks(updated);
+                    if (ok) {
+                      _snack('Social handles saved.');
+                    }
+                  },
+                  child: const Text('Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 
@@ -517,206 +635,227 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final isDark = theme.brightness == Brightness.dark;
     final ageString = AgeCalculator.calculatePreciseAge(profile.dateOfBirth);
 
-    return RefreshIndicator(
-      onRefresh: _c.load,
-      child: SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 540),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // 1. Header Identity & Avatar Ring
-                Center(
-                  child: Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: profile.appRole == AppRole.owner
-                            ? const Color(0xFFF59E0B)
-                            : profile.verifiedBadge
-                            ? const Color(0xFF2563EB)
-                            : Colors.transparent,
-                        width: 3,
-                      ),
-                    ),
-                    child: ProfileAvatar(
-                      initials: profile.initials,
-                      avatarUrl: profile.avatarUrl,
-                      radius: 46,
-                      busy: _c.isAvatarBusy,
-                      onTap: _openViewer,
-                      onEditTap: _isViewingOther ? null : _openPhotoActions,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isSmallScreen = constraints.maxWidth < 600;
+        final hPadding = isSmallScreen ? 16.0 : 24.0;
+        final vPadding = isSmallScreen ? 16.0 : 24.0;
 
-                // Name & Verified Tick (Golden for Founder, Blue for Scholar)
-                Center(
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Flexible(
-                        child: Text(
-                          profile.displayName,
-                          style: theme.textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: -0.2,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                      if (profile.appRole == AppRole.owner) ...[
-                        const SizedBox(width: 6),
-                        const Tooltip(
-                          message: '👑 Official Founder',
-                          child: Icon(
-                            Icons.verified_rounded,
-                            color: Color(0xFFF59E0B),
-                            size: 20,
-                          ),
-                        ),
-                      ] else if (profile.verifiedBadge) ...[
-                        const SizedBox(width: 6),
-                        const Icon(
-                          Icons.verified_rounded,
-                          color: Color(0xFF2563EB),
-                          size: 20,
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 6),
-
-                // Role Chip & Dynamic Age Badge
-                Center(
-                  child: Wrap(
-                    alignment: WrapAlignment.center,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    spacing: 8,
-                    runSpacing: 6,
-                    children: [
-                      _buildRoleBadge(
-                        profile.appRole,
-                        profile.verifiedBadge,
-                        isDark,
-                      ),
-                      if (ageString != null)
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 3,
-                          ),
-                          decoration: BoxDecoration(
-                            color: isDark
-                                ? const Color(0xFF1E293B)
-                                : const Color(0xFFF1F5F9),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: isDark
-                                  ? const Color(0xFF334155)
-                                  : const Color(0xFFE2E8F0),
-                            ),
-                          ),
-                          child: Text(
-                            '🎂 Age: $ageString',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: isDark
-                                  ? const Color(0xFFCBD5E1)
-                                  : const Color(0xFF475569),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 8),
-
-                // Unique Student ID Pill (Copyable)
-                if (profile.studentCode != null)
-                  Center(
-                    child: InkWell(
-                      onTap: () {
-                        Clipboard.setData(
-                          ClipboardData(text: profile.studentCode!),
-                        );
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Student ID copied to clipboard'),
-                            duration: Duration(seconds: 1),
-                          ),
-                        );
-                      },
-                      borderRadius: BorderRadius.circular(8),
+        return RefreshIndicator(
+          onRefresh: _c.load,
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(
+              parent: AlwaysScrollableScrollPhysics(),
+            ),
+            padding: EdgeInsets.symmetric(
+              horizontal: hPadding,
+              vertical: vPadding,
+            ),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 680),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // 1. Header Identity & Avatar Ring
+                    Center(
                       child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 4,
-                        ),
+                        padding: const EdgeInsets.all(4),
                         decoration: BoxDecoration(
-                          color: theme.colorScheme.primary.withValues(
-                            alpha: 0.1,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: profile.appRole == AppRole.owner
+                                ? const Color(0xFFF59E0B)
+                                : profile.verifiedBadge
+                                ? const Color(0xFF2563EB)
+                                : Colors.transparent,
+                            width: 3,
                           ),
-                          borderRadius: BorderRadius.circular(8),
                         ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              profile.studentCode!,
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                color: theme.colorScheme.primary,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 0.5,
+                        child: ProfileAvatar(
+                          initials: profile.initials,
+                          avatarUrl: profile.avatarUrl,
+                          radius: 46,
+                          busy: _c.isAvatarBusy,
+                          onTap: _openViewer,
+                          onEditTap: _isViewingOther ? null : _openPhotoActions,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Name & Verified Tick (Golden for Founder, Blue for Scholar)
+                    Center(
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              profile.displayName,
+                              style: theme.textTheme.titleLarge?.copyWith(
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: -0.2,
+                              ),
+                              textAlign: TextAlign.center,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (profile.appRole == AppRole.owner) ...[
+                            const SizedBox(width: 6),
+                            const Tooltip(
+                              message: '👑 Official Founder',
+                              child: Icon(
+                                Icons.verified_rounded,
+                                color: Color(0xFFF59E0B),
+                                size: 20,
                               ),
                             ),
+                          ] else if (profile.verifiedBadge) ...[
                             const SizedBox(width: 6),
-                            Icon(
-                              Icons.copy,
-                              size: 13,
-                              color: theme.colorScheme.primary,
+                            const Icon(
+                              Icons.verified_rounded,
+                              color: Color(0xFF2563EB),
+                              size: 20,
                             ),
                           ],
-                        ),
+                        ],
                       ),
                     ),
-                  ),
+                    const SizedBox(height: 6),
 
-                const SizedBox(height: 20),
+                    // Role Chip & Dynamic Age Badge
+                    Center(
+                      child: Wrap(
+                        alignment: WrapAlignment.center,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 8,
+                        runSpacing: 6,
+                        children: [
+                          _buildRoleBadge(
+                            profile.appRole,
+                            profile.verifiedBadge,
+                            isDark,
+                          ),
+                          if (ageString != null)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 3,
+                              ),
+                              decoration: BoxDecoration(
+                                color: isDark
+                                    ? const Color(0xFF1E293B)
+                                    : const Color(0xFFF1F5F9),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: isDark
+                                      ? const Color(0xFF334155)
+                                      : const Color(0xFFE2E8F0),
+                                ),
+                              ),
+                              child: Text(
+                                '🎂 Age: $ageString',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: isDark
+                                      ? const Color(0xFFCBD5E1)
+                                      : const Color(0xFF475569),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
 
-                // 2. Metrics & Follow Strip
-                _buildMetricsStrip(profile, isDark, theme),
+                    // Unique Student ID Pill (Copyable)
+                    if (profile.studentCode != null)
+                      Center(
+                        child: InkWell(
+                          onTap: () {
+                            Clipboard.setData(
+                              ClipboardData(text: profile.studentCode!),
+                            );
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Student ID copied to clipboard'),
+                                duration: Duration(seconds: 1),
+                              ),
+                            );
+                          },
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.primary.withValues(
+                                alpha: 0.1,
+                              ),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  profile.studentCode!,
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: theme.colorScheme.primary,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Icon(
+                                  Icons.copy,
+                                  size: 13,
+                                  color: theme.colorScheme.primary,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
 
-                const SizedBox(height: 20),
+                    const SizedBox(height: 20),
 
-                // 3. Social Media Handles Row
-                _buildSocialRow(profile, isDark),
+                    // 2. Metrics & Follow Strip
+                    _buildMetricsStrip(profile, isDark, theme),
 
-                const SizedBox(height: 20),
+                    // Founder Credentials & Achievements Card (if Founder)
+                    if (profile.appRole == AppRole.owner) ...[
+                      const SizedBox(height: 20),
+                      _buildFounderCredentialsCard(isDark),
+                    ],
 
-                // 4. Blue Tick Verification Card
-                if (!_isViewingOther)
-                  _buildBlueTickVerificationCard(profile, isDark, theme),
+                    const SizedBox(height: 20),
 
-                const SizedBox(height: 20),
+                    // 3. Social Media Handles Row / Card
+                    _buildSocialRow(profile, isDark),
 
-                // 5. Main Card: View / Edit Form
-                if (_c.isEditing)
-                  _buildEditCard(profile, isDark)
-                else
-                  _buildViewCard(profile),
-              ],
+                    const SizedBox(height: 20),
+
+                    // 4. Blue Tick Verification Card
+                    if (!_isViewingOther)
+                      _buildBlueTickVerificationCard(profile, isDark, theme),
+
+                    const SizedBox(height: 20),
+
+                    // 5. Main Card: View / Edit Form
+                    if (_c.isEditing)
+                      _buildEditCard(profile, isDark)
+                    else
+                      _buildViewCard(profile),
+                  ],
+                ),
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -856,6 +995,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         children: [
           Text(
             value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.bold,
@@ -865,6 +1006,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const SizedBox(height: 2),
           Text(
             label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: 12,
               color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
@@ -884,114 +1027,278 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildSocialRow(Profile profile, bool isDark) {
-    final links = profile.socialLinks;
-    final hasLinks = links.isNotEmpty;
-
+  Widget _buildFounderCredentialsCard(bool isDark) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1E293B) : Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: isDark
+              ? [const Color(0xFF2E1065), const Color(0xFF1E1B4B)]
+              : [const Color(0xFFF5F3FF), const Color(0xFFEDE9FE)],
         ),
-      ),
-      child: Row(
-        children: [
-          Text(
-            'Social Links',
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF475569),
-            ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: const Color(0xFFF59E0B).withValues(alpha: 0.5),
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFFF59E0B).withValues(alpha: 0.1),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              reverse: true,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (links.containsKey('linkedin'))
-                    _socialIconButton(
-                      icon: Icons.link,
-                      color: const Color(0xFF0A66C2),
-                      tooltip: 'LinkedIn',
-                      onTap: () => _launchSocialUrl(links['linkedin']!),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.workspace_premium_rounded,
+                  color: Color(0xFFF59E0B),
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Founder & System Architect',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                        color: Color(0xFFD97706),
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                  if (links.containsKey('twitter') || links.containsKey('x'))
-                    _socialIconButton(
-                      icon: Icons.alternate_email,
-                      color: isDark ? Colors.white : Colors.black87,
-                      tooltip: 'X / Twitter',
-                      onTap: () =>
-                          _launchSocialUrl(links['twitter'] ?? links['x']!),
-                    ),
-                  if (links.containsKey('github'))
-                    _socialIconButton(
-                      icon: Icons.code,
-                      color: isDark
-                          ? const Color(0xFFCBD5E1)
-                          : const Color(0xFF24292E),
-                      tooltip: 'GitHub',
-                      onTap: () => _launchSocialUrl(links['github']!),
-                    ),
-                  if (links.containsKey('instagram'))
-                    _socialIconButton(
-                      icon: Icons.camera_alt_outlined,
-                      color: const Color(0xFFE4405F),
-                      tooltip: 'Instagram',
-                      onTap: () => _launchSocialUrl(links['instagram']!),
-                    ),
-                  if (links.containsKey('youtube'))
-                    _socialIconButton(
-                      icon: Icons.play_arrow_outlined,
-                      color: const Color(0xFFFF0000),
-                      tooltip: 'YouTube',
-                      onTap: () => _launchSocialUrl(links['youtube']!),
-                    ),
-                  if (!hasLinks && _isViewingOther)
+                    const SizedBox(height: 2),
                     Text(
-                      'None linked',
+                      'Official App Creator & Academic Lead',
                       style: TextStyle(
                         fontSize: 12,
                         color: isDark
-                            ? const Color(0xFF64748B)
-                            : const Color(0xFF94A3B8),
+                            ? const Color(0xFFCBD5E1)
+                            : const Color(0xFF475569),
+                        fontWeight: FontWeight.w500,
                       ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                  if (!_isViewingOther)
-                    IconButton(
-                      icon: const Icon(Icons.edit, size: 16),
-                      tooltip: 'Edit Social Handles',
-                      onPressed: () => _openSocialLinksEditor(profile),
-                    ),
-                ],
+                  ],
+                ),
               ),
-            ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          const Divider(height: 1, color: Color(0x22F59E0B)),
+          const SizedBox(height: 12),
+          _buildFounderPill(
+            icon: Icons.lightbulb_outline_rounded,
+            title: 'Vision',
+            description: 'Democratizing top-tier competitive exam preparation with synchronized peer study.',
+            isDark: isDark,
+          ),
+          const SizedBox(height: 8),
+          _buildFounderPill(
+            icon: Icons.security_rounded,
+            title: 'Invigilator & Integrity',
+            description: 'Server-authoritative synchronized challenges, merit fairness & fraud prevention.',
+            isDark: isDark,
+          ),
+          const SizedBox(height: 8),
+          _buildFounderPill(
+            icon: Icons.school_rounded,
+            title: 'Mentorship',
+            description: 'Dedicated to empowering aspirants across UPSC, State PCS, SSC, and Banking exams.',
+            isDark: isDark,
           ),
         ],
       ),
     );
   }
 
-  Widget _socialIconButton({
+  Widget _buildFounderPill({
     required IconData icon,
-    required Color color,
-    required String tooltip,
-    required VoidCallback onTap,
+    required String title,
+    required String description,
+    required bool isDark,
   }) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 6),
-      child: IconButton(
-        icon: Icon(icon, color: color, size: 20),
-        tooltip: tooltip,
-        onPressed: onTap,
-        padding: EdgeInsets.zero,
-        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 16, color: const Color(0xFF7C3AED)),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text.rich(
+            TextSpan(
+              style: TextStyle(
+                fontSize: 12,
+                color: isDark
+                    ? const Color(0xFFE2E8F0)
+                    : const Color(0xFF334155),
+                height: 1.35,
+              ),
+              children: [
+                TextSpan(
+                  text: '$title: ',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                TextSpan(text: description),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSocialRow(Profile profile, bool isDark) {
+    final links = profile.socialLinks;
+    final hasLinks = links.isNotEmpty;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+        ),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x06000000),
+            blurRadius: 10,
+            offset: Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.share_rounded,
+                      size: 18,
+                      color: isDark
+                          ? const Color(0xFF94A3B8)
+                          : const Color(0xFF475569),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Social Handles & Links',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: isDark
+                              ? Colors.white
+                              : const Color(0xFF1E293B),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (!_isViewingOther) ...[
+                const SizedBox(width: 8),
+                TextButton.icon(
+                  onPressed: () => _openSocialLinksEditor(profile),
+                  icon: const Icon(Icons.edit_outlined, size: 14),
+                  label: const Text('Edit', style: TextStyle(fontSize: 12)),
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (!hasLinks)
+            Text(
+              _isViewingOther ? 'No social handles linked yet.' : 'Add your LinkedIn, YouTube, X, GitHub or portfolio links to connect with peers.',
+              style: TextStyle(
+                fontSize: 12.5,
+                color: isDark
+                    ? const Color(0xFF64748B)
+                    : const Color(0xFF94A3B8),
+                fontStyle: FontStyle.italic,
+              ),
+            )
+          else
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: links.entries.map((entry) {
+                final platform = SocialPlatform.fromKey(entry.key);
+                final color = platform?.color ?? const Color(0xFF6366F1);
+                final icon = platform?.icon ?? Icons.link_rounded;
+                final label = platform?.displayName ?? entry.key;
+
+                return InkWell(
+                  onTap: () => _launchSocialUrl(entry.value),
+                  borderRadius: BorderRadius.circular(10),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: isDark ? 0.2 : 0.08),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: color.withValues(alpha: isDark ? 0.4 : 0.25),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(icon, size: 15, color: color),
+                        const SizedBox(width: 6),
+                        Text(
+                          label,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: isDark ? Colors.white : color,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(
+                          Icons.arrow_outward_rounded,
+                          size: 11,
+                          color: isDark
+                              ? Colors.white70
+                              : color.withValues(alpha: 0.8),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+        ],
       ),
     );
   }
@@ -1453,5 +1760,17 @@ class _EmptyState extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _SocialLinkItem {
+  _SocialLinkItem({required this.platform, required String initialValue})
+    : controller = TextEditingController(text: initialValue);
+
+  SocialPlatform platform;
+  final TextEditingController controller;
+
+  void dispose() {
+    controller.dispose();
   }
 }

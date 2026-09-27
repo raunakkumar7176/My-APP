@@ -41,6 +41,26 @@ void main() {
       expect(batch.status, BatchStatus.unknown);
     });
 
+    test('isResultPublished mirrors isPublished (publishedAt != null), same field', () {
+      final unpublished = ResultBatch.fromJson({
+        'id': 'batch-1',
+        'test_id': 'test-1',
+        'status': 'completed',
+      });
+      expect(unpublished.isPublished, false);
+      expect(unpublished.isResultPublished, false);
+
+      final published = ResultBatch.fromJson({
+        'id': 'batch-1',
+        'test_id': 'test-1',
+        'status': 'completed',
+        'published_at': '2026-01-01T00:00:00Z',
+        'published_by': 'user-1',
+      });
+      expect(published.isPublished, true);
+      expect(published.isResultPublished, true);
+    });
+
     test('progress calculates correctly', () {
       final batch = ResultBatch.fromJson({
         'id': 'batch-1',

@@ -3,7 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/errors/app_error.dart';
 import '../../../core/logging/app_logger.dart';
 import '../../../core/models/attempt.dart';
-import '../../../core/models/result.dart';
+import '../../../core/models/submit_scorecard.dart';
 import '../../../core/services/supabase_service.dart';
 import '../domain/test_errors.dart';
 
@@ -38,10 +38,13 @@ abstract interface class AttemptRepository {
   /// The current user's attempts on [testId], ascending attempt_number.
   Future<List<Attempt>> mine(String testId);
 
-  /// Submits and scores on the server. Returns the `results` row when the
-  /// RPC includes one in its response; null otherwise (the result screen
-  /// then reads the row via RLS). The live return shape is NOT VERIFIED.
-  Future<Result?> submit(String attemptId, {required bool timedOut});
+  /// Submits and scores on the server via `rpc_submit_and_score_test`
+  /// (migration 0060, confirmed live). [timedOut] is a client-side hint only
+  /// — the RPC itself derives lateness from `now() > deadline_at` and is not
+  /// passed a flag; passing `timedOut` here does not change what the server
+  /// does, it only lets the controller set local UI state without waiting
+  /// for the round trip.
+  Future<SubmitScorecard> submit(String attemptId, {required bool timedOut});
 
   /// Reports one client-observed integrity event (app backgrounded,
   /// multi-window entered, …) against the caller's own in-progress attempt.
@@ -122,17 +125,16 @@ class SupabaseAttemptRepository implements AttemptRepository {
   }, TestErrorContext.load);
 
   @override
-  Future<Result?> submit(String attemptId, {required bool timedOut}) =>
+  Future<SubmitScorecard> submit(String attemptId, {required bool timedOut}) =>
       _guard(() async {
         final response = await _client.rpc(
-          'rpc_submit_attempt',
-          params: {
-            'p_attempt': attemptId,
-            'p_auto': timedOut, // live: rpc_submit_attempt(p_attempt uuid, p_auto boolean)
-          },
+          'rpc_submit_and_score_test',
+          // Live signature: rpc_submit_and_score_test(p_attempt_id uuid) —
+          // no p_auto; lateness is derived server-side from deadline_at.
+          params: {'p_attempt_id': attemptId},
         );
-        AppLogger.rpcShape('rpc_submit_attempt', response);
-        return resultFromSubmitResponse(response, attemptId: attemptId);
+        AppLogger.rpcShape('rpc_submit_and_score_test', response);
+        return scorecardFromSubmitResponse(response);
       }, TestErrorContext.submit);
 
   @override
@@ -190,31 +192,18 @@ class SupabaseAttemptRepository implements AttemptRepository {
     );
   }
 
-  /// A `results` row is recognised by its `attempt_id` + a score-like key;
-  /// an `attempts` row, a status message or null yield null (not an error —
-  /// the submission itself succeeded).
-  static Result? resultFromSubmitResponse(
-    dynamic response, {
-    required String attemptId,
-  }) {
+  /// `rpc_submit_and_score_test` always returns one jsonb object (never a
+  /// list, never null) on success — a missing/malformed shape is a real
+  /// error, not a "nothing happened" case, so this throws rather than
+  /// returning null (unlike the old `rpc_submit_attempt` parser it replaces).
+  static SubmitScorecard scorecardFromSubmitResponse(dynamic response) {
     final data = response is List && response.isNotEmpty
         ? response.first
         : response;
-    if (data is! Map) return null;
-    final json = Map<String, dynamic>.from(data);
-    final looksLikeResult =
-        json['attempt_id'] == attemptId &&
-        (json.containsKey('score') ||
-            json.containsKey('marks_obtained') ||
-            json.containsKey('correct_count') ||
-            json.containsKey('percentage'));
-    if (!looksLikeResult) return null;
-    try {
-      return Result.fromJson(json);
-    } catch (e) {
-      AppLogger.warning('Submit response not parseable as Result: $e');
-      return null;
+    if (data is! Map) {
+      throw const DataError(message: 'Unexpected response from server.');
     }
+    return SubmitScorecard.fromJson(Map<String, dynamic>.from(data));
   }
 
   /// The ONE place the start RPCs' response is normalized. Accepts both

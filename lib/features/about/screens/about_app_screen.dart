@@ -4,7 +4,9 @@ import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/constants/theme/app_colors.dart';
+import '../../../core/services/profile_service.dart';
 import '../../../core/services/supabase_service.dart';
+import '../../auth/widgets/app_logo.dart';
 
 /// Dedicated "About App & Founder Desk" screen.
 /// Route: `/about`
@@ -25,7 +27,10 @@ class _AboutAppScreenState extends State<AboutAppScreen> {
   }
 
   Future<void> _fetchFounderUserId() async {
-    if (!SupabaseService.isInitialized) return;
+    if (!SupabaseService.isInitialized) {
+      if (mounted) setState(() => _founderUserId = 'founder_official_uid');
+      return;
+    }
     try {
       final row = await SupabaseService.client
           .from('profiles')
@@ -33,13 +38,17 @@ class _AboutAppScreenState extends State<AboutAppScreen> {
           .eq('app_role', 'owner')
           .limit(1)
           .maybeSingle();
-      if (mounted && row != null) {
+      if (mounted) {
         setState(() {
-          _founderUserId = row['id'] as String?;
+          _founderUserId = row?['id'] as String? ?? 'founder_official_uid';
         });
       }
     } catch (_) {
-      // Ignore in hermetic or offline modes
+      if (mounted) {
+        setState(() {
+          _founderUserId = 'founder_official_uid';
+        });
+      }
     }
   }
 
@@ -259,30 +268,8 @@ class _AboutAppScreenState extends State<AboutAppScreen> {
       ),
       child: Column(
         children: [
-          // App Logo
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF2563EB), Color(0xFF7C3AED)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF2563EB).withValues(alpha: 0.3),
-                  blurRadius: 14,
-                  offset: const Offset(0, 6),
-                ),
-              ],
-            ),
-            child: const Icon(
-              Icons.school_rounded,
-              size: 40,
-              color: Colors.white,
-            ),
-          ),
+          // App Logo — the real My Preparation mark, not a placeholder icon.
+          const AppLogo(size: 72),
           const SizedBox(height: 16),
 
           // App Name
@@ -580,11 +567,11 @@ class _AboutAppScreenState extends State<AboutAppScreen> {
                   width: double.infinity,
                   child: OutlinedButton.icon(
                     onPressed: () {
-                      if (_founderUserId != null) {
-                        context.push('/profile/$_founderUserId');
-                      } else {
-                        context.push('/profile');
-                      }
+                      final targetId = _founderUserId ?? 'founder_official_uid';
+                      context.push(
+                        '/profile/$targetId',
+                        extra: ProfileService.fallbackFounderProfile,
+                      );
                     },
                     icon: const Icon(
                       Icons.person_pin_circle_outlined,

@@ -39,40 +39,86 @@ void main() {
 
   test('route table contains every Group Hub and R4 screen', () {
     const required = [
-      '/login', '/signup', '/home', '/profile', '/subjects',
-      '/groups', '/groups/create', '/groups/join', '/groups/:groupId',
-      '/groups/:groupId/members', '/groups/:groupId/notifications',
-      '/groups/:groupId/settings', '/groups/:groupId/tests',
+      '/login',
+      '/signup',
+      '/home',
+      '/profile',
+      '/subjects',
+      '/groups',
+      '/groups/create',
+      '/groups/join',
+      '/groups/:groupId',
+      '/groups/:groupId/members',
+      '/groups/:groupId/notifications',
+      '/groups/:groupId/settings',
+      '/groups/:groupId/tests',
       '/groups/:groupId/tests/:testId/results',
       '/groups/:groupId/tests/:testId/results/leaderboard',
-      '/tests', '/tests/drafts', '/tests/create', '/tests/:testId',
-      '/tests/:testId/edit', '/attempts/:attemptId/take',
-      '/attempts/:attemptId/result', '/attempts/:attemptId/review',
+      '/tests',
+      '/tests/builder',
+      '/tests/drafts',
+      '/tests/create',
+      '/tests/:testId',
+      '/tests/:testId/edit',
+      '/tests/:id/instructions',
+      '/tests/:id/attempt',
+      '/tests/:id/result',
+      '/tests/:id/leaderboard',
+      '/attempts/:attemptId/take',
+      '/attempts/:attemptId/result',
+      '/attempts/:attemptId/review',
     ];
     for (final r in required) {
       expect(templates, contains(r), reason: r);
     }
   });
 
-  test('every location the app navigates to resolves to a registered route', () {
-    // Concrete locations as built by the screens (ids substituted).
-    const used = [
-      '/', '/groups', '/groups/create', '/groups/g1', '/groups/g1/members',
-      '/groups/g1/settings', '/groups/g1/notifications', '/groups/g1/tests',
-      '/groups/g1/tests/t1/results', '/groups/g1/tests/t1/results/leaderboard',
-      '/tests', '/tests/drafts', '/tests/create', '/tests/create?group=g1',
-      '/tests/create?source=ai', '/tests/t1', '/tests/t1/edit',
-      '/attempts/a1/take?test=t1', '/attempts/a1/result', '/attempts/a1/review',
-      '/subjects', '/subjects/s1/syllabus', '/profile',
-    ];
-    for (final loc in used) {
+  test(
+    'every location the app navigates to resolves to a registered route',
+    () {
+      // Concrete locations as built by the screens (ids substituted).
+      const used = [
+        '/',
+        '/groups',
+        '/groups/create',
+        '/groups/g1',
+        '/groups/g1/members',
+        '/groups/g1/settings',
+        '/groups/g1/notifications',
+        '/groups/g1/tests',
+        '/groups/g1/tests/t1/results',
+        '/groups/g1/tests/t1/results/leaderboard',
+        '/tests',
+        '/tests/builder',
+        '/tests/drafts',
+        '/tests/create',
+        '/tests/create?group=g1',
+        '/tests/create?source=ai',
+        '/tests/t1',
+        '/tests/t1/edit',
+        '/tests/t1/instructions',
+        '/tests/t1/attempt',
+        '/tests/t1/result',
+        '/tests/t1/leaderboard',
+        '/attempts/a1/take?test=t1',
+        '/attempts/a1/result',
+        '/attempts/a1/review',
+        '/subjects',
+        '/subjects/s1/syllabus',
+        '/profile',
+      ];
+      for (final loc in used) {
+        expect(
+          templates.any((t) => _matches(t, loc)),
+          isTrue,
+          reason: '$loc has no registered route',
+        );
+      }
+      // The former dead link must not be considered valid.
       expect(
-        templates.any((t) => _matches(t, loc)),
-        isTrue,
-        reason: '$loc has no registered route',
+        templates.any((t) => _matches(t, '/groups/g1/tests/t1/leaderboard')),
+        isFalse,
       );
-    }
-    // The former dead link must not be considered valid.
-    expect(templates.any((t) => _matches(t, '/groups/g1/tests/t1/leaderboard')), isFalse);
-  });
+    },
+  );
 }

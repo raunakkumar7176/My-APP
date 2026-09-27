@@ -78,6 +78,10 @@ final class ResultBatch {
   /// signal that governs student-visible result access for a group test.
   bool get isPublished => publishedAt != null;
 
+  /// Alias of [isPublished] under the name used elsewhere in the codebase.
+  /// Same value, same source (`publishedAt != null`) — not a second flag.
+  bool get isResultPublished => isPublished;
+
   /// A completed/partially-completed batch that has not yet been published —
   /// i.e. generation finished but the authorized publish action is still
   /// pending. Drives the "Publish Result" affordance for result managers.

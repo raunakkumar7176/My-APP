@@ -133,18 +133,23 @@ final class GamificationService {
     return _awardPoints(1, 'practice_attempt');
   }
 
-  /// Award +20 points + (accuracy % * 0.5) for completing a test.
-  static Future<int?> awardTestCompleted({
-    required String testIdOrAttemptId,
-    required double accuracyPercentage,
-  }) async {
-    final cacheKey = 'test_$testIdOrAttemptId';
+  /// Award +1 point for a CORRECT answer in Chapter Practice (interactive
+  /// quiz mode) — distinct from [awardPracticeQuestionAttempted], which
+  /// awards on any attempt regardless of correctness. Deduped per question
+  /// per session, same as the other award methods.
+  static Future<int?> awardPracticeCorrectAnswer(String questionId) async {
+    final cacheKey = 'practice_correct_$questionId';
     if (_awardedItems.contains(cacheKey)) return null;
     _awardedItems.add(cacheKey);
 
-    final points = 20 + (accuracyPercentage * 0.5).round();
-    return _awardPoints(points, 'test_completed');
+    return awardStudyPoints(1, 'practice_correct');
   }
+
+  /// Generic public entry point to award points for any reason, wrapping
+  /// the RPC call. Callers that need their own dedup key (or none) can use
+  /// this directly instead of one of the named convenience methods above.
+  static Future<int?> awardStudyPoints(int points, String reason) =>
+      _awardPoints(points, reason);
 
   /// Core helper to invoke the atomic database RPC and update local state
   /// immediately. [activityType] becomes the RPC's `p_reason` — it also

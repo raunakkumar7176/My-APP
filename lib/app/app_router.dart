@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../core/models/profile.dart';
 import '../core/services/auth_service.dart';
 import '../core/services/profile_service.dart';
 import '../features/calendar/screens/calendar_screen.dart';
@@ -51,8 +52,16 @@ import '../features/test/screens/template_form_screen.dart';
 import '../features/test/widgets/question_source_step.dart';
 import '../features/test/screens/test_detail_screen.dart';
 import '../features/test/screens/test_listing_screen.dart';
-import '../features/test/screens/test_result_screen.dart';
+import '../features/test/screens/test_result_screen.dart' as legacy_test_result;
 import '../features/test/screens/test_taking_screen.dart';
+import '../features/tests/presentation/screens/tests_dashboard_screen.dart';
+import '../features/tests/presentation/screens/test_builder_screen.dart';
+import '../features/tests/presentation/screens/test_instructions_screen.dart';
+import '../features/tests/presentation/screens/test_attempt_screen.dart';
+import '../features/tests/presentation/screens/test_result_screen.dart';
+import '../features/tests/presentation/screens/test_leaderboard_screen.dart';
+import '../features/tests/presentation/screens/submission_pending_screen.dart';
+import '../features/tests/presentation/widgets/common/test_card.dart';
 import '../../core/models/test_template.dart';
 import '../../core/models/question_bank_item.dart';
 
@@ -132,10 +141,24 @@ final class AppRouter {
           GoRoute(
             path: ':userId',
             name: 'user-profile',
-            builder: (context, state) =>
-                ProfileScreen(userId: state.pathParameters['userId']),
+            builder: (context, state) => ProfileScreen(
+              userId: state.pathParameters['userId'],
+              initialProfile: state.extra is Profile
+                  ? state.extra as Profile
+                  : null,
+            ),
           ),
         ],
+      ),
+      GoRoute(
+        path: '/founder-profile/:userId',
+        name: 'founder-profile',
+        builder: (context, state) => ProfileScreen(
+          userId: state.pathParameters['userId'],
+          initialProfile: state.extra is Profile
+              ? state.extra as Profile
+              : null,
+        ),
       ),
       GoRoute(
         path: '/community',
@@ -415,15 +438,17 @@ final class AppRouter {
           ),
         ],
       ),
-      // ── Test system (R4 restart): routes carry ids only ──
+      // ── Unified Test Ecosystem ──
       GoRoute(
         path: '/tests',
         name: 'test-listing',
-        builder: (context, state) {
-          final tab = int.tryParse(state.uri.queryParameters['tab'] ?? '') ?? 0;
-          return TestListingScreen(initialTab: tab);
-        },
+        builder: (context, state) => const TestsDashboardScreen(),
         routes: [
+          GoRoute(
+            path: 'builder',
+            name: 'test-builder',
+            builder: (context, state) => const TestBuilderScreen(),
+          ),
           GoRoute(
             path: 'drafts',
             name: 'test-listing-drafts',
@@ -529,6 +554,69 @@ final class AppRouter {
           ),
         ],
       ),
+      GoRoute(
+        path: '/tests/:id/instructions',
+        name: 'test-instructions',
+        builder: (context, state) {
+          final id =
+              state.pathParameters['id'] ??
+              state.pathParameters['testId'] ??
+              '';
+          final extra = state.extra;
+          final testData = extra is TestCardData ? extra : null;
+          return TestInstructionsScreen(testId: id, testData: testData);
+        },
+      ),
+      GoRoute(
+        path: '/tests/:id/attempt',
+        name: 'test-attempt',
+        builder: (context, state) {
+          final id =
+              state.pathParameters['id'] ??
+              state.pathParameters['testId'] ??
+              '';
+          final extra = state.extra;
+          final testData = extra is TestCardData ? extra : null;
+          return TestAttemptScreen(testId: id, testData: testData);
+        },
+      ),
+      GoRoute(
+        path: '/tests/:id/result',
+        name: 'test-result-ecosystem',
+        builder: (context, state) {
+          final id =
+              state.pathParameters['id'] ??
+              state.pathParameters['testId'] ??
+              '';
+          final extra = state.extra;
+          final resultData = extra is TestCardData ? extra : null;
+          return TestResultScreen(testId: id, resultData: resultData);
+        },
+      ),
+      GoRoute(
+        path: '/tests/:id/leaderboard',
+        name: 'test-leaderboard',
+        builder: (context, state) {
+          final id =
+              state.pathParameters['id'] ??
+              state.pathParameters['testId'] ??
+              '';
+          final extra = state.extra;
+          final testData = extra is TestCardData ? extra : null;
+          return TestLeaderboardScreen(testId: id, testData: testData);
+        },
+      ),
+      GoRoute(
+        path: '/tests/:id/submission_pending',
+        name: 'test-submission-pending',
+        builder: (context, state) {
+          final id =
+              state.pathParameters['id'] ??
+              state.pathParameters['testId'] ??
+              '';
+          return SubmissionPendingScreen(testId: id);
+        },
+      ),
       // Legacy paths kept as redirects so old links keep working.
       GoRoute(path: '/create-test', redirect: (_, _) => '/tests/create'),
       GoRoute(
@@ -547,8 +635,9 @@ final class AppRouter {
       GoRoute(
         path: '/attempts/:attemptId/result',
         name: 'attempt-result',
-        builder: (context, state) =>
-            TestResultScreen(attemptId: state.pathParameters['attemptId']!),
+        builder: (context, state) => legacy_test_result.TestResultScreen(
+          attemptId: state.pathParameters['attemptId']!,
+        ),
       ),
       GoRoute(
         path: '/attempts/:attemptId/review',

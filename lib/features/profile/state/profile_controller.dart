@@ -5,6 +5,7 @@ import '../../../core/logging/app_logger.dart';
 import '../../../core/models/profile.dart';
 import '../../../core/services/avatar_service.dart';
 import '../../../core/services/profile_service.dart';
+import '../../../core/services/supabase_service.dart';
 import '../../test/state/disposable_notifier.dart';
 
 enum ProfileLoadState { loading, loaded, empty, error }
@@ -57,11 +58,21 @@ abstract final class ProfileValidators {
 /// load/save/avatar *state* and talks to [ProfileService]/[AvatarService].
 class ProfileController extends DisposableNotifier {
   ProfileController({
+    this.targetUserId,
+    this.initialProfile,
     AvatarService? avatarService,
-  }) : _avatarService = avatarService ?? SupabaseAvatarService();
+  }) : _avatarService = avatarService ?? SupabaseAvatarService() {
+    if (initialProfile != null) {
+      _targetProfile = initialProfile;
+      _loadState = ProfileLoadState.loaded;
+    }
+  }
 
+  final String? targetUserId;
+  final Profile? initialProfile;
   final AvatarService _avatarService;
 
+  Profile? _targetProfile;
   ProfileLoadState _loadState = ProfileLoadState.loading;
   String? _loadError;
   bool _isEditing = false;
@@ -70,10 +81,20 @@ class ProfileController extends DisposableNotifier {
   AvatarOpState _avatarOpState = AvatarOpState.idle;
   String? _avatarError;
 
+  bool get isViewingOther =>
+      targetUserId != null &&
+      targetUserId!.isNotEmpty &&
+      targetUserId !=
+          (SupabaseService.isInitialized
+              ? SupabaseService.client.auth.currentUser?.id
+              : null);
+
   ProfileLoadState get loadState => _loadState;
   String? get loadError => _loadError;
-  Profile? get profile => ProfileService.currentProfile;
-  bool get isEditing => _isEditing;
+  Profile? get profile => isViewingOther
+      ? (_targetProfile ?? initialProfile)
+      : ProfileService.currentProfile;
+  bool get isEditing => !isViewingOther && _isEditing;
   bool get isSaving => _isSaving;
   String? get saveError => _saveError;
   AvatarOpState get avatarOpState => _avatarOpState;
@@ -81,6 +102,37 @@ class ProfileController extends DisposableNotifier {
   String? get avatarError => _avatarError;
 
   Future<void> load() async {
+    if (isViewingOther) {
+      if (_targetProfile != null) {
+        _loadState = ProfileLoadState.loaded;
+        notifyListeners();
+        return;
+      }
+
+      _loadState = ProfileLoadState.loading;
+      _loadError = null;
+      notifyListeners();
+
+      try {
+        final fetched = await ProfileService.fetchProfileById(targetUserId!);
+        if (fetched != null) {
+          _targetProfile = fetched;
+          _loadState = ProfileLoadState.loaded;
+        } else {
+          _loadState = ProfileLoadState.empty;
+        }
+      } catch (e, st) {
+        AppLogger.error(
+          'Failed to load target user profile: $e',
+          stackTrace: st,
+        );
+        _loadError = 'Could not load student profile.';
+        _loadState = ProfileLoadState.error;
+      }
+      notifyListeners();
+      return;
+    }
+
     final existing = ProfileService.currentProfile;
     if (existing != null) {
       _loadState = ProfileLoadState.loaded;
@@ -178,9 +230,11 @@ class ProfileController extends DisposableNotifier {
     }
   }
 
-  Future<Uint8List?> pickAvatarFromGallery() => _pickAvatar(_avatarService.pickFromGallery);
+  Future<Uint8List?> pickAvatarFromGallery() =>
+      _pickAvatar(_avatarService.pickFromGallery);
 
-  Future<Uint8List?> pickAvatarFromCamera() => _pickAvatar(_avatarService.pickFromCamera);
+  Future<Uint8List?> pickAvatarFromCamera() =>
+      _pickAvatar(_avatarService.pickFromCamera);
 
   Future<Uint8List?> _pickAvatar(Future<Uint8List?> Function() picker) async {
     if (isAvatarBusy) return null;

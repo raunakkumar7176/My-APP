@@ -10,7 +10,13 @@ import '../../domain/study_chapter.dart';
 import '../../domain/study_question.dart';
 import '../../domain/study_topic.dart';
 
-/// State management controller for Chapter Hub (Learn, Questions, Test).
+/// The three Chapter Hub modes. There is no fourth "test builder" mode —
+/// Chapter Hub never opens the standalone test-creation flow; that feature
+/// lives entirely in the separate Tests area of the app.
+enum ChapterHubTab { learn, readMcq, practice }
+
+/// State management controller for Chapter Hub's 3 modes: Learn (theory),
+/// Read MCQ (read-only revision), and Chapter Practice (interactive quiz).
 class ChapterHubController extends ChangeNotifier {
   ChapterHubController({
     required this.chapterId,
@@ -25,8 +31,7 @@ class ChapterHubController extends ChangeNotifier {
 
   // ── State ──
   String _languageCode = 'en';
-  int _activeTabIndex = 0; // 0: Learn, 1: Assessment Hub (Practice & Test)
-  int _assessmentMode = 0; // 0: Smart Practice Mode, 1: Formal Chapter Exam
+  ChapterHubTab _activeTab = ChapterHubTab.learn;
 
   StudyChapter? _chapter;
   List<StudyTopic> _topics = [];
@@ -42,15 +47,23 @@ class ChapterHubController extends ChangeNotifier {
   int _questionOffset = 0;
   static const int _questionPageSize = 20;
 
-  // Question interaction state for Smart Practice
+  // Question interaction state for Chapter Practice (interactive quiz)
   final Map<String, int> _userSelectedOptions = {};
   final Set<String> _checkedQuestionIds = {};
   final Set<String> _expandedExplanationIds = {};
 
+  // Card-by-card stepper position within Chapter Practice.
+  int _practiceIndex = 0;
+
+  // Local-only bookmark toggle (no backend "Saved Questions" table exists
+  // today — same honest, non-persisted pattern already used for the topic
+  // bookmark button elsewhere in Study; never invented server state).
+  final Set<String> _bookmarkedQuestionIds = {};
+
   // ── Getters ──
   String get languageCode => _languageCode;
-  int get activeTabIndex => _activeTabIndex;
-  int get assessmentMode => _assessmentMode;
+  ChapterHubTab get activeTab => _activeTab;
+  int get activeTabIndex => _activeTab.index;
   StudyChapter? get chapter => _chapter;
   List<StudyTopic> get topics => List.unmodifiable(_topics);
   List<StudyQuestion> get questions => List.unmodifiable(_questions);
@@ -109,6 +122,47 @@ class ChapterHubController extends ChangeNotifier {
 
   int get totalQuestionCount => _chapter?.questionCount ?? _questions.length;
 
+  // ── Chapter Practice stepper (card-by-card) ──
+  int get practiceIndex => _practiceIndex;
+  StudyQuestion? get currentPracticeQuestion =>
+      (_practiceIndex >= 0 && _practiceIndex < _questions.length)
+          ? _questions[_practiceIndex]
+          : null;
+  bool get isPracticeComplete =>
+      _questions.isNotEmpty && _practiceIndex >= _questions.length;
+  bool get hasNextPracticeQuestion => _practiceIndex < _questions.length - 1;
+
+  bool isBookmarked(String questionId) =>
+      _bookmarkedQuestionIds.contains(questionId);
+
+  void toggleBookmark(String questionId) {
+    if (_bookmarkedQuestionIds.contains(questionId)) {
+      _bookmarkedQuestionIds.remove(questionId);
+    } else {
+      _bookmarkedQuestionIds.add(questionId);
+    }
+    notifyListeners();
+  }
+
+  /// Advances the Chapter Practice stepper to the next question, or past
+  /// the end (see [isPracticeComplete]) once the last one is answered.
+  void nextPracticeQuestion() {
+    if (_practiceIndex < _questions.length) {
+      _practiceIndex++;
+      notifyListeners();
+    }
+  }
+
+  /// Restarts the Chapter Practice session from the first question,
+  /// clearing this session's answers (but not points already awarded).
+  void restartPractice() {
+    _practiceIndex = 0;
+    _userSelectedOptions.clear();
+    _checkedQuestionIds.clear();
+    _expandedExplanationIds.clear();
+    notifyListeners();
+  }
+
   @override
   void notifyListeners() {
     if (_disposed) return;
@@ -121,30 +175,25 @@ class ChapterHubController extends ChangeNotifier {
     super.dispose();
   }
 
-  /// Sets the active mode inside the Assessment Hub:
-  /// 0: Smart Practice Mode, 1: Formal Chapter Exam.
-  void setAssessmentMode(int mode) {
-    if (_assessmentMode == mode) return;
-    _assessmentMode = mode;
-    notifyListeners();
-  }
-
-  /// Sets the active tab (0: Learn, 1: Assessment Hub).
-  /// Gracefully accepts 2 for backward compatibility mapping to Formal Exam mode.
-  void setActiveTab(int index) {
-    final targetTab = index >= 1 ? 1 : 0;
-    if (index == 2) {
-      _assessmentMode = 1;
-    } else if (index == 1 && _activeTabIndex != 1) {
-      _assessmentMode = 0;
-    }
-    _activeTabIndex = targetTab;
+  /// Sets the active tab by [ChapterHubTab].
+  void setTab(ChapterHubTab tab) {
+    if (_activeTab == tab) return;
+    _activeTab = tab;
     notifyListeners();
 
-    // Lazy load questions when Assessment Hub is selected first time
-    if (_activeTabIndex == 1 && _questions.isEmpty && !_isLoadingQuestions) {
+    // Lazy load questions the first time either question-backed tab opens.
+    if ((tab == ChapterHubTab.readMcq || tab == ChapterHubTab.practice) &&
+        _questions.isEmpty &&
+        !_isLoadingQuestions) {
       loadQuestions();
     }
+  }
+
+  /// Sets the active tab by index (0: Learn, 1: Read MCQ, 2: Chapter
+  /// Practice) — for callers driving a [TabController] by index.
+  void setActiveTab(int index) {
+    final clamped = index.clamp(0, ChapterHubTab.values.length - 1);
+    setTab(ChapterHubTab.values[clamped]);
   }
 
   /// Loads initial chapter metadata and topics.
@@ -188,8 +237,9 @@ class ChapterHubController extends ChangeNotifier {
       notifyListeners();
     }
 
-    // If active tab is Questions, load questions as well
-    if (_activeTabIndex == 1) {
+    // If a question-backed tab is already active, load questions too.
+    if (_activeTab == ChapterHubTab.readMcq ||
+        _activeTab == ChapterHubTab.practice) {
       await loadQuestions();
     }
   }
@@ -247,17 +297,29 @@ class ChapterHubController extends ChangeNotifier {
     }
   }
 
-  /// User selects an option for an MCQ practice card in Smart Practice Mode.
-  /// Immediate feedback: checks answer and reveals explanation on demand.
+  /// User selects an option in Chapter Practice (interactive quiz). Gives
+  /// instant correct/wrong feedback (checked immediately); the explanation
+  /// stays collapsed until [toggleExplanation] is called. A correct first
+  /// attempt awards +1 point (`practice_correct`); every first attempt
+  /// (correct or not) also counts toward the existing attempt-based award.
   void selectOption(String questionId, int optionIndex) {
     final isFirstAttempt = !_userSelectedOptions.containsKey(questionId);
     _userSelectedOptions[questionId] = optionIndex;
     _checkedQuestionIds.add(questionId);
-    _expandedExplanationIds.add(questionId);
     notifyListeners();
 
     if (isFirstAttempt) {
       unawaited(GamificationService.awardPracticeQuestionAttempted(questionId));
+      StudyQuestion? question;
+      for (final q in _questions) {
+        if (q.id == questionId) {
+          question = q;
+          break;
+        }
+      }
+      if (question != null && question.correctOption == optionIndex) {
+        unawaited(GamificationService.awardPracticeCorrectAnswer(questionId));
+      }
     }
   }
 

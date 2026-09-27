@@ -450,6 +450,81 @@ final class ProfileService {
     _statusController.close();
   }
 
+  /// Official fallback founder profile for offline, hermetic, or public desk view.
+  static Profile get fallbackFounderProfile => Profile(
+    id: 'founder_official_uid',
+    fullName: 'Raunak Kumar',
+    timezone: 'Asia/Kolkata',
+    createdAt: DateTime(2026, 1, 1),
+    studentCode: 'MP-FOUNDER',
+    bio: 'Founder & Lead Architect of My Preparation. Passionate about empowering civil service aspirants with distraction-free, synchronized examination systems.',
+    mobile: '+91 98765 43210',
+    examTargets: const ['UPSC CSE', 'State PSC'],
+    totalPoints: 25000,
+    weeklyPoints: 3450,
+    appRole: AppRole.owner,
+    isVip: true,
+    verifiedBadge: true,
+    dateOfBirth: DateTime(1998, 5, 20),
+    socialLinks: const {
+      'LinkedIn': 'https://linkedin.com',
+      'YouTube': 'https://youtube.com',
+      'X (Twitter)': 'https://x.com',
+      'Telegram': 'https://t.me/mypreparation',
+      'GitHub': 'https://github.com',
+      'Official Website': 'https://mypreparation.app',
+    },
+    followersCount: 1240,
+    followingCount: 18,
+  );
+
+  /// Fetches a specific profile by its user ID. Returns [fallbackFounderProfile]
+  /// if requesting the official founder and no remote record is found.
+  static Future<Profile?> fetchProfileById(String userId) async {
+    if (userId == 'founder_official_uid' || userId.toLowerCase() == 'founder') {
+      return fetchFounderProfile();
+    }
+
+    if (!SupabaseService.isInitialized) {
+      if (userId == 'founder_official_uid') return fallbackFounderProfile;
+      return null;
+    }
+
+    try {
+      final response = await _db.select().eq('id', userId).maybeSingle();
+      if (response != null) {
+        return Profile.fromJson(response);
+      }
+    } catch (e) {
+      AppLogger.warning('fetchProfileById failed for $userId: $e');
+    }
+
+    if (userId == 'founder_official_uid') {
+      return fallbackFounderProfile;
+    }
+    return null;
+  }
+
+  /// Fetches the official Founder / Owner profile.
+  static Future<Profile?> fetchFounderProfile() async {
+    if (!SupabaseService.isInitialized) {
+      return fallbackFounderProfile;
+    }
+    try {
+      final response = await _db
+          .select()
+          .eq('app_role', 'owner')
+          .limit(1)
+          .maybeSingle();
+      if (response != null) {
+        return Profile.fromJson(response);
+      }
+    } catch (e) {
+      AppLogger.warning('fetchFounderProfile error: $e');
+    }
+    return fallbackFounderProfile;
+  }
+
   /// Seeds [currentProfile] directly, bypassing Supabase — for widget/unit
   /// tests that need a loaded profile without a real backend. Matches the
   /// existing [SupabaseService.setClientForTesting] convention.
