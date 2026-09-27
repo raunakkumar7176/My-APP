@@ -15,11 +15,19 @@ class ContentBlockRenderer extends StatelessWidget {
     required this.block,
     this.isHindi = false,
     this.margin = const EdgeInsets.only(bottom: 18.0),
+    this.fontScale = 1.0,
   });
 
   final ContentBlock block;
   final bool isHindi;
   final EdgeInsetsGeometry? margin;
+
+  /// Multiplies the body-text font sizes (not badge/label captions), driven
+  /// by the reader's A-/A+ stepper. 1.0 = the original fixed sizes below.
+  final double fontScale;
+
+  /// Scales a body-text size; labels/badges/icons stay fixed for legibility.
+  double _f(double base) => base * fontScale;
 
   @override
   Widget build(BuildContext context) {
@@ -71,7 +79,7 @@ class ContentBlockRenderer extends StatelessWidget {
               block.text,
               style: TextStyle(
                 fontFamily: 'Roboto',
-                fontSize: 20,
+                fontSize: _f(20),
                 fontWeight: FontWeight.w700,
                 color: textColor,
                 letterSpacing: -0.3,
@@ -94,7 +102,7 @@ class ContentBlockRenderer extends StatelessWidget {
       block.text,
       style: TextStyle(
         fontFamily: 'Roboto',
-        fontSize: 15.5,
+        fontSize: _f(15.5),
         fontWeight: FontWeight.w400,
         height: 1.65,
         letterSpacing: 0.1,
@@ -180,7 +188,7 @@ class ContentBlockRenderer extends StatelessWidget {
                       block.text,
                       style: TextStyle(
                         fontFamily: 'Roboto',
-                        fontSize: 15,
+                        fontSize: _f(15),
                         fontWeight: FontWeight.w500,
                         height: 1.6,
                         color: textColor,
@@ -260,7 +268,7 @@ class ContentBlockRenderer extends StatelessWidget {
                       mathFormula,
                       style: TextStyle(
                         fontFamily: 'Consolas',
-                        fontSize: 15,
+                        fontSize: _f(15),
                         fontWeight: FontWeight.w600,
                         color: primaryAccent,
                       ),
@@ -398,7 +406,7 @@ class ContentBlockRenderer extends StatelessWidget {
                   problemText,
                   style: TextStyle(
                     fontFamily: 'Roboto',
-                    fontSize: 14.5,
+                    fontSize: _f(14.5),
                     fontWeight: FontWeight.w500,
                     height: 1.55,
                     color: textColor,
@@ -450,7 +458,7 @@ class ContentBlockRenderer extends StatelessWidget {
                     solutionText,
                     style: TextStyle(
                       fontFamily: 'Roboto',
-                      fontSize: 14,
+                      fontSize: _f(14),
                       fontWeight: FontWeight.w400,
                       height: 1.6,
                       color: textColor,
@@ -513,7 +521,7 @@ class ContentBlockRenderer extends StatelessWidget {
               block.text,
               style: TextStyle(
                 fontFamily: 'Roboto',
-                fontSize: 14.5,
+                fontSize: _f(14.5),
                 fontWeight: FontWeight.w600,
                 height: 1.5,
                 color: textColor,
@@ -543,7 +551,7 @@ class ContentBlockRenderer extends StatelessWidget {
                         pt,
                         style: TextStyle(
                           fontFamily: 'Roboto',
-                          fontSize: 14,
+                          fontSize: _f(14),
                           height: 1.55,
                           color: textColor,
                         ),
@@ -625,7 +633,7 @@ class ContentBlockRenderer extends StatelessWidget {
                       '${isHindi ? "गलती" : "Mistake"}: $mistake',
                       style: TextStyle(
                         fontFamily: 'Roboto',
-                        fontSize: 13.5,
+                        fontSize: _f(13.5),
                         fontWeight: FontWeight.w600,
                         height: 1.45,
                         color: isDark ? const Color(0xFFFCA5A5) : errorColor,
@@ -657,7 +665,7 @@ class ContentBlockRenderer extends StatelessWidget {
                         '${isHindi ? "सही समझ" : "Correct Understanding"}: $correction',
                         style: TextStyle(
                           fontFamily: 'Roboto',
-                          fontSize: 13.5,
+                          fontSize: _f(13.5),
                           fontWeight: FontWeight.w600,
                           height: 1.45,
                           color: isDark
@@ -675,7 +683,7 @@ class ContentBlockRenderer extends StatelessWidget {
               block.text,
               style: TextStyle(
                 fontFamily: 'Roboto',
-                fontSize: 14,
+                fontSize: _f(14),
                 fontWeight: FontWeight.w400,
                 height: 1.5,
                 color: isDark
@@ -716,7 +724,7 @@ class ContentBlockRenderer extends StatelessWidget {
               block.text,
               style: TextStyle(
                 fontFamily: 'Roboto',
-                fontSize: 14,
+                fontSize: _f(14),
                 fontStyle: FontStyle.italic,
                 height: 1.55,
                 color: noteColor,

@@ -28,6 +28,10 @@ class RoutineCreateScreen extends StatefulWidget {
     this.controller,
     this.subjectLoader,
     this.topicLoader,
+    this.prefillTitle,
+    this.prefillChapterId,
+    this.prefillTopicId,
+    this.prefillSessionType,
   });
 
   /// If provided, the screen operates in edit mode.
@@ -37,6 +41,14 @@ class RoutineCreateScreen extends StatefulWidget {
   final RoutineController? controller;
   final SubjectLoader? subjectLoader;
   final TopicLoader? topicLoader;
+
+  /// Optional seed values for create mode only (e.g. from the Study reader's
+  /// "Add to Revision Routine" action). The student still picks a real time
+  /// slot and can edit the title; only these three values are pre-filled.
+  final String? prefillTitle;
+  final String? prefillChapterId;
+  final String? prefillTopicId;
+  final String? prefillSessionType;
 
   @override
   State<RoutineCreateScreen> createState() => _RoutineCreateScreenState();
@@ -78,7 +90,17 @@ class _RoutineCreateScreenState extends State<RoutineCreateScreen> {
     _ownsController = widget.controller == null;
     _controller = widget.controller ?? RoutineController();
     _loadSubjects();
-    if (_isEditMode) _loadRoutine();
+    if (_isEditMode) {
+      _loadRoutine();
+    } else {
+      if (widget.prefillTitle != null) {
+        _titleController.text = widget.prefillTitle!;
+      }
+      if (widget.prefillSessionType != null &&
+          Routine.sessionTypes.contains(widget.prefillSessionType)) {
+        _sessionType = widget.prefillSessionType!;
+      }
+    }
   }
 
   @override
@@ -285,6 +307,8 @@ class _RoutineCreateScreenState extends State<RoutineCreateScreen> {
           subjectId: _selectedSubjectId,
           reminderEnabled: _reminderEnabled,
           targetDurationMinutes: targetDuration,
+          chapterId: widget.prefillChapterId,
+          topicId: widget.prefillTopicId,
           sessionType: _sessionType,
           hasAlarm: _hasAlarm,
           alarmLeadMinutes: _alarmLeadMinutes,

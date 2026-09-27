@@ -35,6 +35,13 @@ class _TopicTheoryScreenState extends State<TopicTheoryScreen> {
   bool _isBookmarked = false;
   double _scrollProgress = 0.0;
 
+  /// A-/A+ reader font scale, session-only (resets on next app launch —
+  /// no persistence requested, and this reader already remounts per topic
+  /// via go_router when navigating from elsewhere).
+  double _fontScale = 1.0;
+  static const _minFontScale = 0.85;
+  static const _maxFontScale = 1.4;
+
   @override
   void initState() {
     super.initState();
@@ -217,6 +224,58 @@ class _TopicTheoryScreenState extends State<TopicTheoryScreen> {
           ),
           const SizedBox(width: 4),
 
+          // Font size stepper (A- / A+)
+          IconButton(
+            key: const Key('theory_font_decrease'),
+            icon: Icon(Icons.text_decrease_rounded, size: 19, color: textSecondary),
+            tooltip: isHindi ? 'फ़ॉन्ट छोटा करें' : 'Decrease text size',
+            onPressed: _fontScale > _minFontScale
+                ? () => setState(
+                    () => _fontScale = (_fontScale - 0.1).clamp(
+                      _minFontScale,
+                      _maxFontScale,
+                    ),
+                  )
+                : null,
+          ),
+          IconButton(
+            key: const Key('theory_font_increase'),
+            icon: Icon(Icons.text_increase_rounded, size: 19, color: textSecondary),
+            tooltip: isHindi ? 'फ़ॉन्ट बड़ा करें' : 'Increase text size',
+            onPressed: _fontScale < _maxFontScale
+                ? () => setState(
+                    () => _fontScale = (_fontScale + 0.1).clamp(
+                      _minFontScale,
+                      _maxFontScale,
+                    ),
+                  )
+                : null,
+          ),
+          const SizedBox(width: 2),
+
+          // Add to Revision Routine — opens the existing routine-create form
+          // pre-filled with this topic/chapter, so a real time slot is still
+          // chosen by the student rather than fabricating one.
+          IconButton(
+            key: const Key('theory_add_to_routine'),
+            icon: Icon(Icons.alarm_add_rounded, size: 20, color: primaryAccent),
+            tooltip: isHindi ? 'रिवीजन रूटीन में जोड़ें' : 'Add to Revision Routine',
+            onPressed: () {
+              final t = _controller.topic;
+              context.push(
+                '/routine/create',
+                extra: {
+                  'prefillTitle': t != null
+                      ? (isHindi ? 'रिवीजन: ${t.title}' : 'Revise: ${t.title}')
+                      : null,
+                  'prefillChapterId': widget.chapterId,
+                  'prefillTopicId': widget.topicId,
+                  'prefillSessionType': 'revision',
+                },
+              );
+            },
+          ),
+
           // Bookmark Button
           IconButton(
             icon: Icon(
@@ -327,6 +386,7 @@ class _TopicTheoryScreenState extends State<TopicTheoryScreen> {
             key: ValueKey(block.id),
             block: block,
             isHindi: isHindi,
+            fontScale: _fontScale,
           );
         }
         if (index == blocks.length + 2) return const SizedBox(height: 24);

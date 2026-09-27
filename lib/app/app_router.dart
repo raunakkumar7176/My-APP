@@ -238,8 +238,16 @@ final class AppRouter {
             name: 'study-chapter-hub',
             builder: (context, state) {
               final chapterId = state.pathParameters['chapterId']!;
+              final mode = state.uri.queryParameters['mode'];
+              const modeToTab = {
+                'learn': 0,
+                'read_mcq': 1,
+                'practice': 2,
+              };
               final initialTab =
-                  int.tryParse(state.uri.queryParameters['tab'] ?? '') ?? 0;
+                  modeToTab[mode] ??
+                  int.tryParse(state.uri.queryParameters['tab'] ?? '') ??
+                  0;
               return ChapterHubScreen(
                 chapterId: chapterId,
                 initialTab: initialTab,
@@ -633,7 +641,17 @@ final class AppRouter {
           GoRoute(
             path: 'create',
             name: 'routine-create',
-            builder: (context, state) => const RoutineCreateScreen(),
+            builder: (context, state) {
+              final extra = state.extra is Map<String, dynamic>
+                  ? state.extra as Map<String, dynamic>
+                  : null;
+              return RoutineCreateScreen(
+                prefillTitle: extra?['prefillTitle'] as String?,
+                prefillChapterId: extra?['prefillChapterId'] as String?,
+                prefillTopicId: extra?['prefillTopicId'] as String?,
+                prefillSessionType: extra?['prefillSessionType'] as String?,
+              );
+            },
           ),
           // Static segment must precede ':routineId' so it is not captured.
           GoRoute(
