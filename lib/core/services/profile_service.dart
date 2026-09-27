@@ -1,11 +1,14 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../errors/app_error.dart';
 import '../logging/app_logger.dart';
 import '../models/profile.dart';
+import '../models/profile_connection.dart';
+import '../models/referral_status.dart';
 import '../models/verification_request.dart';
 import 'supabase_service.dart';
 
@@ -421,6 +424,145 @@ final class ProfileService {
     }
   }
 
+  /// Everyone who follows [userId], via `rpc_get_followers` (migration
+  /// 0065) — a SECURITY DEFINER RPC, because the live `profiles` SELECT
+  /// policy only allows reading your own row or a fellow group member's, and
+  /// a follower can be neither. `is_following` on each row reflects the
+  /// CALLING user, not [userId].
+  static Future<List<ProfileConnection>> getFollowers(String userId) async {
+    try {
+      final rows = await SupabaseService.client.rpc(
+        'rpc_get_followers',
+        params: {'p_user_id': userId},
+      );
+      return (rows as List)
+          .map((r) => ProfileConnection.fromJson(Map<String, dynamic>.from(r as Map)))
+          .toList();
+    } on PostgrestException catch (e) {
+      AppLogger.error('getFollowers failed: ${e.message}');
+      throw const DataError(message: 'Could not load followers. Please try again.');
+    } catch (e) {
+      if (e is AppError) rethrow;
+      AppLogger.error('getFollowers unexpected error: $e');
+      throw const DataError(message: 'Could not load followers. Please try again.');
+    }
+  }
+
+  /// Everyone [userId] follows, via `rpc_get_following` (migration 0065).
+  static Future<List<ProfileConnection>> getFollowing(String userId) async {
+    try {
+      final rows = await SupabaseService.client.rpc(
+        'rpc_get_following',
+        params: {'p_user_id': userId},
+      );
+      return (rows as List)
+          .map((r) => ProfileConnection.fromJson(Map<String, dynamic>.from(r as Map)))
+          .toList();
+    } on PostgrestException catch (e) {
+      AppLogger.error('getFollowing failed: ${e.message}');
+      throw const DataError(message: 'Could not load following. Please try again.');
+    } catch (e) {
+      if (e is AppError) rethrow;
+      AppLogger.error('getFollowing unexpected error: $e');
+      throw const DataError(message: 'Could not load following. Please try again.');
+    }
+  }
+
+  /// Follows or unfollows [targetUserId] depending on [currentlyFollowing],
+  /// delegating to the existing, RLS-safe [followUser]/[unfollowUser].
+  /// Named to match the Connections screen's optimistic-toggle button: the
+  /// screen flips its own local state before this resolves and reverts it
+  /// on failure — this method itself is a plain, non-optimistic network call.
+  static Future<void> toggleFollow(
+    String targetUserId, {
+    required bool currentlyFollowing,
+  }) {
+    return currentlyFollowing ? unfollowUser(targetUserId) : followUser(targetUserId);
+  }
+
+  // ── Referral engine (0066 referral_records / rpc_apply_referral) ──
+
+  static const _pendingReferralPrefsKey = 'pending_referral_code';
+
+  /// Applies [code] (a referrer's `student_code`) for the CALLING user via
+  /// `rpc_apply_referral`. Server-authoritative: the +50/+100 points and the
+  /// self-referral/already-referred checks all happen inside the RPC — this
+  /// only surfaces the result.
+  static Future<ReferralApplyResult> applyReferralCode(String code) async {
+    final userId = SupabaseService.client.auth.currentUser?.id;
+    if (userId == null) {
+      throw const AuthError(message: 'You must be signed in to use a referral code.');
+    }
+    try {
+      final res = await SupabaseService.client.rpc(
+        'rpc_claim_referral_reward',
+        params: {'p_referral_code': code},
+      );
+      final data = Map<String, dynamic>.from(res as Map);
+      return ReferralApplyResult.fromJson(data);
+    } on PostgrestException catch (e) {
+      AppLogger.error('applyReferralCode failed: ${e.message}');
+      throw const DataError(message: 'Could not apply the referral code. Please try again.');
+    } catch (e) {
+      if (e is AppError) rethrow;
+      AppLogger.error('applyReferralCode unexpected error: $e');
+      throw const DataError(message: 'Could not apply the referral code. Please try again.');
+    }
+  }
+
+  /// The caller's own referral summary via `rpc_get_my_referral_status`.
+  static Future<ReferralStatus> getMyReferralStatus() async {
+    try {
+      final res = await SupabaseService.client.rpc('rpc_get_my_referral_status');
+      return ReferralStatus.fromJson(Map<String, dynamic>.from(res as Map));
+    } catch (e) {
+      AppLogger.warning('getMyReferralStatus failed: $e');
+      return const ReferralStatus(hasBeenReferred: false, referralCount: 0, pointsEarned: 0);
+    }
+  }
+
+  /// Remembers a referral code entered at signup, before a session exists
+  /// (email confirmation may still be pending). Applied automatically the
+  /// next time a session becomes authenticated — see
+  /// [tryApplyPendingReferral], called from `AuthService`.
+  static Future<void> savePendingReferralCode(String code) async {
+    final trimmed = code.trim();
+    if (trimmed.isEmpty) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_pendingReferralPrefsKey, trimmed);
+  }
+
+  static final StreamController<ReferralApplyResult> _referralAppliedController =
+      StreamController<ReferralApplyResult>.broadcast();
+
+  /// Emits once whenever a pending referral code (entered at signup) is
+  /// applied, success or failure — [AppShell] listens to this to show the
+  /// celebratory dialog/snackbar, since [tryApplyPendingReferral] itself has
+  /// no BuildContext.
+  static Stream<ReferralApplyResult> get referralAppliedStream =>
+      _referralAppliedController.stream;
+
+  /// Best-effort, one-shot: applies a saved pending referral code (if any)
+  /// now that a session exists, then clears it regardless of outcome — a
+  /// bad/expired code must never retry forever on every future app launch.
+  static Future<void> tryApplyPendingReferral() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final code = prefs.getString(_pendingReferralPrefsKey);
+      if (code == null || code.isEmpty) return;
+      await prefs.remove(_pendingReferralPrefsKey);
+      final result = await applyReferralCode(code);
+      _referralAppliedController.add(result);
+      if (result.success) {
+        AppLogger.info('Referral applied: +${result.pointsAwarded} points');
+      } else {
+        AppLogger.info('Referral not applied: ${result.error}');
+      }
+    } catch (e) {
+      AppLogger.warning('tryApplyPendingReferral failed: $e');
+    }
+  }
+
   static void _updateStatus(ProfileStatus status) {
     _currentStatus = status;
     _statusController.add(status);
@@ -448,6 +590,7 @@ final class ProfileService {
 
   static void dispose() {
     _statusController.close();
+    _referralAppliedController.close();
   }
 
   /// Official fallback founder profile for offline, hermetic, or public desk view.

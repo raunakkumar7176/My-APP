@@ -1,5 +1,7 @@
 import '../../../core/errors/app_error.dart';
 import '../../../core/logging/app_logger.dart';
+import '../../../core/models/academic_special_day.dart';
+import '../../../core/services/academic_special_day_service.dart';
 import '../../../core/services/profile_service.dart';
 import '../../test/state/disposable_notifier.dart';
 import '../data/calendar_repository.dart';
@@ -33,6 +35,7 @@ class CalendarController extends DisposableNotifier {
   bool _loadedOnce = false;
   String? _error;
   int _loadSeq = 0;
+  CalendarEventKind? _kindFilter;
 
   int get year => _year;
   int get month => _month;
@@ -46,9 +49,31 @@ class CalendarController extends DisposableNotifier {
   /// All events of the visible month, sorted by day then time.
   List<CalendarEvent> get events => _events;
 
-  /// Events of the selected day (empty ⇒ the "nothing planned" state).
-  List<CalendarEvent> get selectedDayEvents =>
-      [for (final e in _events) if (CalendarDates.sameDay(e.day, _selected)) e];
+  /// null = All. Set via [setKindFilter]; narrows [selectedDayEvents] (the
+  /// grid's dots always show every kind regardless of this filter).
+  CalendarEventKind? get kindFilter => _kindFilter;
+
+  void setKindFilter(CalendarEventKind? kind) {
+    _kindFilter = kind;
+    notifyListeners();
+  }
+
+  /// Events of the selected day (empty ⇒ the "nothing planned" state),
+  /// narrowed by [kindFilter] when set.
+  List<CalendarEvent> get selectedDayEvents => [
+        for (final e in _events)
+          if (CalendarDates.sameDay(e.day, _selected) && (_kindFilter == null || e.kind == _kindFilter)) e,
+      ];
+
+  /// The selected day's special day, if any (drives the sticky banner).
+  AcademicSpecialDay? get selectedDaySpecialDay {
+    for (final e in _events) {
+      if (e.kind == CalendarEventKind.specialDay && CalendarDates.sameDay(e.day, _selected)) {
+        return e.specialDay;
+      }
+    }
+    return null;
+  }
 
   /// Events per day of the visible month, for the grid markers.
   Map<String, List<CalendarEvent>> get eventsByDay {
@@ -120,6 +145,7 @@ class CalendarController extends DisposableNotifier {
       final routines = await _repo.routines();
       final logs = await _repo.routineLogs(from: from, to: to);
       final tests = await _repo.testsBetween(startUtc: range.start, endUtc: range.end);
+      final specialDays = await AcademicSpecialDayService.getForMonth(month);
       if (seq != _loadSeq || isDisposed) return; // a newer month load superseded this one
       _events = CalendarEventBuilder.build(
         clock: clock,
@@ -128,6 +154,7 @@ class CalendarController extends DisposableNotifier {
         routines: routines,
         logs: logs,
         tests: tests,
+        specialDays: specialDays,
       );
     } on AppError catch (e) {
       if (seq != _loadSeq) return;

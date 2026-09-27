@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../../../core/errors/app_error.dart';
 import '../../../core/logging/app_logger.dart';
 import '../../../core/models/routine.dart';
 import '../../../core/models/routine_log.dart';
+import '../../../core/services/academic_alarm_service.dart';
 import '../../../core/services/profile_service.dart';
 import '../../calendar/domain/calendar_clock.dart';
 import '../../test/state/disposable_notifier.dart';
@@ -289,6 +292,9 @@ class RoutineController extends DisposableNotifier {
     String? subjectId,
     bool reminderEnabled = true,
     int? targetDurationMinutes,
+    String sessionType = 'study',
+    bool hasAlarm = false,
+    int alarmLeadMinutes = 0,
   }) async {
     try {
       final id = await _repository.create(
@@ -299,6 +305,9 @@ class RoutineController extends DisposableNotifier {
         subjectId: subjectId,
         reminderEnabled: reminderEnabled,
         targetDurationMinutes: targetDurationMinutes,
+        sessionType: sessionType,
+        hasAlarm: hasAlarm,
+        alarmLeadMinutes: alarmLeadMinutes,
       );
       await _changed();
       return id;
@@ -320,6 +329,9 @@ class RoutineController extends DisposableNotifier {
     bool? isActive,
     int? targetDurationMinutes,
     bool clearTargetDuration = false,
+    String? sessionType,
+    bool? hasAlarm,
+    int? alarmLeadMinutes,
   }) async {
     try {
       await _repository.update(
@@ -334,6 +346,9 @@ class RoutineController extends DisposableNotifier {
         isActive: isActive,
         targetDurationMinutes: targetDurationMinutes,
         clearTargetDuration: clearTargetDuration,
+        sessionType: sessionType,
+        hasAlarm: hasAlarm,
+        alarmLeadMinutes: alarmLeadMinutes,
       );
       await _changed();
     } catch (e) {
@@ -461,6 +476,9 @@ class RoutineController extends DisposableNotifier {
   Future<void> _changed() async {
     revision.value++;
     await loadAll();
+    // Best-effort: a failed resync must never block the routine save the
+    // user is actually waiting on.
+    unawaited(AcademicAlarmService.resyncAlarms(_allRoutines));
   }
 
   static String _iso(DateTime d) =>

@@ -3,8 +3,11 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/constants/theme/app_colors.dart';
 import '../../core/models/profile.dart';
+import '../../core/services/app_share_service.dart';
 import '../../core/services/auth_service.dart';
 import '../../core/services/profile_service.dart';
+import '../../features/feedback/presentation/feedback_dialog.dart';
+import '../../features/feedback/services/feedback_service.dart';
 
 /// App-wide navigation drawer. Reuses [ProfileService] for the header and
 /// existing named routes for every destination — no new navigation state.
@@ -37,6 +40,7 @@ class AppDrawer extends StatelessWidget {
                     label: 'Profile',
                     onTap: () => context.push('/profile'),
                   ),
+                  const _ShareAndEarnTile(),
                   const Divider(height: 1),
                   _item(
                     context,
@@ -109,6 +113,16 @@ class AppDrawer extends StatelessWidget {
                   ),
                   _item(
                     context,
+                    icon: Icons.support_agent_rounded,
+                    label: 'Help & Feedback',
+                    subtitle: 'Reach us at ${FeedbackService.supportEmail}',
+                    onTap: () => showDialog<void>(
+                      context: context,
+                      builder: (_) => const FeedbackDialog(),
+                    ),
+                  ),
+                  _item(
+                    context,
                     icon: Icons.info_outline,
                     label: 'About & Founder Desk',
                     onTap: () => context.push('/about'),
@@ -153,15 +167,68 @@ class AppDrawer extends StatelessWidget {
     required IconData icon,
     required String label,
     required VoidCallback onTap,
+    String? subtitle,
     Color? color,
   }) {
     return ListTile(
       leading: Icon(icon, color: color),
       title: Text(label, style: color != null ? TextStyle(color: color) : null),
+      subtitle: subtitle != null ? Text(subtitle) : null,
       onTap: () {
         Navigator.of(context).pop();
         onTap();
       },
+    );
+  }
+}
+
+/// "Share & Earn" tile: matches [AppDrawer]'s own `_item` row shape but adds
+/// a subtle glow around the icon and a trailing "+50 Pts" capsule chip, per
+/// the referral engine's design spec.
+class _ShareAndEarnTile extends StatelessWidget {
+  const _ShareAndEarnTile();
+
+  static const _tealAccent = Color(0xFF0F9F92);
+
+  Future<void> _onTap(BuildContext context) async {
+    Navigator.of(context).pop();
+    final shared = await AppShareService.shareApp();
+    if (!shared && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Your profile is still loading. Try again in a moment.')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      key: const Key('drawer_share_and_earn'),
+      leading: Container(
+        padding: const EdgeInsets.all(6),
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: _tealAccent.withValues(alpha: 0.15),
+          boxShadow: [
+            BoxShadow(color: _tealAccent.withValues(alpha: 0.35), blurRadius: 10),
+          ],
+        ),
+        child: const Icon(Icons.share_rounded, color: _tealAccent),
+      ),
+      title: const Text('Share & Earn'),
+      subtitle: const Text('Invite friends & get 50 Study Points'),
+      trailing: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: _tealAccent,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: const Text(
+          '+50 Pts',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+        ),
+      ),
+      onTap: () => _onTap(context),
     );
   }
 }

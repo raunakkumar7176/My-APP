@@ -35,6 +35,11 @@ abstract interface class RoutineRepository {
     String? subjectId,
     bool reminderEnabled = true,
     int? targetDurationMinutes,
+    String? chapterId,
+    String? topicId,
+    String sessionType = 'study',
+    bool hasAlarm = false,
+    int alarmLeadMinutes = 0,
   });
 
   /// Updates the given fields. Null means "leave unchanged"; use
@@ -51,6 +56,13 @@ abstract interface class RoutineRepository {
     bool? isActive,
     int? targetDurationMinutes,
     bool clearTargetDuration = false,
+    String? chapterId,
+    bool clearChapter = false,
+    String? topicId,
+    bool clearTopic = false,
+    String? sessionType,
+    bool? hasAlarm,
+    int? alarmLeadMinutes,
   });
 
   /// Pauses a routine (`is_active = false`). Logs are kept.
@@ -158,6 +170,11 @@ class SupabaseRoutineRepository implements RoutineRepository {
     String? subjectId,
     bool reminderEnabled = true,
     int? targetDurationMinutes,
+    String? chapterId,
+    String? topicId,
+    String sessionType = 'study',
+    bool hasAlarm = false,
+    int alarmLeadMinutes = 0,
   }) => _guard(() async {
     final data = await _client
         .from('routines')
@@ -169,6 +186,11 @@ class SupabaseRoutineRepository implements RoutineRepository {
           'subject_id': subjectId,
           'reminder_enabled': reminderEnabled,
           'target_duration_minutes': targetDurationMinutes,
+          'chapter_id': chapterId,
+          'topic_id': topicId,
+          'session_type': sessionType,
+          'has_alarm': hasAlarm,
+          'alarm_lead_minutes': alarmLeadMinutes,
         })
         .select('id')
         .single();
@@ -191,6 +213,13 @@ class SupabaseRoutineRepository implements RoutineRepository {
     bool? isActive,
     int? targetDurationMinutes,
     bool clearTargetDuration = false,
+    String? chapterId,
+    bool clearChapter = false,
+    String? topicId,
+    bool clearTopic = false,
+    String? sessionType,
+    bool? hasAlarm,
+    int? alarmLeadMinutes,
   }) => _guard(() async {
     final updates = <String, dynamic>{};
     if (title != null) updates['title'] = title;
@@ -209,6 +238,19 @@ class SupabaseRoutineRepository implements RoutineRepository {
     } else if (targetDurationMinutes != null) {
       updates['target_duration_minutes'] = targetDurationMinutes;
     }
+    if (clearChapter) {
+      updates['chapter_id'] = null;
+    } else if (chapterId != null) {
+      updates['chapter_id'] = chapterId;
+    }
+    if (clearTopic) {
+      updates['topic_id'] = null;
+    } else if (topicId != null) {
+      updates['topic_id'] = topicId;
+    }
+    if (sessionType != null) updates['session_type'] = sessionType;
+    if (hasAlarm != null) updates['has_alarm'] = hasAlarm;
+    if (alarmLeadMinutes != null) updates['alarm_lead_minutes'] = alarmLeadMinutes;
 
     if (updates.isEmpty) return;
 

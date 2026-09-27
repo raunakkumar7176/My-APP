@@ -1,3 +1,4 @@
+import '../../../core/models/academic_special_day.dart';
 import '../../../core/models/test.dart';
 import 'calendar_clock.dart';
 
@@ -73,7 +74,7 @@ final class CalendarRoutineLog {
   );
 }
 
-enum CalendarEventKind { routine, test }
+enum CalendarEventKind { routine, test, specialDay }
 
 /// Completion / lifecycle state shown on the agenda.
 enum CalendarEventState { scheduled, completed, skipped, missed, live, ended, cancelled }
@@ -92,6 +93,7 @@ final class CalendarEvent implements Comparable<CalendarEvent> {
     this.subtitle,
     this.testId,
     this.routineId,
+    this.specialDay,
   });
 
   final String id;
@@ -111,6 +113,9 @@ final class CalendarEvent implements Comparable<CalendarEvent> {
   final String? subtitle;
   final String? testId;
   final String? routineId;
+
+  /// Present only for [CalendarEventKind.specialDay] events.
+  final AcademicSpecialDay? specialDay;
 
   bool get isDone => state == CalendarEventState.completed;
 
@@ -135,6 +140,7 @@ abstract final class CalendarEventBuilder {
     required List<CalendarRoutine> routines,
     required List<CalendarRoutineLog> logs,
     required List<Test> tests,
+    List<AcademicSpecialDay> specialDays = const [],
   }) {
     final out = <CalendarEvent>[];
     final logByKey = {for (final l in logs) '${l.routineId}|${CalendarDates.iso(l.logDate)}': l};
@@ -164,6 +170,22 @@ abstract final class CalendarEventBuilder {
           routineId: r.id,
         ));
       }
+    }
+    for (final s in specialDays) {
+      if (s.month != month) continue;
+      if (s.year != null && s.year != year) continue;
+      final daysInMonth = CalendarDates.daysInMonth(year, month);
+      if (s.day > daysInMonth) continue; // e.g. a 31st in a 30-day month
+      final day = CalendarDates.date(year, month, s.day);
+      out.add(CalendarEvent(
+        id: 'special:${s.id}:$year',
+        kind: CalendarEventKind.specialDay,
+        day: day,
+        title: s.title,
+        state: CalendarEventState.scheduled,
+        subtitle: s.categoryLabel,
+        specialDay: s,
+      ));
     }
     for (final t in tests) {
       final s = t.startsAt;

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../theme/app_dimensions.dart';
 import '../theme/app_icon_size.dart';
@@ -31,6 +32,8 @@ class AppTextField extends StatelessWidget {
     this.onFieldSubmitted,
     this.onTap,
     this.focusNode,
+    this.textCapitalization = TextCapitalization.none,
+    this.inputFormatters,
   });
 
   final TextEditingController? controller;
@@ -53,6 +56,8 @@ class AppTextField extends StatelessWidget {
   final ValueChanged<String>? onFieldSubmitted;
   final VoidCallback? onTap;
   final FocusNode? focusNode;
+  final TextCapitalization textCapitalization;
+  final List<TextInputFormatter>? inputFormatters;
 
   @override
   Widget build(BuildContext context) {
@@ -74,6 +79,8 @@ class AppTextField extends StatelessWidget {
       onChanged: onChanged,
       onFieldSubmitted: onFieldSubmitted,
       onTap: onTap,
+      textCapitalization: textCapitalization,
+      inputFormatters: inputFormatters,
       style: theme.textTheme.bodyLarge?.copyWith(
         color: enabled
             ? colorScheme.onSurface

@@ -51,7 +51,14 @@ void main() {
       );
       expect(find.text('Welcome back'), findsNothing);
 
-      // Flip back to login face
+      // Flip back to login face. The signup face (with the optional
+      // referral-code field) can be taller than the test viewport, so
+      // scroll the button into view before tapping it.
+      await tester.scrollUntilVisible(
+        find.byTooltip('Back to login'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
       await tester.tap(find.byTooltip('Back to login'));
       await tester.pumpAndSettle();
       expect(find.text('Welcome back'), findsOneWidget);

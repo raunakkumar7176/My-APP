@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/theme/app_colors.dart';
+import '../../../core/models/academic_special_day.dart';
 import '../domain/calendar_clock.dart';
 import '../domain/calendar_event.dart';
 import '../state/calendar_controller.dart';
+import '../widgets/special_day_bottom_sheet.dart';
 
 /// Calendar V1 — month grid (Monday first) with event markers, previous /
 /// next / today, and the selected day's agenda built from routines and tests.
@@ -83,8 +85,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 ),
               ),
             const SizedBox(height: 16),
+            _filterChips(theme),
+            const SizedBox(height: 12),
             _agendaHeader(theme),
             const SizedBox(height: 8),
+            if (_c.selectedDaySpecialDay != null) ...[
+              _specialDayBanner(theme, _c.selectedDaySpecialDay!),
+              const SizedBox(height: 8),
+            ],
             ..._agenda(theme),
           ],
         ),
@@ -150,6 +158,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final events = _c.eventsOn(day);
     final hasRoutine = events.any((e) => e.kind == CalendarEventKind.routine);
     final hasTest = events.any((e) => e.kind == CalendarEventKind.test);
+    final hasSpecialDay = events.any((e) => e.kind == CalendarEventKind.specialDay);
     final allDone = events.isNotEmpty && events.every((e) => e.isDone);
     return InkWell(
       key: Key('calendar_day_${CalendarDates.iso(day)}'),
@@ -175,13 +184,20 @@ class _CalendarScreenState extends State<CalendarScreen> {
             ),
             const SizedBox(height: 2),
             SizedBox(
-              height: 6,
+              height: 8,
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   if (hasRoutine)
                     _dot(allDone ? AppColors.success : theme.colorScheme.primary, key: 'routine_dot_${CalendarDates.iso(day)}'),
                   if (hasTest) _dot(theme.colorScheme.tertiary, key: 'test_dot_${CalendarDates.iso(day)}'),
+                  if (hasSpecialDay)
+                    Icon(
+                      Icons.star_rounded,
+                      key: Key('special_day_dot_${CalendarDates.iso(day)}'),
+                      size: 8,
+                      color: const Color(0xFFD97706),
+                    ),
                 ],
               ),
             ),
@@ -198,6 +214,62 @@ class _CalendarScreenState extends State<CalendarScreen> {
     margin: const EdgeInsets.symmetric(horizontal: 1),
     decoration: BoxDecoration(color: color, shape: BoxShape.circle),
   );
+
+  Widget _filterChips(ThemeData theme) {
+    final options = <(String, CalendarEventKind?)>[
+      ('All', null),
+      ('Study', CalendarEventKind.routine),
+      ('Tests', CalendarEventKind.test),
+      ('GK Days & Events', CalendarEventKind.specialDay),
+    ];
+    return SizedBox(
+      height: 34,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        children: [
+          for (final (label, kind) in options)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: ChoiceChip(
+                key: Key('calendar_filter_${kind?.name ?? 'all'}'),
+                label: Text(label),
+                selected: _c.kindFilter == kind,
+                onSelected: (_) => _c.setKindFilter(kind),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _specialDayBanner(ThemeData theme, AcademicSpecialDay specialDay) {
+    return InkWell(
+      key: const Key('calendar_special_day_banner'),
+      onTap: () => SpecialDayBottomSheet.show(context, specialDay),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFD97706).withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFD97706).withValues(alpha: 0.4)),
+        ),
+        child: Row(
+          children: [
+            const Text('🎗️', style: TextStyle(fontSize: 18)),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                '${_c.selectedDay.day} ${CalendarDates.monthNames[_c.selectedDay.month - 1]} — ${specialDay.title}',
+                style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+              ),
+            ),
+            const Icon(Icons.chevron_right, size: 18),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _agendaHeader(ThemeData theme) {
     final d = _c.selectedDay;
@@ -231,7 +303,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
         ),
       ];
     }
-    final items = _c.selectedDayEvents;
+    // Special days are shown via the sticky banner above, not duplicated as
+    // a list tile — unless the user explicitly filtered to "GK Days & Events".
+    final items = _c.kindFilter == CalendarEventKind.specialDay
+        ? _c.selectedDayEvents
+        : _c.selectedDayEvents.where((e) => e.kind != CalendarEventKind.specialDay).toList();
     if (items.isEmpty) {
       return [
         Padding(
@@ -258,11 +334,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
       CalendarEventState.live => (Icons.play_circle_outline, 'Live', theme.colorScheme.tertiary),
       CalendarEventState.ended => (Icons.flag_outlined, 'Ended', theme.colorScheme.outline),
       CalendarEventState.cancelled => (Icons.block_outlined, 'Cancelled', theme.colorScheme.outline),
-      CalendarEventState.scheduled => (
-          e.kind == CalendarEventKind.test ? Icons.quiz_outlined : Icons.menu_book_outlined,
-          e.kind == CalendarEventKind.test ? 'Test' : 'Routine',
-          theme.colorScheme.primary,
-        ),
+      CalendarEventState.scheduled => switch (e.kind) {
+          CalendarEventKind.test => (Icons.quiz_outlined, 'Test', theme.colorScheme.primary),
+          CalendarEventKind.specialDay => (Icons.star_rounded, 'Special Day', const Color(0xFFD97706)),
+          CalendarEventKind.routine => (Icons.menu_book_outlined, 'Routine', theme.colorScheme.primary),
+        },
     };
     return Card(
       key: Key('calendar_event_${e.id}'),
@@ -275,7 +351,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
         ),
         subtitle: Text([if (e.timeLabel != null) e.timeLabel!, if (e.subtitle != null) e.subtitle!].join(' · ')),
         trailing: Text(chip, key: Key('calendar_state_${e.id}'), style: theme.textTheme.labelMedium?.copyWith(color: chipColor)),
-        onTap: e.kind == CalendarEventKind.test ? () => _openEvent(e) : null,
+        onTap: e.kind == CalendarEventKind.specialDay && e.specialDay != null
+            ? () => SpecialDayBottomSheet.show(context, e.specialDay!)
+            : e.kind == CalendarEventKind.test
+                ? () => _openEvent(e)
+                : null,
       ),
     );
   }

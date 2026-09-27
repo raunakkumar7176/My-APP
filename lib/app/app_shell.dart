@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/logging/app_logger.dart';
+import '../core/models/referral_status.dart';
+import '../core/services/profile_service.dart';
 import '../core/services/push_notification_service.dart';
 import '../features/notifications/data/notification_feed_repository.dart';
 import '../features/dashboard/dashboard_screen.dart';
@@ -24,6 +28,7 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   int _index = 0;
   int _unreadNotifications = 0;
+  StreamSubscription<ReferralApplyResult>? _referralSub;
 
   static const _titles = ['Dashboard', 'Study', 'Tests', 'Performance', 'Profile'];
 
@@ -47,6 +52,33 @@ class _AppShellState extends State<AppShell> {
     // AuthService.onAuthStateChange path only fires on a NEW sign-in
     // event, not a session Supabase restored from disk on launch.
     PushNotificationService.instance.registerCurrentDevice();
+    _referralSub = ProfileService.referralAppliedStream.listen(_onReferralApplied);
+  }
+
+  void _onReferralApplied(ReferralApplyResult result) {
+    if (!mounted || !result.success) return;
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Welcome! 🎁'),
+        content: Text(
+          '${result.pointsAwarded ?? 100} Study Points added to your profile, '
+          'courtesy of ${result.referrerName ?? 'a fellow student'}!',
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Nice!'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _referralSub?.cancel();
+    super.dispose();
   }
 
   /// Uses the global notification feed repository for a single server-side

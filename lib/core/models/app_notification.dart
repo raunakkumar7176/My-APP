@@ -166,4 +166,43 @@ enum NotificationCategory {
     routineReminder || routineDue || routineMissed || routineCompleted || streakMilestone => true,
     _ => false,
   };
+
+  /// The 4 broad buckets the Notification Center's filter chips group into.
+  /// Derived from the existing `is*Related` flags — routine wins over group
+  /// (a group-test reminder is still fundamentally "when do I sit the
+  /// test", i.e. test-related, which `isTestRelated` already covers first).
+  NotificationBroadCategory get broadCategory {
+    if (isTestRelated) return NotificationBroadCategory.tests;
+    if (isRoutineRelated) return NotificationBroadCategory.routine;
+    if (isGroupRelated) return NotificationBroadCategory.groups;
+    return NotificationBroadCategory.system;
+  }
+
+  /// A short call-to-action label for the notification card's action
+  /// button, or null when tapping the card itself (default: open the deep
+  /// link) is the only real action — never invents an action that doesn't
+  /// correspond to where the deep link actually goes.
+  String? get actionLabel => switch (this) {
+    testLive || testStarted || testStartingSoon => 'Start Test',
+    resultsAvailable => 'View Result',
+    leaderboardUpdated => 'View Leaderboard',
+    routineReminder || routineDue => 'Open Routine',
+    groupMessage || groupAnnouncement => 'Open Chat',
+    groupJoinRequest => 'Review Request',
+    _ => null,
+  };
+}
+
+/// The 4 broad groupings shown as filter chips in the Notification Center.
+/// Deliberately just a label here (no `Color`/`IconData`) so this model file
+/// stays pure Dart, matching every other model in `core/models/` — the
+/// widget layer (`notification_tile.dart`) owns the visual mapping.
+enum NotificationBroadCategory {
+  tests('Tests'),
+  routine('Routine'),
+  groups('Groups'),
+  system('System');
+
+  const NotificationBroadCategory(this.label);
+  final String label;
 }

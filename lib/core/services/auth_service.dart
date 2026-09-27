@@ -79,6 +79,7 @@ final class AuthService {
   static Future<void> _loadProfileForSession() async {
     try {
       await ProfileService.loadProfile();
+      unawaited(ProfileService.tryApplyPendingReferral());
     } catch (e) {
       AppLogger.error('Profile load failed after auth: $e');
     }

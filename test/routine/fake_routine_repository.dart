@@ -90,6 +90,11 @@ class FakeRoutineRepository implements RoutineRepository {
     String? subjectId,
     bool reminderEnabled = true,
     int? targetDurationMinutes,
+    String? chapterId,
+    String? topicId,
+    String sessionType = 'study',
+    bool hasAlarm = false,
+    int alarmLeadMinutes = 0,
   }) async {
     calls.add('create:$title');
     if (failCreateWith != null) throw failCreateWith!;
@@ -106,6 +111,11 @@ class FakeRoutineRepository implements RoutineRepository {
       targetDurationMinutes: targetDurationMinutes,
       isActive: true,
       createdAt: DateTime.now().toUtc(),
+      chapterId: chapterId,
+      topicId: topicId,
+      sessionType: sessionType,
+      hasAlarm: hasAlarm,
+      alarmLeadMinutes: alarmLeadMinutes,
     );
     return id;
   }
@@ -122,6 +132,13 @@ class FakeRoutineRepository implements RoutineRepository {
     bool? isActive,
     int? targetDurationMinutes,
     bool clearTargetDuration = false,
+    String? chapterId,
+    bool clearChapter = false,
+    String? topicId,
+    bool clearTopic = false,
+    String? sessionType,
+    bool? hasAlarm,
+    int? alarmLeadMinutes,
   }) => Routine(
     id: e.id,
     userId: e.userId,
@@ -137,6 +154,11 @@ class FakeRoutineRepository implements RoutineRepository {
         : (targetDurationMinutes ?? e.targetDurationMinutes),
     createdAt: e.createdAt,
     updatedAt: DateTime.now(),
+    chapterId: clearChapter ? null : (chapterId ?? e.chapterId),
+    topicId: clearTopic ? null : (topicId ?? e.topicId),
+    sessionType: sessionType ?? e.sessionType,
+    hasAlarm: hasAlarm ?? e.hasAlarm,
+    alarmLeadMinutes: alarmLeadMinutes ?? e.alarmLeadMinutes,
   );
 
   @override
@@ -152,6 +174,13 @@ class FakeRoutineRepository implements RoutineRepository {
     bool? isActive,
     int? targetDurationMinutes,
     bool clearTargetDuration = false,
+    String? chapterId,
+    bool clearChapter = false,
+    String? topicId,
+    bool clearTopic = false,
+    String? sessionType,
+    bool? hasAlarm,
+    int? alarmLeadMinutes,
   }) async {
     calls.add('update:$id');
     if (failUpdateWith != null) throw failUpdateWith!;
@@ -172,6 +201,13 @@ class FakeRoutineRepository implements RoutineRepository {
       isActive: isActive,
       targetDurationMinutes: targetDurationMinutes,
       clearTargetDuration: clearTargetDuration,
+      chapterId: chapterId,
+      clearChapter: clearChapter,
+      topicId: topicId,
+      clearTopic: clearTopic,
+      sessionType: sessionType,
+      hasAlarm: hasAlarm,
+      alarmLeadMinutes: alarmLeadMinutes,
     );
   }
 

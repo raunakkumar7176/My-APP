@@ -252,6 +252,10 @@ void main() {
       await tester.pumpAndSettle();
       await show(tester, find.byKey(const Key('routine_duration')));
       await tester.enterText(find.byKey(const Key('routine_duration')), '45');
+      // The Session Type/Alarm sections added below Duration make the form
+      // taller, so the title field's "Shown as" helper (scrolled away above)
+      // needs bringing back into view before asserting on it.
+      await show(tester, find.byKey(const Key('routine_title')), up: true);
       expect(find.textContaining('Shown as: Number System · Lecture'), findsOneWidget);
 
       await show(tester, find.byKey(const Key('routine_save')));

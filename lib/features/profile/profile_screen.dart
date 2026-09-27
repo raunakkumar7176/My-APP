@@ -592,6 +592,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
             tooltip: 'Search Student by ID',
             onPressed: () => UniqueIdSearchSheet.show(context),
           ),
+          if (!_isViewingOther)
+            IconButton(
+              key: const Key('refer_and_earn_button'),
+              tooltip: 'Refer & Earn',
+              icon: const Icon(Icons.card_giftcard_outlined),
+              onPressed: () => context.push('/refer-and-earn'),
+            ),
           if (!_isViewingOther &&
               _c.loadState == ProfileLoadState.loaded &&
               !_c.isEditing)
@@ -930,12 +937,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 'Followers',
                 '${profile.followersCount}',
                 isDark,
+                onTap: () => _openConnections(profile, 'followers'),
               ),
               _buildVerticalDivider(isDark),
               _buildCounterItem(
                 'Following',
                 '${profile.followingCount}',
                 isDark,
+                onTap: () => _openConnections(profile, 'following'),
               ),
               _buildVerticalDivider(isDark),
               _buildCounterItem(
@@ -989,33 +998,49 @@ class _ProfileScreenState extends State<ProfileScreen> {
     String value,
     bool isDark, {
     bool isHighlight = false,
+    VoidCallback? onTap,
   }) {
+    final column = Column(
+      children: [
+        Text(
+          value,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: isHighlight ? const Color(0xFFF59E0B) : null,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: 12,
+            color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
     return Expanded(
-      child: Column(
-        children: [
-          Text(
-            value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: isHighlight ? const Color(0xFFF59E0B) : null,
+      child: onTap == null
+          ? column
+          : InkWell(
+              key: Key('${label.toLowerCase()}_stat_chip'),
+              onTap: onTap,
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(padding: const EdgeInsets.symmetric(vertical: 4), child: column),
             ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 12,
-              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
+    );
+  }
+
+  void _openConnections(Profile profile, String tab) {
+    context.push(
+      '/profile/${profile.id}/connections?tab=$tab',
+      extra: profile.displayName,
     );
   }
 

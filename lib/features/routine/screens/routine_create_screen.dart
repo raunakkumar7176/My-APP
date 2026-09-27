@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/theme/app_colors.dart';
 import '../../../core/errors/app_error.dart';
+import '../../../core/models/routine.dart';
 import '../../../core/models/subject.dart';
 import '../../../core/models/syllabus_node.dart';
 import '../../../core/services/subject_service.dart';
@@ -55,6 +56,9 @@ class _RoutineCreateScreenState extends State<RoutineCreateScreen> {
   String? _selectedTopic; // syllabus node name (what the title stores)
   String? _selectedActivity;
   bool _reminderEnabled = true;
+  String _sessionType = 'study';
+  bool _hasAlarm = false;
+  int _alarmLeadMinutes = 0;
 
   List<Subject> _subjects = [];
   List<SyllabusNode> _topics = [];
@@ -147,6 +151,9 @@ class _RoutineCreateScreenState extends State<RoutineCreateScreen> {
           ..addAll(routine.weekdays);
         _selectedSubjectId = routine.subjectId;
         _reminderEnabled = routine.reminderEnabled;
+        _sessionType = routine.sessionType;
+        _hasAlarm = routine.hasAlarm;
+        _alarmLeadMinutes = routine.alarmLeadMinutes;
         _durationController.text = routine.targetDurationMinutes?.toString() ?? '';
         _pendingTitle = routine.title;
         _isLoadingRoutine = false;
@@ -265,6 +272,9 @@ class _RoutineCreateScreenState extends State<RoutineCreateScreen> {
           reminderEnabled: _reminderEnabled,
           targetDurationMinutes: targetDuration,
           clearTargetDuration: targetDuration == null,
+          sessionType: _sessionType,
+          hasAlarm: _hasAlarm,
+          alarmLeadMinutes: _alarmLeadMinutes,
         );
       } else {
         await _controller.createRoutine(
@@ -275,6 +285,9 @@ class _RoutineCreateScreenState extends State<RoutineCreateScreen> {
           subjectId: _selectedSubjectId,
           reminderEnabled: _reminderEnabled,
           targetDurationMinutes: targetDuration,
+          sessionType: _sessionType,
+          hasAlarm: _hasAlarm,
+          alarmLeadMinutes: _alarmLeadMinutes,
         );
       }
       if (mounted) context.pop(true);
@@ -346,7 +359,11 @@ class _RoutineCreateScreenState extends State<RoutineCreateScreen> {
             const SizedBox(height: 16),
             _buildWeekdayPicker(),
             const SizedBox(height: 16),
+            _buildSessionTypePicker(),
+            const SizedBox(height: 16),
             _buildReminderSwitch(),
+            const SizedBox(height: 16),
+            _buildAlarmSection(),
             const SizedBox(height: 24),
             _buildSaveButton(),
           ],
@@ -602,6 +619,62 @@ class _RoutineCreateScreenState extends State<RoutineCreateScreen> {
       value: _reminderEnabled,
       onChanged: (value) => setState(() => _reminderEnabled = value),
       contentPadding: EdgeInsets.zero,
+    );
+  }
+
+  Widget _buildSessionTypePicker() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Session Type', style: TextStyle(fontWeight: FontWeight.w600)),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final type in Routine.sessionTypes)
+              ChoiceChip(
+                key: Key('routine_session_type_$type'),
+                label: Text(Routine.labelForSessionType(type)),
+                selected: _sessionType == type,
+                onSelected: (_) => setState(() => _sessionType = type),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAlarmSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SwitchListTile(
+          key: const Key('routine_alarm_toggle'),
+          title: const Text('Alarm'),
+          subtitle: const Text('A full-screen alert when this session starts'),
+          value: _hasAlarm,
+          onChanged: (value) => setState(() => _hasAlarm = value),
+          contentPadding: EdgeInsets.zero,
+        ),
+        if (_hasAlarm) ...[
+          const SizedBox(height: 4),
+          DropdownButtonFormField<int>(
+            key: const Key('routine_alarm_lead'),
+            initialValue: _alarmLeadMinutes,
+            decoration: const InputDecoration(labelText: 'Alarm timing'),
+            items: const [
+              DropdownMenuItem(value: 0, child: Text('Exact time')),
+              DropdownMenuItem(value: 5, child: Text('5 minutes before')),
+              DropdownMenuItem(value: 15, child: Text('15 minutes before')),
+              DropdownMenuItem(value: 30, child: Text('30 minutes before')),
+            ],
+            onChanged: (v) {
+              if (v != null) setState(() => _alarmLeadMinutes = v);
+            },
+          ),
+        ],
+      ],
     );
   }
 

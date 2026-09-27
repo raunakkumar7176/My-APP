@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../core/services/auth_service.dart';
+import '../../core/services/profile_service.dart';
 import '../../core/services/supabase_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/app_button.dart';
@@ -538,6 +539,7 @@ class _SignupFaceState extends State<_SignupFace> {
   final _email = TextEditingController();
   final _password = TextEditingController();
   final _confirm = TextEditingController();
+  final _referralCode = TextEditingController();
   bool _obscure = true;
   bool _loading = false;
   String? _error;
@@ -548,6 +550,7 @@ class _SignupFaceState extends State<_SignupFace> {
     _email.dispose();
     _password.dispose();
     _confirm.dispose();
+    _referralCode.dispose();
     super.dispose();
   }
 
@@ -565,6 +568,10 @@ class _SignupFaceState extends State<_SignupFace> {
       _success = null;
     });
     try {
+      final referralCode = _referralCode.text.trim();
+      if (referralCode.isNotEmpty) {
+        await ProfileService.savePendingReferralCode(referralCode);
+      }
       await AuthService.signUp(
         email: _email.text.trim(),
         password: _password.text,
@@ -671,6 +678,16 @@ class _SignupFaceState extends State<_SignupFace> {
                 obscureText: _obscure,
                 textInputAction: TextInputAction.done,
                 validator: _validateConfirm,
+                onFieldSubmitted: (_) => _submit(),
+              ),
+              const SizedBox(height: 10),
+              AppTextField(
+                controller: _referralCode,
+                label: 'Have an Invite / Referral Code?',
+                hint: 'e.g. MP-91024 — you get +100 points',
+                prefixIcon: Icons.card_giftcard_outlined,
+                textInputAction: TextInputAction.done,
+                textCapitalization: TextCapitalization.characters,
                 onFieldSubmitted: (_) => _submit(),
               ),
               const SizedBox(height: 14),

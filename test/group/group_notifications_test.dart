@@ -750,7 +750,7 @@ void main() {
           type: 'group_test',
           extra: {'test_id': 't-1'},
         );
-        final b = f.notes.seed(
+        f.notes.seed(
           userId: 'u-me',
           groupId: 'g-1',
           title: 'B read',
@@ -762,8 +762,13 @@ void main() {
           GroupNotificationsScreen(groupId: 'g-1', controller: c),
         );
         expect(find.text('Notifications (1 unread)'), findsOneWidget);
-        expect(find.byKey(Key('unread_dot_${a.id}')), findsOneWidget);
-        expect(find.byKey(Key('unread_dot_${b.id}')), findsNothing);
+        // Unread state is a semi-bold title (GroupNotificationsScreen's own
+        // inline tile, separate from the redesigned global NotificationTile)
+        // rather than a separate trailing dot widget.
+        final aTitle = tester.widget<Text>(find.text('A msg'));
+        final bTitle = tester.widget<Text>(find.text('B read'));
+        expect(aTitle.style?.fontWeight, FontWeight.w600);
+        expect(bTitle.style?.fontWeight, isNot(FontWeight.w600));
         expect(find.byKey(const Key('mute_group_switch')), findsOneWidget);
         // The (unrouted) tap still marks read before navigating.
         await tester.tap(find.byKey(Key('notification_${a.id}')));

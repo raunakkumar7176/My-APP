@@ -2,14 +2,16 @@ import 'package:flutter/material.dart';
 
 import '../../../core/models/app_notification.dart';
 
-/// Consistent notification tile used in both the global feed and per-group
-/// notification screens. Shows icon, title, body, time, unread indicator,
-/// and category chip.
+/// Consistent notification card used in both the global feed and per-group
+/// notification screens. Shows a category-colored leading icon, category tag
+/// + relative time, bold title, short body, an optional action-preview
+/// button, and an unread left-border + tinted background.
 class NotificationTile extends StatelessWidget {
   const NotificationTile({
     required this.notification,
     this.onTap,
     this.onDismiss,
+    this.onActionTap,
     this.isActing = false,
     this.showGroup = false,
     super.key,
@@ -18,66 +20,45 @@ class NotificationTile extends StatelessWidget {
   final AppNotification notification;
   final VoidCallback? onTap;
   final VoidCallback? onDismiss;
+
+  /// Called when the action-preview button (e.g. "Start Test") is tapped.
+  final VoidCallback? onActionTap;
   final bool isActing;
   final bool showGroup;
 
-  @override
-  Widget build(BuildContext context) {
-    final unread = !notification.isRead;
-    final theme = Theme.of(context);
+  static const _navyInk = Color(0xFF172033);
 
-    return ListTile(
-      key: Key('notification_${notification.id}'),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-      leading: _CategoryIcon(
-        category: notification.parsedCategory,
-        unread: unread,
-      ),
-      title: Text(
-        notification.title,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          fontWeight: unread ? FontWeight.w600 : FontWeight.normal,
-        ),
-      ),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (notification.body.isNotEmpty)
-            Text(
-              notification.body,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodySmall,
-            ),
-          const SizedBox(height: 2),
-          Text(
-            _formatTime(notification.createdAt),
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
-            ),
-          ),
-        ],
-      ),
-      isThreeLine: notification.body.isNotEmpty,
-      trailing: isActing
-          ? const SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          : unread
-              ? Icon(
-                  Icons.circle,
-                  size: 10,
-                  color: theme.colorScheme.primary,
-                  key: Key('unread_dot_${notification.id}'),
-                )
-              : null,
-      onTap: onTap,
-    );
+  /// Filter/pill color follows the broad bucket (Tests/Routine/Groups/
+  /// System), but the leading ICON keeps a finer distinction the task's
+  /// design calls for: results/leaderboard get a green trophy even though
+  /// they still file under the "Tests" filter chip.
+  static Color _iconColorFor(NotificationCategory category, NotificationBroadCategory broad) {
+    if (category == NotificationCategory.resultsAvailable ||
+        category == NotificationCategory.leaderboardUpdated) {
+      return const Color(0xFF2B9B62); // green trophy
+    }
+    return _pillColorFor(broad);
   }
+
+  static IconData _iconFor(NotificationCategory category, NotificationBroadCategory broad) {
+    if (category == NotificationCategory.resultsAvailable ||
+        category == NotificationCategory.leaderboardUpdated) {
+      return Icons.emoji_events_outlined;
+    }
+    return switch (broad) {
+      NotificationBroadCategory.tests => Icons.assignment_outlined,
+      NotificationBroadCategory.routine => Icons.schedule_outlined,
+      NotificationBroadCategory.groups => Icons.groups_outlined,
+      NotificationBroadCategory.system => Icons.info_outline,
+    };
+  }
+
+  static Color _pillColorFor(NotificationBroadCategory broad) => switch (broad) {
+    NotificationBroadCategory.tests => const Color(0xFF2457D6),
+    NotificationBroadCategory.routine => const Color(0xFFE59A2F),
+    NotificationBroadCategory.groups => const Color(0xFF0F9F92),
+    NotificationBroadCategory.system => const Color(0xFF64748B),
+  };
 
   static String _formatTime(DateTime dt) {
     final now = DateTime.now();
@@ -85,63 +66,111 @@ class NotificationTile extends StatelessWidget {
     if (diff.inMinutes < 1) return 'Just now';
     if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
     if (diff.inHours < 24) return '${diff.inHours}h ago';
+    if (diff.inDays == 1) return 'Yesterday';
     if (diff.inDays < 7) return '${diff.inDays}d ago';
     return '${dt.day}/${dt.month}/${dt.year}';
   }
-}
-
-/// Category-specific icon with appropriate color.
-class _CategoryIcon extends StatelessWidget {
-  const _CategoryIcon({required this.category, required this.unread});
-
-  final NotificationCategory category;
-  final bool unread;
 
   @override
   Widget build(BuildContext context) {
+    final unread = !notification.isRead;
     final theme = Theme.of(context);
-    final color = unread
-        ? theme.colorScheme.primary
-        : theme.colorScheme.onSurface.withValues(alpha: 0.5);
+    final category = notification.parsedCategory;
+    final broad = category.broadCategory;
+    final iconColor = _iconColorFor(category, broad);
+    final pillColor = _pillColorFor(broad);
+    final actionLabel = category.actionLabel;
 
-    return CircleAvatar(
-      radius: 18,
-      backgroundColor: unread
-          ? theme.colorScheme.primary.withValues(alpha: 0.1)
-          : theme.colorScheme.surfaceContainerHighest,
-      child: Icon(_icon, size: 18, color: color),
+    return Container(
+      key: Key('notification_${notification.id}'),
+      decoration: BoxDecoration(
+        color: unread ? pillColor.withValues(alpha: 0.05) : null,
+        border: Border(
+          left: BorderSide(
+            color: unread ? theme.colorScheme.primary : Colors.transparent,
+            width: 3,
+          ),
+        ),
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 13, vertical: 4),
+        leading: CircleAvatar(
+          radius: 18,
+          backgroundColor: iconColor.withValues(alpha: 0.12),
+          child: Icon(_iconFor(category, broad), size: 18, color: iconColor),
+        ),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: pillColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    broad.label,
+                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: pillColor),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  _formatTime(notification.createdAt),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              notification.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w700, color: _navyInk),
+            ),
+          ],
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (notification.body.isNotEmpty) ...[
+              const SizedBox(height: 2),
+              Text(
+                notification.body,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall,
+              ),
+            ],
+            if (actionLabel != null && onActionTap != null) ...[
+              const SizedBox(height: 8),
+              OutlinedButton(
+                key: Key('notification_action_${notification.id}'),
+                onPressed: onActionTap,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: iconColor,
+                  side: BorderSide(color: iconColor),
+                  minimumSize: const Size(0, 32),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                ),
+                child: Text('$actionLabel ➔'),
+              ),
+            ],
+          ],
+        ),
+        isThreeLine: notification.body.isNotEmpty || actionLabel != null,
+        trailing: isActing
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : null,
+        onTap: onTap,
+      ),
     );
   }
-
-  IconData get _icon => switch (category) {
-    NotificationCategory.groupMessage => Icons.chat_bubble_outline,
-    NotificationCategory.groupAnnouncement => Icons.campaign_outlined,
-    NotificationCategory.groupJoin => Icons.person_add_alt_1_outlined,
-    NotificationCategory.testReminder => Icons.alarm_outlined,
-    NotificationCategory.testLive => Icons.play_circle_outline,
-    NotificationCategory.testCompleted => Icons.check_circle_outline,
-    NotificationCategory.testInvitation => Icons.quiz_outlined,
-    NotificationCategory.testScheduled => Icons.event_outlined,
-    NotificationCategory.testStartingSoon => Icons.timer_outlined,
-    NotificationCategory.testStarted => Icons.play_arrow_outlined,
-    NotificationCategory.testEnded => Icons.stop_circle_outlined,
-    NotificationCategory.resultsAvailable => Icons.assessment_outlined,
-    NotificationCategory.leaderboardUpdated => Icons.leaderboard_outlined,
-    NotificationCategory.routineReminder => Icons.schedule_outlined,
-    NotificationCategory.routineDue => Icons.event_repeat_outlined,
-    NotificationCategory.routineMissed => Icons.event_busy_outlined,
-    NotificationCategory.routineCompleted => Icons.task_alt_outlined,
-    NotificationCategory.streakMilestone => Icons.local_fire_department_outlined,
-    NotificationCategory.groupTestAssigned => Icons.assignment_outlined,
-    NotificationCategory.groupTestReminder => Icons.notification_important_outlined,
-    NotificationCategory.contentReviewResult => Icons.rate_review_outlined,
-    NotificationCategory.reportReady => Icons.insights_outlined,
-    NotificationCategory.systemNotification => Icons.info_outline,
-    NotificationCategory.groupJoinRequest => Icons.how_to_vote_outlined,
-    NotificationCategory.joinAccepted => Icons.check_circle_outline,
-    NotificationCategory.joinRejected => Icons.cancel_outlined,
-    NotificationCategory.roleChanged => Icons.admin_panel_settings_outlined,
-    NotificationCategory.memberRemoved => Icons.person_remove_outlined,
-    NotificationCategory.unknown => Icons.notifications_none,
-  };
 }

@@ -17,6 +17,11 @@ final class Routine {
     this.targetDurationMinutes,
     required this.createdAt,
     this.updatedAt,
+    this.chapterId,
+    this.topicId,
+    this.sessionType = 'study',
+    this.hasAlarm = false,
+    this.alarmLeadMinutes = 0,
   });
 
   final String id;
@@ -36,6 +41,22 @@ final class Routine {
   final DateTime createdAt;
   final DateTime? updatedAt;
 
+  /// `public.chapters.id` (Study module) this session covers, if linked.
+  final String? chapterId;
+
+  /// `public.topics.id` (Study module) this session covers, if linked.
+  final String? topicId;
+
+  /// 'study' | 'revision' | 'memorization' | 'practice' | 'test' | 'break' | 'chore'.
+  final String sessionType;
+
+  /// Whether [AcademicAlarmService] should schedule a local alarm for this
+  /// session's start time.
+  final bool hasAlarm;
+
+  /// 0 = alarm at the exact start time; >0 = that many minutes before.
+  final int alarmLeadMinutes;
+
   /// Duration in minutes derived from start/end times.
   int? get computedDurationMinutes {
     final start = _parseTime(startTime);
@@ -49,6 +70,30 @@ final class Routine {
   /// Whether this routine recurs on the given live weekday (0 = Sunday …
   /// 6 = Saturday). The caller decides what "today" is (user timezone).
   bool isScheduledOn(int weekday) => weekdays.contains(weekday);
+
+  static const sessionTypes = ['study', 'revision', 'memorization', 'practice', 'test', 'break', 'chore'];
+
+  String get sessionTypeLabel => labelForSessionType(sessionType);
+
+  static String labelForSessionType(String type) {
+    switch (type) {
+      case 'revision':
+        return 'Revision';
+      case 'memorization':
+        return 'Memorization';
+      case 'practice':
+        return 'Practice';
+      case 'test':
+        return 'Test';
+      case 'break':
+        return 'Break';
+      case 'chore':
+        return 'Chore';
+      case 'study':
+      default:
+        return 'Study';
+    }
+  }
 
   factory Routine.fromJson(Map<String, dynamic> json) {
     return Routine(
@@ -72,6 +117,11 @@ final class Routine {
       updatedAt: json['updated_at'] != null
           ? DateTime.tryParse(json['updated_at'] as String)
           : null,
+      chapterId: json['chapter_id'] as String?,
+      topicId: json['topic_id'] as String?,
+      sessionType: json['session_type'] as String? ?? 'study',
+      hasAlarm: json['has_alarm'] as bool? ?? false,
+      alarmLeadMinutes: (json['alarm_lead_minutes'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -86,6 +136,11 @@ final class Routine {
       'is_active': isActive,
       if (targetDurationMinutes != null)
         'target_duration_minutes': targetDurationMinutes,
+      'chapter_id': chapterId,
+      'topic_id': topicId,
+      'session_type': sessionType,
+      'has_alarm': hasAlarm,
+      'alarm_lead_minutes': alarmLeadMinutes,
     };
   }
 

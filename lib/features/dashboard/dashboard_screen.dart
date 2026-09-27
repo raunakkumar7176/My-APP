@@ -4,11 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/errors/app_error.dart';
+import '../../core/models/academic_special_day.dart';
 import '../../core/models/profile.dart';
 import '../../core/models/result_analytics.dart';
 import '../../core/models/test.dart';
+import '../../core/services/academic_special_day_service.dart';
 import '../../core/services/profile_service.dart';
 import '../calendar/domain/calendar_clock.dart';
+import '../calendar/widgets/special_day_bottom_sheet.dart';
 import '../performance/state/performance_controller.dart';
 import '../routine/widgets/today_routine_card.dart';
 import '../test/data/test_repository.dart';
@@ -1152,10 +1155,28 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 }
 
-class _GreetingHeader extends StatelessWidget {
+class _GreetingHeader extends StatefulWidget {
   const _GreetingHeader({required this.profile});
 
   final Profile? profile;
+
+  @override
+  State<_GreetingHeader> createState() => _GreetingHeaderState();
+}
+
+class _GreetingHeaderState extends State<_GreetingHeader> {
+  Profile? get profile => widget.profile;
+  AcademicSpecialDay? _specialDay;
+
+  @override
+  void initState() {
+    super.initState();
+    final clock = CalendarClock(profile?.timezone);
+    final wall = clock.toUserWall(DateTime.now());
+    AcademicSpecialDayService.getForDate(day: wall.day, month: wall.month).then((day) {
+      if (mounted) setState(() => _specialDay = day);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1279,6 +1300,8 @@ class _GreetingHeader extends StatelessWidget {
                   ),
                 ],
               ),
+              const SizedBox(height: 6),
+              _specialDayPill(theme, isDark),
             ],
           ),
         ),
@@ -1321,6 +1344,50 @@ class _GreetingHeader extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _specialDayPill(ThemeData theme, bool isDark) {
+    final clock = CalendarClock(profile?.timezone);
+    final wall = clock.toUserWall(DateTime.now());
+    final day = _specialDay;
+    final label = day != null
+        ? 'Today: ${wall.day} ${Greeting.monthName(wall.month)} — ${day.title}'
+        : 'Today: ${Greeting.weekdayName(wall.weekday)}';
+    return InkWell(
+      key: const Key('dashboard_special_day_pill'),
+      onTap: day != null ? () => SpecialDayBottomSheet.show(context, day) : null,
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: (day != null ? const Color(0xFF0F9F92) : theme.colorScheme.outline)
+              .withValues(alpha: isDark ? 0.2 : 0.12),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              day != null ? Icons.event_note_rounded : Icons.today_outlined,
+              size: 13,
+              color: day != null ? const Color(0xFF0F9F92) : theme.colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: 4),
+            Flexible(
+              child: Text(
+                label,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: day != null ? const Color(0xFF0F9F92) : theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -7,6 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:timezone/timezone.dart' as tz;
+import 'package:timezone/data/latest_all.dart' as tz;
 
 import '../../app/app_router.dart';
 import '../../features/notifications/state/notification_deep_link_handler.dart';
@@ -27,6 +29,7 @@ enum PushChannel {
   testResult('test_result', 'Test Results', 'Results, reports, and leaderboard updates', Importance.high),
   group('group', 'Group Activity', 'Group chat, announcements, and membership', Importance.defaultImportance),
   routineReminder('routine_reminder', 'Study Reminders', 'Routine and streak reminders', Importance.defaultImportance),
+  routineAlarm('routine_alarm', 'Study Session Alarms', 'Exact-time alarms for routine sessions', Importance.max),
   general('general', 'General', 'Other notifications', Importance.defaultImportance),
   importantSystem('important_system', 'Important', 'Critical account and system alerts', Importance.max);
 
@@ -168,15 +171,36 @@ class PushNotificationService implements PushPermissionGateway {
   }
 
   Future<void> _initLocalNotifications() async {
+    tz.initializeTimeZones();
     const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
     await _local.initialize(
       const InitializationSettings(android: androidInit),
       onDidReceiveNotificationResponse: (details) {
+        if (details.actionId == _snoozeActionId) {
+          _handleSnooze(details);
+          return;
+        }
         final payload = details.payload;
         if (payload != null && payload.isNotEmpty) {
           _navigateToPath(payload);
         }
       },
+    );
+  }
+
+  static const _snoozeActionId = 'routine_alarm_snooze';
+
+  void _handleSnooze(NotificationResponse details) {
+    final payload = details.payload;
+    if (payload == null || payload.isEmpty) return;
+    unawaited(
+      scheduleExactNotification(
+        id: details.id ?? payload.hashCode,
+        title: 'Snoozed session',
+        body: 'Tap to resume your study session.',
+        scheduledDate: tz.TZDateTime.now(tz.local).add(const Duration(minutes: 5)),
+        payload: payload,
+      ),
     );
   }
 
@@ -233,6 +257,66 @@ class PushNotificationService implements PushPermissionGateway {
       payload: _resolvePathFromData(message.data),
     );
   }
+
+  // ── Academic routine alarms (exact-time local notifications) ──
+  //
+  // Deliberately built on the SAME `_local` plugin instance and the SAME
+  // `onDidReceiveNotificationResponse` handler already wired above, instead
+  // of a second `FlutterLocalNotificationsPlugin()` in a standalone alarm
+  // service — a second instance would either double-register the tap
+  // callback or silently not receive taps at all, depending on platform.
+  // `AcademicAlarmService` calls these; it owns the "which routines need an
+  // alarm in the next N days" logic, this owns "how to actually alarm".
+
+  /// Schedules one exact-time local notification with a full-screen intent
+  /// (Android) and a "Start Session" / "Snooze 5m" action pair. [payload] is
+  /// the deep-link path opened on tap (or after a snooze), exactly like a
+  /// push notification's payload.
+  Future<void> scheduleExactNotification({
+    required int id,
+    required String title,
+    required String body,
+    required tz.TZDateTime scheduledDate,
+    required String payload,
+  }) async {
+    if (!_initialized && _initFuture == null) {
+      // Local notifications are set up as part of full initialize(); a
+      // caller that schedules before the app has called initialize() gets a
+      // clear no-op rather than a plugin-not-ready exception.
+      AppLogger.warning('scheduleExactNotification called before PushNotificationService.initialize()');
+      return;
+    }
+    try {
+      await _local.zonedSchedule(
+        id,
+        title,
+        body,
+        scheduledDate,
+        NotificationDetails(
+          android: AndroidNotificationDetails(
+            PushChannel.routineAlarm.id,
+            PushChannel.routineAlarm.title,
+            channelDescription: PushChannel.routineAlarm.description,
+            importance: Importance.max,
+            priority: Priority.max,
+            fullScreenIntent: true,
+            category: AndroidNotificationCategory.alarm,
+            actions: const [
+              AndroidNotificationAction('start_session', 'Start Session', showsUserInterface: true),
+              AndroidNotificationAction(_snoozeActionId, 'Snooze 5m'),
+            ],
+          ),
+        ),
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
+        payload: payload,
+      );
+    } catch (e, st) {
+      AppLogger.error('scheduleExactNotification failed for id=$id: $e', stackTrace: st);
+    }
+  }
+
+  Future<void> cancelScheduledNotification(int id) => _local.cancel(id);
 
   // ── Tap → deep link (Phase 11) ──
 

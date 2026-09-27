@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/models/app_notification.dart';
+import '../../core/services/permission_service.dart';
+import '../../core/services/push_notification_service.dart' show SystemPermissionStatus;
 import '../group/data/notification_repository.dart';
 import '../group/data/group_repository.dart';
 import 'data/notification_feed_repository.dart';
@@ -38,6 +40,9 @@ class _NotificationsHubScreenState extends State<NotificationsHubScreen>
   late final NotificationFeedController _feedController;
   late final TabController _tabController;
   bool _ownsFeed = false;
+  NotificationBroadCategory? _categoryFilter;
+  bool _notificationsDisabled = false;
+  bool _bannerDismissed = false;
 
   @override
   void initState() {
@@ -47,6 +52,12 @@ class _NotificationsHubScreenState extends State<NotificationsHubScreen>
     _ownsFeed = true;
     _feedController.addListener(_onChanged);
     _feedController.load();
+    _checkNotificationPermission();
+  }
+
+  Future<void> _checkNotificationPermission() async {
+    final granted = await PermissionService.hasNotificationPermission();
+    if (mounted) setState(() => _notificationsDisabled = !granted);
   }
 
   void _onChanged() {
@@ -71,8 +82,14 @@ class _NotificationsHubScreenState extends State<NotificationsHubScreen>
   }
 
   List<AppNotification> get _filteredItems {
-    if (_tabController.index == 0) return _feedController.items;
-    return _feedController.items.where((n) => !n.isRead).toList();
+    var items = _tabController.index == 0
+        ? _feedController.items
+        : _feedController.items.where((n) => !n.isRead).toList();
+    final category = _categoryFilter;
+    if (category != null) {
+      items = items.where((n) => n.parsedCategory.broadCategory == category).toList();
+    }
+    return items;
   }
 
   Future<void> _markAllRead() async {
@@ -150,7 +167,69 @@ class _NotificationsHubScreenState extends State<NotificationsHubScreen>
           ],
         ),
       ),
-      body: _buildBody(),
+      body: Column(
+        children: [
+          if (_notificationsDisabled && !_bannerDismissed) _permissionBanner(),
+          _categoryFilterChips(),
+          Expanded(child: _buildBody()),
+        ],
+      ),
+    );
+  }
+
+  Widget _permissionBanner() {
+    return MaterialBanner(
+      key: const Key('notification_permission_banner'),
+      backgroundColor: Colors.amber.withValues(alpha: 0.15),
+      leading: const Text('🔔', style: TextStyle(fontSize: 20)),
+      content: const Text('Enable phone notifications to never miss a live test'),
+      actions: [
+        TextButton(
+          key: const Key('notification_permission_turn_on'),
+          onPressed: () async {
+            final granted = await PermissionService.requestNotificationPermission(context);
+            if (mounted) {
+              setState(() => _notificationsDisabled = granted != SystemPermissionStatus.granted);
+            }
+          },
+          child: const Text('Turn On'),
+        ),
+        TextButton(
+          onPressed: () => setState(() => _bannerDismissed = true),
+          child: const Text('Dismiss'),
+        ),
+      ],
+    );
+  }
+
+  Widget _categoryFilterChips() {
+    return SizedBox(
+      height: 44,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: ChoiceChip(
+              key: const Key('notif_filter_all'),
+              label: const Text('All'),
+              selected: _categoryFilter == null,
+              onSelected: (_) => setState(() => _categoryFilter = null),
+            ),
+          ),
+          for (final c in NotificationBroadCategory.values)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: ChoiceChip(
+                key: Key('notif_filter_${c.name}'),
+                label: Text(c.label),
+                selected: _categoryFilter == c,
+                onSelected: (_) => setState(() => _categoryFilter = c),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
@@ -184,6 +263,7 @@ class _NotificationsHubScreenState extends State<NotificationsHubScreen>
               NotificationTile(
                 notification: n,
                 isActing: _feedController.actingId == n.id,
+                onActionTap: _feedController.isBusy ? null : () => _onNotificationTap(n),
                 onTap: _feedController.isBusy
                     ? null
                     : () => _onNotificationTap(n),

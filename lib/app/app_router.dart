@@ -25,7 +25,9 @@ import '../features/leaderboard/leaderboard_hub_screen.dart';
 import '../features/notifications/notifications_hub_screen.dart';
 import '../features/notifications/screens/notification_settings_screen.dart';
 import '../features/performance/performance_screen.dart';
+import '../features/profile/connections_screen.dart';
 import '../features/profile/profile_screen.dart';
+import '../features/profile/refer_and_earn_screen.dart';
 import '../features/profile/screens/avatar_viewer_screen.dart';
 import '../features/community/screens/community_hub_screen.dart';
 import '../features/about/screens/about_app_screen.dart';
@@ -143,8 +145,27 @@ final class AppRouter {
                   ? state.extra as Profile
                   : null,
             ),
+            routes: [
+              GoRoute(
+                path: 'connections',
+                name: 'user-connections',
+                builder: (context, state) {
+                  final extra = state.extra;
+                  return UserConnectionsScreen(
+                    userId: state.pathParameters['userId']!,
+                    userName: extra is String ? extra : null,
+                    initialTab: state.uri.queryParameters['tab'] ?? 'followers',
+                  );
+                },
+              ),
+            ],
           ),
         ],
+      ),
+      GoRoute(
+        path: '/refer-and-earn',
+        name: 'refer-and-earn',
+        builder: (context, state) => const ReferAndEarnScreen(),
       ),
       GoRoute(
         path: '/founder-profile/:userId',

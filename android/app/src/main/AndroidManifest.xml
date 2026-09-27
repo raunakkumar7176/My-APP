@@ -10,6 +10,21 @@
          automatically on launch. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.VIBRATE"/>
+    <!-- Camera/gallery for feedback screenshots and profile avatars
+         (image_picker). READ_MEDIA_IMAGES is the Android 13+ (API 33+)
+         replacement for the legacy READ_EXTERNAL_STORAGE gallery read. -->
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
+    <!-- Required on Android 12+ (API 31+) for
+         AndroidScheduleMode.exactAllowWhileIdle in
+         AcademicAlarmService/PushNotificationService.scheduleExactNotification
+         — without it the OS silently downgrades the alarm to inexact
+         timing, which defeats the point of a routine-session alarm. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
+    <!-- Required for the full-screen alarm intent
+         (AndroidNotificationDetails.fullScreenIntent) on Android 14+
+         (API 34+); on earlier versions this permission is a no-op. -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT"/>
     <application
         android:label="My Preparation"
         android:name="${applicationName}"
