@@ -1,7 +1,9 @@
 import 'dart:typed_data';
 
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 
 import '../../../core/models/answer.dart';
 import '../../../core/models/question.dart';
@@ -26,6 +28,54 @@ abstract final class TestPdf {
   static const _h1 = pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold);
   static const _h2 = pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold);
 
+  /// Same bundled Noto Sans Devanagari TTFs as `ExamReportPdfGenerator`, so
+  /// Hindi/bilingual question text never falls back to a font with no
+  /// Devanagari glyphs (the "dabba"/box bug) in the question paper, answer
+  /// sheet, result report, or group result PDFs this class also builds.
+  static const String _regularAssetPath =
+      'assets/fonts/NotoSansDevanagari-Regular.ttf';
+  static const String _boldAssetPath =
+      'assets/fonts/NotoSansDevanagari-Bold.ttf';
+
+  static Future<pw.Font> _loadFont({
+    required String assetPath,
+    required Future<pw.Font> Function() remote,
+    required pw.Font Function() fallback,
+  }) async {
+    try {
+      final data = await rootBundle.load(assetPath);
+      return pw.Font.ttf(data);
+    } catch (_) {
+      // Asset bundle unavailable (e.g. a non-Flutter test host).
+    }
+    try {
+      final downloaded = await remote();
+      if (downloaded is pw.TtfFont) return downloaded;
+    } catch (_) {
+      // Offline: fall through to the last resort.
+    }
+    return fallback();
+  }
+
+  static Future<pw.ThemeData> _pdfTheme() async {
+    final regular = await _loadFont(
+      assetPath: _regularAssetPath,
+      remote: PdfGoogleFonts.notoSansDevanagariRegular,
+      fallback: pw.Font.helvetica,
+    );
+    final bold = await _loadFont(
+      assetPath: _boldAssetPath,
+      remote: PdfGoogleFonts.notoSansDevanagariBold,
+      fallback: pw.Font.helveticaBold,
+    );
+    return pw.ThemeData.withFont(
+      base: regular,
+      bold: bold,
+      italic: regular,
+      boldItalic: bold,
+    );
+  }
+
   /// Student question paper. [subjectNames] maps subject id → name (optional).
   static Future<Uint8List> questionPaper({
     required Test test,
@@ -37,6 +87,7 @@ abstract final class TestPdf {
     if (questions.isEmpty) {
       throw StateError('No questions to print.');
     }
+    final pdfTheme = await _pdfTheme();
     final doc = pw.Document(title: test.title, author: 'My Preparation');
     final subjects = {
       for (final q in questions)
@@ -47,6 +98,7 @@ abstract final class TestPdf {
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(32),
+        theme: pdfTheme,
         footer: (ctx) => pw.Align(
           alignment: pw.Alignment.centerRight,
           child: pw.Text(
@@ -132,6 +184,7 @@ abstract final class TestPdf {
     List<AttemptHistoryEntry> history = const [],
     String? groupName,
   }) async {
+    final pdfTheme = await _pdfTheme();
     final doc = pw.Document(
       title: 'Result — ${test?.title ?? 'Test'}',
       author: 'My Preparation',
@@ -145,6 +198,7 @@ abstract final class TestPdf {
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(32),
+        theme: pdfTheme,
         footer: (ctx) => pw.Align(
           alignment: pw.Alignment.centerRight,
           child: pw.Text(
@@ -292,6 +346,7 @@ abstract final class TestPdf {
     if (questions.isEmpty) {
       throw StateError('No questions to print.');
     }
+    final pdfTheme = await _pdfTheme();
     final doc = pw.Document(title: '${test.title} — Answer Sheet', author: 'My Preparation');
     final maxOptions = questions.fold<int>(
       0,
@@ -303,6 +358,7 @@ abstract final class TestPdf {
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(32),
+        theme: pdfTheme,
         footer: (ctx) => pw.Align(
           alignment: pw.Alignment.centerRight,
           child: pw.Text(
@@ -335,8 +391,19 @@ abstract final class TestPdf {
           pw.SizedBox(height: 14),
           pw.Divider(),
           pw.SizedBox(height: 6),
-          for (var i = 0; i < questions.length; i++)
-            _bubbleRow(i + 1, questions[i], answers[questions[i].id], letters),
+          // 3 questions per row (not 1) so a 100-question sheet fits in a
+          // handful of pages instead of one bubble-row per page-line.
+          pw.Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            children: [
+              for (var i = 0; i < questions.length; i++)
+                pw.SizedBox(
+                  width: (PdfPageFormat.a4.width - 64 - 24) / 3,
+                  child: _bubbleRow(i + 1, questions[i], answers[questions[i].id], letters),
+                ),
+            ],
+          ),
         ],
       ),
     );
@@ -349,10 +416,10 @@ abstract final class TestPdf {
       padding: const pw.EdgeInsets.only(bottom: 6),
       child: pw.Row(
         children: [
-          pw.SizedBox(width: 30, child: pw.Text('$n.', style: _bold)),
+          pw.SizedBox(width: 24, child: pw.Text('$n.', style: _bold)),
           for (var i = 0; i < letters; i++)
             pw.Padding(
-              padding: const pw.EdgeInsets.only(right: 8),
+              padding: const pw.EdgeInsets.only(right: 6),
               child: pw.Container(
                 width: 18,
                 height: 18,
@@ -435,6 +502,7 @@ abstract final class TestPdf {
     double? lowestPercentage,
     DateTime? generatedAt,
   }) async {
+    final pdfTheme = await _pdfTheme();
     final doc = pw.Document(
       title: 'Group Result — ${test.title}',
       author: 'My Preparation',
@@ -445,6 +513,7 @@ abstract final class TestPdf {
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(32),
+        theme: pdfTheme,
         footer: (ctx) => pw.Align(
           alignment: pw.Alignment.centerRight,
           child: pw.Text(

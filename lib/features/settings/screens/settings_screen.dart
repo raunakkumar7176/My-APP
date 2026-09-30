@@ -2,16 +2,24 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:go_router/go_router.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:timezone/timezone.dart' as tz;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/constants/theme/app_colors.dart';
+import '../../../core/errors/app_error.dart';
 import '../../../core/models/profile.dart';
 import '../../../core/services/auth_service.dart';
 import '../../../core/services/profile_service.dart';
+import '../../../core/services/locale_service.dart';
+import '../../../core/services/push_notification_service.dart';
 import '../../../core/services/supabase_service.dart';
 import '../../../core/services/theme_service.dart';
+import '../../../l10n/app_localizations.dart';
+import '../../feedback/presentation/feedback_dialog.dart';
 
 /// Unified Settings Section Card wrapper with rounded corners (16.0),
 /// subtle border, and elevation.
@@ -94,19 +102,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _soundEffects = true;
 
   String _revisionReminder = '07:00 AM';
-  bool _announcements = true;
-  bool _groupAlerts = true;
 
   String _groupInvites = 'Anyone';
   bool _showAgeBadge = true;
 
-  String _cacheSize = '34.2 MB';
+  /// Real installed version, from `package_info_plus` — never the old
+  /// hardcoded "v1.2.0 (Build 58)" string, which was stale/fabricated.
+  String? _appVersion;
 
   @override
   void initState() {
     super.initState();
     _loadPersistedSettings();
     _listenToProfile();
+    _loadAppVersion();
+  }
+
+  Future<void> _loadAppVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (mounted) {
+        setState(() => _appVersion = '${info.version} (Build ${info.buildNumber})');
+      }
+    } catch (_) {
+      // Leave null — the UI shows nothing rather than a fabricated version.
+    }
   }
 
   @override
@@ -117,7 +137,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   void _listenToProfile() {
     _profileSub = ProfileService.statusStream.listen((_) {
-      if (mounted) setState(() {});
+      if (!mounted) return;
+      setState(() {
+        final profile = ProfileService.currentProfile;
+        if (profile != null) {
+          _showAgeBadge = profile.showAgeBadge;
+          final serverExam = profile.examTargets.firstOrNull;
+          if (serverExam != null) _targetExam = serverExam;
+          _groupInvites = _groupInvitePolicyLabel(profile.groupInvitePolicy);
+        }
+      });
     });
     if (ProfileService.currentProfile == null &&
         SupabaseService.isInitialized) {
@@ -130,10 +159,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final prefs = await SharedPreferences.getInstance();
       if (!mounted) return;
       setState(() {
+        // The real server value (profiles.exam_targets) wins whenever it's
+        // set — the local pref is only a fallback for the brief window
+        // before the profile has loaded, never allowed to shadow it.
         _targetExam =
+            ProfileService.currentProfile?.examTargets.firstOrNull ??
             prefs.getString('settings_target_exam') ??
-            (ProfileService.currentProfile?.examTargets.firstOrNull ??
-                'UPSC CSE 2026');
+            'UPSC CSE 2026';
         _dailyGoal =
             prefs.getString('settings_daily_study_goal') ??
             '45 Mins / Day • 3 Tests Target';
@@ -143,11 +175,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _soundEffects = prefs.getBool('settings_sound_effects') ?? true;
         _revisionReminder =
             prefs.getString('settings_revision_reminder') ?? '07:00 AM';
-        _announcements = prefs.getBool('settings_announcements') ?? true;
-        _groupAlerts = prefs.getBool('settings_group_alerts') ?? true;
-        _groupInvites = prefs.getString('settings_group_invites') ?? 'Anyone';
-        _showAgeBadge = prefs.getBool('settings_show_age_badge') ?? true;
-        _cacheSize = prefs.getString('settings_cache_size') ?? '34.2 MB';
+        // Real, server-enforced field (profiles.group_invite_policy, 0085).
+        final serverPolicy = ProfileService.currentProfile?.groupInvitePolicy;
+        _groupInvites = serverPolicy != null
+            ? _groupInvitePolicyLabel(serverPolicy)
+            : (prefs.getString('settings_group_invites') ?? 'Anyone');
+        // Real, peer-visible preference (profiles.show_age_badge, 0084) —
+        // the server row is the source of truth, not the device.
+        _showAgeBadge = ProfileService.currentProfile?.showAgeBadge ?? true;
       });
     } catch (_) {
       // SharedPreferences failure fallback to defaults
@@ -205,6 +240,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _triggerHapticIfEnabled();
       setState(() => _targetExam = picked);
       _saveString('settings_target_exam', picked);
+      // Real, server-side field (profiles.exam_targets) — used elsewhere in
+      // the app for content targeting, not just a locally-cached label.
+      try {
+        await ProfileService.updateProfile(examTargets: [picked]);
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(e is AppError ? e.message : 'Could not save your target exam.'),
+              backgroundColor: AppColors.error,
+            ),
+          );
+        }
+      }
     }
   }
 
@@ -261,6 +310,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _triggerHapticIfEnabled();
       setState(() => _language = picked);
       _saveString('settings_language_medium', picked);
+
+      // Real locale switch (LocaleService + generated AppLocalizations) —
+      // English and Hindi genuinely change the app's UI text now.
+      // "Bilingual (Hinglish)" is not a real distinct locale (there's no
+      // such ICU language tag to translate into) — it maps to Hindi, and
+      // that's disclosed below rather than silently treated as English.
+      final isHindiFamily = picked != 'English (US)';
+      await LocaleService.instance.setLocale(
+        isHindiFamily ? const Locale('hi') : const Locale('en'),
+      );
+
+      // Coverage is real but partial: Settings and the Dashboard are
+      // translated; most other screens aren't yet — say so rather than
+      // implying full app coverage.
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              picked == 'Bilingual (Hinglish)'
+                  ? 'Switched to Hindi (a dedicated Hinglish mode isn\'t built yet). '
+                      'Settings and Home are translated; other screens are still English.'
+                  : isHindiFamily
+                      ? 'भाषा बदल दी गई। Settings और Home अनुवादित हैं; बाकी स्क्रीन अभी अंग्रेज़ी में हैं।'
+                      : 'Language switched. Settings and Home are translated; other screens are still being localized.',
+            ),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
     }
   }
 
@@ -284,8 +362,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _triggerHapticIfEnabled();
       setState(() => _groupInvites = picked);
       _saveString('settings_group_invites', picked);
+      // Real, server-enforced field (profiles.group_invite_policy, 0085) —
+      // the group_invitations INSERT policy itself checks this now, not
+      // just a client-side label.
+      try {
+        await ProfileService.updateProfile(groupInvitePolicy: _groupInvitePolicyDb(picked));
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Saved.'), duration: Duration(seconds: 2)),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(e is AppError ? e.message : 'Could not save this setting.'),
+              backgroundColor: AppColors.error,
+            ),
+          );
+        }
+      }
     }
   }
+
+  static String _groupInvitePolicyDb(String label) => switch (label) {
+        'Only Following' => 'only_following',
+        'None' => 'none',
+        _ => 'anyone',
+      };
+
+  static String _groupInvitePolicyLabel(String db) => switch (db) {
+        'only_following' => 'Only Following',
+        'none' => 'None',
+        _ => 'Anyone',
+      };
 
   Future<void> _pickRevisionReminderTime() async {
     TimeOfDay initial = const TimeOfDay(hour: 7, minute: 0);
@@ -307,14 +417,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final formatted = picked.format(context);
       setState(() => _revisionReminder = formatted);
       _saveString('settings_revision_reminder', formatted);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Revision reminder scheduled for $formatted'),
-          duration: const Duration(seconds: 2),
-        ),
+
+      // Actually schedule a real local notification for the next occurrence
+      // of this time (today if still ahead, else tomorrow) — previously
+      // this only saved a label and claimed "scheduled" with nothing behind
+      // it. Fixed id so re-picking a new time replaces the same alarm
+      // rather than stacking duplicates.
+      final now = DateTime.now();
+      var next = DateTime(now.year, now.month, now.day, picked.hour, picked.minute);
+      if (!next.isAfter(now)) next = next.add(const Duration(days: 1));
+      final scheduled = await PushNotificationService.instance.scheduleExactNotification(
+        id: _revisionReminderNotificationId,
+        title: 'Revision Reminder',
+        body: 'Time for your daily revision — keep the streak going!',
+        scheduledDate: tz.TZDateTime.from(next, tz.local),
+        payload: '/study',
+        matchDateTimeComponents: DateTimeComponents.time,
       );
+      final message = scheduled
+          ? 'Revision reminder set for $formatted, every day.'
+          : 'Time saved, but the reminder could not be scheduled. '
+              'Check notification permission in Settings.';
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message), duration: const Duration(seconds: 3)),
+        );
+      }
     }
   }
+
+  /// Fixed local-notification id for the daily revision reminder — reusing
+  /// it means picking a new time replaces the existing alarm instead of
+  /// scheduling a second one alongside it.
+  static const _revisionReminderNotificationId = 900001;
 
   Widget _buildSelectionSheet(
     BuildContext ctx, {
@@ -418,17 +553,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   // ── Cache Clearing ──
+  /// Actually clears Flutter's real in-memory/disk image cache — the only
+  /// cache this app keeps that's safe and meaningful to clear from a
+  /// button. Previously this just reset a fabricated "34.2 MB" label in
+  /// SharedPreferences to "0.0 MB" without touching anything real.
   Future<void> _clearOfflineCache() async {
     _triggerHapticIfEnabled();
-    setState(() => _cacheSize = '0.0 MB');
-    await _saveString('settings_cache_size', '0.0 MB');
+    PaintingBinding.instance.imageCache.clear();
+    PaintingBinding.instance.imageCache.clearLiveImages();
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-            'Offline cache and temporary test data cleared successfully.',
-          ),
+          content: Text('Image cache cleared.'),
           backgroundColor: AppColors.success,
           duration: Duration(seconds: 2),
         ),
@@ -437,14 +574,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   // ── Account Deletion Request ──
+  /// Records a REAL request via `rpc_request_account_deletion` (0084) into
+  /// `account_deletion_requests`, reviewed by the app owner — this never
+  /// auto-deletes anything (that stays a deliberate manual/admin action,
+  /// not an unattended timer) and never claims an email was sent, since no
+  /// email is actually triggered.
   void _showDeleteAccountDialog() {
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Request Account Deletion'),
         content: const Text(
-          'Are you sure you want to request permanent account deletion?\n\n'
-          'All your test submissions, study point history, and group memberships will be permanently deleted after a 14-day security grace period.',
+          'Are you sure you want to request account deletion?\n\n'
+          'Your request will be recorded and reviewed by our team, who will '
+          'contact you to complete the process. This does not delete your '
+          'account immediately.',
         ),
         actions: [
           TextButton(
@@ -453,17 +597,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           TextButton(
             style: TextButton.styleFrom(foregroundColor: AppColors.error),
-            onPressed: () {
+            onPressed: () async {
               Navigator.of(ctx).pop();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text(
-                    'Deletion request logged. Confirmation email sent to your address.',
-                  ),
-                  backgroundColor: AppColors.error,
-                  duration: Duration(seconds: 4),
-                ),
-              );
+              try {
+                await ProfileService.requestAccountDeletion();
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Your deletion request has been recorded.'),
+                      backgroundColor: AppColors.error,
+                      duration: Duration(seconds: 4),
+                    ),
+                  );
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        e is AppError ? e.message : 'Could not submit your request. Please try again.',
+                      ),
+                      backgroundColor: AppColors.error,
+                    ),
+                  );
+                }
+              }
             },
             child: const Text('Submit Request'),
           ),
@@ -517,9 +675,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final profile = ProfileService.currentProfile;
+    final l10n = AppLocalizations.of(context)!;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Settings'), centerTitle: false),
+      appBar: AppBar(title: Text(l10n.settingsTitle), centerTitle: false),
       body: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         child: Center(
@@ -535,14 +694,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
                 // 2. Group 1: Study & Exam Targets
                 SettingsSectionCard(
-                  title: 'EXAM & PREPARATION',
+                  title: l10n.settingsSectionExam,
                   children: [
                     ListTile(
                       leading: const Icon(
                         Icons.school_outlined,
                         color: Color(0xFF2563EB),
                       ),
-                      title: const Text('Target Exam'),
+                      title: Text(l10n.settingsTargetExam),
                       subtitle: Text(_targetExam),
                       trailing: const Icon(Icons.chevron_right),
                       onTap: _showTargetExamModal,
@@ -553,7 +712,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         Icons.timer_outlined,
                         color: Color(0xFFD97706),
                       ),
-                      title: const Text('Daily Study Goal'),
+                      title: Text(l10n.settingsDailyGoal),
                       subtitle: Text(_dailyGoal),
                       trailing: const Icon(Icons.chevron_right),
                       onTap: _showDailyGoalModal,
@@ -564,7 +723,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         Icons.translate_rounded,
                         color: Color(0xFF10B981),
                       ),
-                      title: const Text('Language & Medium'),
+                      title: Text(l10n.settingsLanguage),
                       subtitle: Text(_language),
                       trailing: const Icon(Icons.chevron_right),
                       onTap: _showLanguageModal,
@@ -576,14 +735,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
                 // 3. Group 2: Appearance & Sensory
                 SettingsSectionCard(
-                  title: 'DISPLAY & EXPERIENCE',
+                  title: l10n.settingsSectionDisplay,
                   children: [
                     ListTile(
                       leading: const Icon(
                         Icons.palette_outlined,
                         color: Color(0xFF7C3AED),
                       ),
-                      title: const Text('Theme Mode'),
+                      title: Text(l10n.settingsThemeMode),
                       subtitle: Text(
                         _themeModeName(ThemeService.instance.mode),
                       ),
@@ -595,10 +754,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         Icons.vibration_rounded,
                         color: Color(0xFF0284C7),
                       ),
-                      title: const Text('Haptic Feedback (Vibration)'),
-                      subtitle: const Text(
-                        'Vibrate on MCQ selection and test submission',
-                        style: TextStyle(fontSize: 12),
+                      title: Text(l10n.settingsHaptic),
+                      subtitle: Text(
+                        l10n.settingsHapticSubtitle,
+                        style: const TextStyle(fontSize: 12),
                       ),
                       value: _hapticFeedback,
                       onChanged: (val) {
@@ -613,10 +772,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         Icons.volume_up_outlined,
                         color: Color(0xFFF59E0B),
                       ),
-                      title: const Text('Sound Effects'),
-                      subtitle: const Text(
-                        'Audio cues for correct answers and streak bonuses',
-                        style: TextStyle(fontSize: 12),
+                      title: Text(l10n.settingsSoundEffects),
+                      subtitle: Text(
+                        l10n.settingsSoundEffectsSubtitle,
+                        style: const TextStyle(fontSize: 12),
                       ),
                       value: _soundEffects,
                       onChanged: (val) {
@@ -632,53 +791,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
                 // 4. Group 3: Notifications & Reminders
                 SettingsSectionCard(
-                  title: 'STUDY NUDGES & ALERTS',
+                  title: l10n.settingsSectionNudges,
                   children: [
                     ListTile(
                       leading: const Icon(
                         Icons.alarm_on_rounded,
                         color: Color(0xFF2563EB),
                       ),
-                      title: const Text('Daily Revision Reminder'),
-                      subtitle: Text('Daily at $_revisionReminder'),
+                      title: Text(l10n.settingsRevisionReminder),
+                      subtitle: Text(
+                        l10n.settingsRevisionReminderSubtitle(_revisionReminder),
+                      ),
                       trailing: const Icon(Icons.access_time_rounded),
                       onTap: _pickRevisionReminderTime,
                     ),
                     const Divider(height: 1),
-                    SwitchListTile.adaptive(
-                      secondary: const Icon(
-                        Icons.campaign_outlined,
+                    // Real, server-backed per-category push preferences
+                    // (notification_settings table) live on their own
+                    // screen — this used to duplicate two of those
+                    // categories as local-only toggles that had no effect
+                    // on which pushes the server actually sent.
+                    ListTile(
+                      leading: const Icon(
+                        Icons.notifications_active_outlined,
                         color: Color(0xFFD97706),
                       ),
-                      title: const Text('Community & Founder Announcements'),
-                      subtitle: const Text(
-                        'Urgent notices and system broadcasts from Community Desk',
-                        style: TextStyle(fontSize: 12),
+                      title: Text(l10n.settingsPushPreferences),
+                      subtitle: Text(
+                        l10n.settingsPushPreferencesSubtitle,
+                        style: const TextStyle(fontSize: 12),
                       ),
-                      value: _announcements,
-                      onChanged: (val) {
-                        setState(() => _announcements = val);
-                        _saveBool('settings_announcements', val);
-                        _triggerHapticIfEnabled();
-                      },
-                    ),
-                    const Divider(height: 1),
-                    SwitchListTile.adaptive(
-                      secondary: const Icon(
-                        Icons.groups_outlined,
-                        color: Color(0xFF10B981),
-                      ),
-                      title: const Text('Group Activity Alerts'),
-                      subtitle: const Text(
-                        'Mentions and test invitations from study groups',
-                        style: TextStyle(fontSize: 12),
-                      ),
-                      value: _groupAlerts,
-                      onChanged: (val) {
-                        setState(() => _groupAlerts = val);
-                        _saveBool('settings_group_alerts', val);
-                        _triggerHapticIfEnabled();
-                      },
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => context.push('/notification-settings'),
                     ),
                   ],
                 ),
@@ -687,14 +831,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
                 // 5. Group 4: Privacy & Security
                 SettingsSectionCard(
-                  title: 'PRIVACY & ACCESS',
+                  title: l10n.settingsSectionPrivacy,
                   children: [
                     ListTile(
                       leading: const Icon(
                         Icons.group_add_outlined,
                         color: Color(0xFF0284C7),
                       ),
-                      title: const Text('Allow Group Invites'),
+                      title: Text(l10n.settingsGroupInvites),
                       subtitle: Text(_groupInvites),
                       trailing: const Icon(Icons.chevron_right),
                       onTap: _showGroupInvitesModal,
@@ -705,16 +849,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         Icons.cake_outlined,
                         color: Color(0xFFE11D48),
                       ),
-                      title: const Text('Show Age Badge on Portfolio'),
-                      subtitle: const Text(
-                        'Display calculated YY/MM/DD age publicly',
-                        style: TextStyle(fontSize: 12),
+                      title: Text(l10n.settingsShowAgeBadge),
+                      subtitle: Text(
+                        l10n.settingsShowAgeBadgeSubtitle,
+                        style: const TextStyle(fontSize: 12),
                       ),
                       value: _showAgeBadge,
-                      onChanged: (val) {
+                      onChanged: (val) async {
                         setState(() => _showAgeBadge = val);
-                        _saveBool('settings_show_age_badge', val);
                         _triggerHapticIfEnabled();
+                        // Real, peer-visible server field (0084) — not just
+                        // a local device flag; ProfileScreen's Age display
+                        // for other viewers reads this directly.
+                        try {
+                          await ProfileService.updateProfile(showAgeBadge: val);
+                        } catch (e) {
+                          if (mounted) {
+                            setState(() => _showAgeBadge = !val);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  e is AppError ? e.message : 'Could not save this setting.',
+                                ),
+                                backgroundColor: AppColors.error,
+                              ),
+                            );
+                          }
+                        }
                       },
                     ),
                     const Divider(height: 1),
@@ -723,10 +884,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         Icons.lock_outline_rounded,
                         color: Color(0xFF7C3AED),
                       ),
-                      title: const Text('Change Password / Security'),
-                      subtitle: const Text(
-                        'Manage your password and active sessions',
-                      ),
+                      title: Text(l10n.settingsChangePassword),
+                      subtitle: Text(l10n.settingsChangePasswordSubtitle),
                       trailing: const Icon(Icons.chevron_right),
                       onTap: _showPasswordSecurityDialog,
                     ),
@@ -737,17 +896,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
                 // 6. Group 5: Support, Legal & About
                 SettingsSectionCard(
-                  title: 'ABOUT & COMMUNITY',
+                  title: l10n.settingsSectionAbout,
                   children: [
                     ListTile(
                       leading: const Icon(
                         Icons.info_outline_rounded,
                         color: Color(0xFFD97706),
                       ),
-                      title: const Text('About App & Founder Desk'),
-                      subtitle: const Text(
-                        'Vision, founder message & pedagogy',
-                      ),
+                      title: Text(l10n.settingsAboutApp),
+                      subtitle: Text(l10n.settingsAboutAppSubtitle),
                       trailing: const Icon(Icons.chevron_right),
                       onTap: () => context.push('/about'),
                     ),
@@ -757,12 +914,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         Icons.support_agent_rounded,
                         color: Color(0xFF2563EB),
                       ),
-                      title: const Text('Help Desk & Diagnostics'),
-                      subtitle: const Text(
-                        'Report bugs, sync issues, or ask questions',
-                      ),
+                      title: Text(l10n.settingsHelpDesk),
+                      subtitle: Text(l10n.settingsHelpDeskSubtitle),
                       trailing: const Icon(Icons.chevron_right),
-                      onTap: () => context.push('/about'),
+                      onTap: () => showDialog<void>(
+                        context: context,
+                        builder: (_) => const FeedbackDialog(),
+                      ),
                     ),
                     const Divider(height: 1),
                     ListTile(
@@ -770,11 +928,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         Icons.cleaning_services_outlined,
                         color: Color(0xFF10B981),
                       ),
-                      title: const Text('Clear Offline Cache'),
-                      subtitle: Text('Cached data: $_cacheSize'),
+                      title: Text(l10n.settingsClearCache),
+                      subtitle: Text(l10n.settingsClearCacheSubtitle),
                       trailing: TextButton(
                         onPressed: _clearOfflineCache,
-                        child: const Text('Clear'),
+                        child: Text(l10n.settingsClear),
                       ),
                       onTap: _clearOfflineCache,
                     ),
@@ -784,10 +942,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         Icons.policy_outlined,
                         color: Color(0xFF64748B),
                       ),
-                      title: const Text('Terms & Privacy Policy'),
-                      subtitle: const Text(
-                        'Read our data and student security policies',
-                      ),
+                      title: Text(l10n.settingsTerms),
+                      subtitle: Text(l10n.settingsTermsSubtitle),
                       trailing: const Icon(Icons.open_in_new, size: 18),
                       onTap: () =>
                           _launchUrlStr('https://mypreparation.app/privacy'),
@@ -811,9 +967,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             color: theme.colorScheme.primary,
                           ),
                           const SizedBox(width: 6),
-                          const Text(
-                            'My Preparation v1.2.0 (Build 58)',
-                            style: TextStyle(
+                          Text(
+                            // Real installed version (package_info_plus) —
+                            // never the old hardcoded, stale "v1.2.0
+                            // (Build 58)" string.
+                            _appVersion == null
+                                ? 'My Preparation'
+                                : 'My Preparation v$_appVersion',
+                            style: const TextStyle(
                               fontSize: 12.5,
                               fontWeight: FontWeight.w600,
                               color: Color(0xFF64748B),
@@ -829,7 +990,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         child: OutlinedButton.icon(
                           onPressed: _handleLogout,
                           icon: const Icon(Icons.logout_rounded, size: 18),
-                          label: const Text('🚪 Log Out'),
+                          label: Text('🚪 ${l10n.settingsLogOut}'),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: AppColors.error,
                             side: const BorderSide(color: AppColors.error),
@@ -845,9 +1006,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       // Delete Account Text Link
                       TextButton(
                         onPressed: _showDeleteAccountDialog,
-                        child: const Text(
-                          'Request Account Deletion',
-                          style: TextStyle(
+                        child: Text(
+                          l10n.settingsRequestDeletion,
+                          style: const TextStyle(
                             color: AppColors.error,
                             fontSize: 12.5,
                             decoration: TextDecoration.underline,

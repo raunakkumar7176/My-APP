@@ -100,6 +100,8 @@ final class ProfileService {
     List<String>? examTargets,
     DateTime? dateOfBirth,
     Map<String, String>? socialLinks,
+    bool? showAgeBadge,
+    String? groupInvitePolicy,
   }) async {
     final userId = SupabaseService.client.auth.currentUser?.id;
     if (userId == null) {
@@ -126,6 +128,8 @@ final class ProfileService {
         );
       }
       if (socialLinks != null) updates['social_links'] = socialLinks;
+      if (showAgeBadge != null) updates['show_age_badge'] = showAgeBadge;
+      if (groupInvitePolicy != null) updates['group_invite_policy'] = groupInvitePolicy;
 
       if (updates.isEmpty) return;
 
@@ -139,6 +143,8 @@ final class ProfileService {
         examTargets: examTargets ?? _currentProfile!.examTargets,
         dateOfBirth: dateOfBirth ?? _currentProfile!.dateOfBirth,
         socialLinks: socialLinks ?? _currentProfile!.socialLinks,
+        showAgeBadge: showAgeBadge ?? _currentProfile!.showAgeBadge,
+        groupInvitePolicy: groupInvitePolicy ?? _currentProfile!.groupInvitePolicy,
       );
 
       AppLogger.info('Profile updated.');
@@ -357,6 +363,29 @@ final class ProfileService {
     return 'Could not submit your verification request. Please try again.';
   }
 
+  /// Records a real account-deletion request via `rpc_request_account_deletion`
+  /// (migration 0084) — an owner-reviewed table, never an unattended
+  /// auto-delete. Returns true if a request now exists (freshly created or
+  /// already pending); throws on failure rather than claiming success.
+  static Future<bool> requestAccountDeletion() async {
+    final userId = SupabaseService.client.auth.currentUser?.id;
+    if (userId == null) {
+      throw const AuthError(message: 'You must be signed in to request account deletion.');
+    }
+    try {
+      final res = await SupabaseService.client.rpc('rpc_request_account_deletion');
+      final data = Map<String, dynamic>.from(res as Map);
+      return data['status'] == 'pending' || data['status'] == 'already_pending';
+    } on PostgrestException catch (e) {
+      AppLogger.error('requestAccountDeletion failed: ${e.message}');
+      throw const DataError(message: 'Could not submit your deletion request. Please try again.');
+    } catch (e) {
+      if (e is AppError) rethrow;
+      AppLogger.error('requestAccountDeletion unexpected error: $e');
+      throw const DataError(message: 'Could not submit your deletion request. Please try again.');
+    }
+  }
+
   // ── Follow graph (0058 user_follows) ──
 
   /// Inserts `{follower_id: auth.uid(), following_id: targetUserId}`. RLS
@@ -425,10 +454,10 @@ final class ProfileService {
   }
 
   /// Everyone who follows [userId], via `rpc_get_followers` (migration
-  /// 0065) — a SECURITY DEFINER RPC, because the live `profiles` SELECT
-  /// policy only allows reading your own row or a fellow group member's, and
-  /// a follower can be neither. `is_following` on each row reflects the
-  /// CALLING user, not [userId].
+  /// 0065) — a SECURITY DEFINER RPC returning only the public identity
+  /// fields (never mobile/bio/date_of_birth), plus whether the CALLING
+  /// user already follows each listed person. `is_following` on each row
+  /// reflects the CALLING user, not [userId].
   static Future<List<ProfileConnection>> getFollowers(String userId) async {
     try {
       final rows = await SupabaseService.client.rpc(
@@ -593,59 +622,136 @@ final class ProfileService {
     _referralAppliedController.close();
   }
 
-  /// Official fallback founder profile for offline, hermetic, or public desk view.
+  /// Offline/hermetic fallback ONLY — used when the real `profiles` row
+  /// (app_role='owner') can't be read (no connection, not initialized, or
+  /// no such row yet). Every stat is honest zero/empty, never a fabricated
+  /// impressive number: showing "1240 Followers" for an account that may
+  /// not even exist yet would be lying to whoever views it. `id` is a
+  /// non-UUID sentinel by design — [ProfileScreen] uses it to hide the
+  /// Follow button (there's no real row to follow yet).
   static Profile get fallbackFounderProfile => Profile(
     id: 'founder_official_uid',
-    fullName: 'Raunak Kumar',
+    fullName: 'Founder',
     timezone: 'Asia/Kolkata',
     createdAt: DateTime(2026, 1, 1),
-    studentCode: 'MP-FOUNDER',
-    bio: 'Founder & Lead Architect of My Preparation. Passionate about empowering civil service aspirants with distraction-free, synchronized examination systems.',
-    mobile: '+91 98765 43210',
-    examTargets: const ['UPSC CSE', 'State PSC'],
-    totalPoints: 25000,
-    weeklyPoints: 3450,
+    studentCode: null,
+    bio: 'Founder & Lead Architect of My Preparation.',
+    mobile: '',
+    examTargets: const [],
+    totalPoints: 0,
+    weeklyPoints: 0,
     appRole: AppRole.owner,
-    isVip: true,
-    verifiedBadge: true,
-    dateOfBirth: DateTime(1998, 5, 20),
-    socialLinks: const {
-      'LinkedIn': 'https://linkedin.com',
-      'YouTube': 'https://youtube.com',
-      'X (Twitter)': 'https://x.com',
-      'Telegram': 'https://t.me/mypreparation',
-      'GitHub': 'https://github.com',
-      'Official Website': 'https://mypreparation.app',
-    },
-    followersCount: 1240,
-    followingCount: 18,
+    isVip: false,
+    verifiedBadge: false,
+    dateOfBirth: null,
+    socialLinks: const {},
+    followersCount: 0,
+    followingCount: 0,
   );
 
-  /// Fetches a specific profile by its user ID. Returns [fallbackFounderProfile]
-  /// if requesting the official founder and no remote record is found.
-  static Future<Profile?> fetchProfileById(String userId) async {
-    if (userId == 'founder_official_uid' || userId.toLowerCase() == 'founder') {
+  /// Canonical UUID shape (8-4-4-4-12 hex groups). Anything else that is
+  /// passed to [fetchProfileById] is treated as a `student_code`.
+  static final RegExp _uuidPattern = RegExp(
+    r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+  );
+
+  /// Fetches a specific profile by EITHER of its identifiers: the user's
+  /// UUID (`id`) or their shareable `student_code` (e.g. `MP-83921`).
+  /// Returns [fallbackFounderProfile] if requesting the official founder
+  /// and no remote record is found.
+  ///
+  /// Callers deep-link with a UUID (`/profile/<uuid>` from the Followers /
+  /// Following lists, group rosters, search), but student codes are what
+  /// users actually read out to each other — resolving both here means no
+  /// screen has to guess which shape it was handed.
+  ///
+  /// Returns null when no row matches (unknown identifier, or RLS hid it).
+  static Future<Profile?> fetchProfileById(String identifier) async {
+    final value = identifier.trim();
+    if (value == 'founder_official_uid' || value.toLowerCase() == 'founder') {
       return fetchFounderProfile();
     }
 
     if (!SupabaseService.isInitialized) {
-      if (userId == 'founder_official_uid') return fallbackFounderProfile;
+      if (value == 'founder_official_uid') return fallbackFounderProfile;
       return null;
     }
 
+    final isUuid = _uuidPattern.hasMatch(value);
+    // `student_code` is stored uppercase (0017 permanent student codes);
+    // accept whatever casing the user typed/pasted.
+    final column = isUuid ? 'id' : 'student_code';
+    final lookup = isUuid ? value : value.toUpperCase();
+
     try {
-      final response = await _db.select().eq('id', userId).maybeSingle();
+      final response = await _db.select().eq(column, lookup).maybeSingle();
       if (response != null) {
         return Profile.fromJson(response);
       }
     } catch (e) {
-      AppLogger.warning('fetchProfileById failed for $userId: $e');
+      AppLogger.warning('fetchProfileById failed for $column=$lookup: $e');
     }
 
-    if (userId == 'founder_official_uid') {
+    if (value == 'founder_official_uid') {
       return fallbackFounderProfile;
     }
     return null;
+  }
+
+  /// Live `COUNT(*)` straight off the `user_follows` edge table: how many
+  /// people follow [userId], and how many [userId] follows. Used for peer
+  /// profiles so the tiles show the real graph rather than a cached
+  /// denormalised counter. `user_follows` is readable by any authenticated
+  /// user (0058 "read follows" policy), so this works for peers too.
+  ///
+  /// Throws on failure — callers decide whether to fall back to
+  /// `profiles.followers_count` / `following_count`.
+  static Future<({int followers, int following})> fetchFollowCounts(
+    String userId,
+  ) async {
+    if (!SupabaseService.isInitialized) {
+      throw const DataError(message: 'Could not load follow counts.');
+    }
+    final client = SupabaseService.client;
+    try {
+      final followers = await client
+          .from('user_follows')
+          .count(CountOption.exact)
+          .eq('following_id', userId);
+      final following = await client
+          .from('user_follows')
+          .count(CountOption.exact)
+          .eq('follower_id', userId);
+      return (followers: followers, following: following);
+    } on PostgrestException catch (e) {
+      AppLogger.error('fetchFollowCounts failed for $userId: ${e.message}');
+      throw const DataError(message: 'Could not load follow counts.');
+    } catch (e) {
+      if (e is AppError) rethrow;
+      AppLogger.error('fetchFollowCounts unexpected error: $e');
+      throw const DataError(message: 'Could not load follow counts.');
+    }
+  }
+
+  /// Whether the CALLING user currently follows [targetUserId] — the real
+  /// answer behind the peer profile's Follow / Following button (never a
+  /// guess, and never "false" just because the profile was opened fresh).
+  static Future<bool> isFollowingUser(String targetUserId) async {
+    if (!SupabaseService.isInitialized) return false;
+    final userId = SupabaseService.client.auth.currentUser?.id;
+    if (userId == null || userId == targetUserId) return false;
+    try {
+      final rows = await SupabaseService.client
+          .from('user_follows')
+          .select('follower_id')
+          .eq('follower_id', userId)
+          .eq('following_id', targetUserId)
+          .limit(1);
+      return rows.isNotEmpty;
+    } catch (e) {
+      AppLogger.warning('isFollowingUser failed for $targetUserId: $e');
+      return false;
+    }
   }
 
   /// Fetches the official Founder / Owner profile.

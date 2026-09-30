@@ -71,6 +71,106 @@ final class Routine {
   /// 6 = Saturday). The caller decides what "today" is (user timezone).
   bool isScheduledOn(int weekday) => weekdays.contains(weekday);
 
+  /// Whether [endTime] has already passed, given [nowInUserZone]'s
+  /// hour/minute (e.g. `CalendarClock.toUserWall(DateTime.now())`) — the
+  /// caller supplies "now" so this never reads the raw device clock itself.
+  bool hasEndedBy(DateTime nowInUserZone) {
+    final end = _parseTime(endTime);
+    if (end == null) return false;
+    final nowMinutes = nowInUserZone.hour * 60 + nowInUserZone.minute;
+    final start = _parseTime(startTime);
+    if (start != null && end < start) {
+      // Overnight slot (e.g. 23:00 -> 01:00)
+      // Has ended only if now is between end and start
+      return nowMinutes >= end && nowMinutes < start;
+    }
+    return nowMinutes >= end;
+  }
+
+  /// Whether current time in [nowInUserZone] has passed or reached [startTime].
+  bool hasStartedBy(DateTime nowInUserZone) {
+    final start = _parseTime(startTime);
+    if (start == null) return false;
+    final nowMinutes = nowInUserZone.hour * 60 + nowInUserZone.minute;
+    final end = _parseTime(endTime);
+    if (end != null && end < start) {
+      // Overnight slot: started if now >= start or now < end
+      return nowMinutes >= start || nowMinutes < end;
+    }
+    return nowMinutes >= start;
+  }
+
+  /// Whether this routine is actively in progress right now at [nowInUserZone].
+  bool isOngoingAt(DateTime nowInUserZone) {
+    final start = _parseTime(startTime);
+    final end = _parseTime(endTime);
+    if (start == null || end == null) return false;
+    final nowMinutes = nowInUserZone.hour * 60 + nowInUserZone.minute;
+    if (end > start) {
+      return nowMinutes >= start && nowMinutes < end;
+    } else if (end < start) {
+      // Overnight slot
+      return nowMinutes >= start || nowMinutes < end;
+    } else {
+      return false;
+    }
+  }
+
+  /// Real-time progress between [startTime] and [endTime] (0.0 to 1.0)
+  /// given [nowInUserZone].
+  double elapsedProgressAt(DateTime nowInUserZone) {
+    final start = _parseTime(startTime);
+    final end = _parseTime(endTime);
+    if (start == null || end == null) return 0.0;
+    var total = end - start;
+    if (total <= 0) total += 24 * 60;
+    if (total == 0) return 0.0;
+
+    final nowMinutes = nowInUserZone.hour * 60 + nowInUserZone.minute;
+    if (isOngoingAt(nowInUserZone)) {
+      var elapsed = nowMinutes - start;
+      if (elapsed < 0) elapsed += 24 * 60;
+      return (elapsed / total).clamp(0.0, 1.0);
+    } else if (hasEndedBy(nowInUserZone)) {
+      return 1.0;
+    } else {
+      return 0.0;
+    }
+  }
+
+  /// Remaining minutes in this routine slot if ongoing; 0 otherwise.
+  int remainingMinutesAt(DateTime nowInUserZone) {
+    if (!isOngoingAt(nowInUserZone)) return 0;
+    final end = _parseTime(endTime);
+    if (end == null) return 0;
+    final nowMinutes = nowInUserZone.hour * 60 + nowInUserZone.minute;
+    var diff = end - nowMinutes;
+    if (diff < 0) diff += 24 * 60;
+    return diff;
+  }
+
+  /// Minutes until this routine begins; 0 if already started.
+  int minutesUntilStart(DateTime nowInUserZone) {
+    if (hasStartedBy(nowInUserZone)) return 0;
+    final start = _parseTime(startTime);
+    if (start == null) return 0;
+    final nowMinutes = nowInUserZone.hour * 60 + nowInUserZone.minute;
+    var diff = start - nowMinutes;
+    if (diff < 0) diff += 24 * 60;
+    return diff;
+  }
+
+  /// Minutes elapsed since this routine ended; 0 if not ended yet.
+  int minutesSinceEnded(DateTime nowInUserZone) {
+    if (!hasEndedBy(nowInUserZone)) return 0;
+    final end = _parseTime(endTime);
+    if (end == null) return 0;
+    final nowMinutes = nowInUserZone.hour * 60 + nowInUserZone.minute;
+    var diff = nowMinutes - end;
+    if (diff < 0) diff += 24 * 60;
+    return diff;
+  }
+
   static const sessionTypes = ['study', 'revision', 'memorization', 'practice', 'test', 'break', 'chore'];
 
   String get sessionTypeLabel => labelForSessionType(sessionType);

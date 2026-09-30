@@ -12,8 +12,9 @@ import '../domain/routine_schedule.dart';
 /// SECURITY:
 /// - Every query runs under the live RLS policies (`own routine`,
 ///   `own routine logs`): a user only ever sees or writes their own rows.
-/// - `user_id` is filled server-side (default `auth.uid()`); the client never
-///   sends or filters by it. No policy is widened here.
+/// - `routines.user_id` is `not null` with no column default (verified against
+///   0001_init.sql/0011_routines_ownership_policy.sql) — [create] must send it
+///   explicitly, or the insert fails the "own routine insert" RLS check.
 ///
 /// DATES: the repository never computes "today". Callers pass the user-zone
 /// date (`YYYY-MM-DD`) and live weekday (0 = Sunday … 6 = Saturday) so the
@@ -124,6 +125,22 @@ class RoutineWithLog {
   bool get isCompleted => log?.isCompleted ?? false;
   bool get isSkipped => log?.isSkipped ?? false;
   bool get isPending => log == null || log!.isPending;
+
+  /// Still pending, but its scheduled slot for today has already ended —
+  /// shown as "Missed" instead of a plain unchecked item that looks the
+  /// same as one still to come. Never auto-completed/auto-skipped; the
+  /// student can still mark it done late.
+  bool isMissedAt(DateTime nowInUserZone) => isPending && routine.hasEndedBy(nowInUserZone);
+
+  /// Whether this session is currently live and ongoing right now.
+  bool isOngoingAt(DateTime nowInUserZone) => isPending && routine.isOngoingAt(nowInUserZone);
+
+  /// Proportional timely progress (0.0 to 1.0) for this session slot.
+  double progressAt(DateTime nowInUserZone) {
+    if (isCompleted) return 1.0;
+    if (isSkipped) return 0.0;
+    return routine.elapsedProgressAt(nowInUserZone);
+  }
 }
 
 class SupabaseRoutineRepository implements RoutineRepository {
@@ -176,9 +193,14 @@ class SupabaseRoutineRepository implements RoutineRepository {
     bool hasAlarm = false,
     int alarmLeadMinutes = 0,
   }) => _guard(() async {
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) {
+      throw const AuthError(message: 'You must be signed in to create a routine.');
+    }
     final data = await _client
         .from('routines')
         .insert({
+          'user_id': userId,
           'title': title,
           'start_time': startTime,
           'end_time': endTime,

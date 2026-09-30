@@ -6,6 +6,7 @@ import '../../../core/models/attempt.dart';
 import '../../../core/models/submit_scorecard.dart';
 import '../../../core/services/supabase_service.dart';
 import '../domain/test_errors.dart';
+import '../state/test_activity.dart';
 
 /// Result of starting/joining: the attempt plus the optional `test_title`
 /// the code-entry RPC may include (R4_3 shape). Null when absent.
@@ -134,6 +135,9 @@ class SupabaseAttemptRepository implements AttemptRepository {
           params: {'p_attempt_id': attemptId},
         );
         AppLogger.rpcShape('rpc_submit_and_score_test', response);
+        // Dashboard/Performance tabs stay mounted (IndexedStack) and won't
+        // otherwise reload after this — see test_activity.dart.
+        TestActivity.bump();
         return scorecardFromSubmitResponse(response);
       }, TestErrorContext.submit);
 

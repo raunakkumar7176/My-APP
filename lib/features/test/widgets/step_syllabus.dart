@@ -12,12 +12,19 @@ class StepSyllabus extends StatefulWidget {
     required this.serverSelectedNodeIds,
     required this.onChanged,
     this.initialSubjectId,
+    this.onSubjectChanged,
     super.key,
   });
 
   final List<String> selectedNodeIds;
   final List<String> serverSelectedNodeIds;
   final ValueChanged<List<String>> onChanged;
+
+  /// Reports the subject the creator picked here (chip tap) back to the
+  /// wizard, so it can be used to tag every question added afterward that
+  /// has no subject of its own (AI/Document/JSON-parsed questions never
+  /// carry one — see `_TestCreationScreenState`'s draft handlers).
+  final ValueChanged<String?>? onSubjectChanged;
 
   /// Auto-selects this subject on first load (e.g. "Take a Chapter Test"
   /// from Chapter Hub). Chapter/topic-level prefill is deliberately NOT
@@ -81,6 +88,7 @@ class _StepSyllabusState extends State<StepSyllabus> {
       _selectedSubject = subject;
       _allNodes = [];
     });
+    widget.onSubjectChanged?.call(subject.id);
 
     SyllabusService.loadNodesForSubject(subject.id)
         .then((nodes) {

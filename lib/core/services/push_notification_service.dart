@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -15,7 +16,9 @@ import '../../features/notifications/state/notification_deep_link_handler.dart';
 import '../logging/app_logger.dart';
 import '../models/app_notification.dart';
 import 'auth_service.dart';
+import 'device_identity.dart';
 import 'device_token_service.dart';
+import 'single_device_enforcer.dart';
 
 /// One Android notification channel per notification "family" (Phase 9) —
 /// never one generic channel for everything, so the user can control each
@@ -163,8 +166,9 @@ class PushNotificationService implements PushPermissionGateway {
 
     _foregroundSub = FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
     _openedAppSub = FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationTap);
-    _tokenRefreshSub = FirebaseMessaging.instance.onTokenRefresh.listen((token) {
-      _persistToken(token);
+    _tokenRefreshSub = FirebaseMessaging.instance.onTokenRefresh.listen((token) async {
+      final deviceId = await DeviceIdentity.current();
+      _persistToken(token, deviceId: deviceId);
     });
 
     _initialized = true;
@@ -179,6 +183,15 @@ class PushNotificationService implements PushPermissionGateway {
         if (details.actionId == _snoozeActionId) {
           _handleSnooze(details);
           return;
+        }
+        // Ringing alarms are `ongoing: true` (not swipe-dismissible, so a
+        // student can't accidentally clear one without acting on it) —
+        // which means tapping "Start Session" or the notification body
+        // itself does NOT auto-clear it the way a normal notification
+        // would. Explicitly cancel it here so the alarm actually stops
+        // once the student has acted on it.
+        if (details.id != null) {
+          unawaited(_local.cancel(details.id!));
         }
         final payload = details.payload;
         if (payload != null && payload.isNotEmpty) {
@@ -204,6 +217,16 @@ class PushNotificationService implements PushPermissionGateway {
     );
   }
 
+  /// The device's own system alarm ringtone (`Settings.System.
+  /// DEFAULT_ALARM_ALERT_URI`) — every Android phone already has one
+  /// configured, so this plays a genuine, properly-long alarm tone without
+  /// this app needing to bundle its own audio asset (none exists in this
+  /// project). Paired with [AudioAttributesUsage.alarm] so it routes
+  /// through the phone's Alarm volume, not Notification/Media volume, and
+  /// behaves like a real alarm (rings even in most silent/DND
+  /// configurations) rather than a one-shot notification chime.
+  static const _alarmSound = UriAndroidNotificationSound('content://settings/system/alarm_alert');
+
   Future<void> _createChannels() async {
     final androidPlugin =
         _local.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
@@ -220,7 +243,18 @@ class PushNotificationService implements PushPermissionGateway {
             // user's own Android channel settings (Phase 10) — never forced
             // here; leaving these unset uses the platform default for the
             // channel's importance level, which the user can still override
-            // per-channel from Android Settings at any time.
+            // per-channel from Android Settings at any time. The one
+            // exception is `routineAlarm`: it must actually ring like an
+            // alarm, not chime like a notification.
+            playSound: true,
+            sound: ch == PushChannel.routineAlarm ? _alarmSound : null,
+            audioAttributesUsage: ch == PushChannel.routineAlarm
+                ? AudioAttributesUsage.alarm
+                : AudioAttributesUsage.notification,
+            enableVibration: true,
+            vibrationPattern: ch == PushChannel.routineAlarm
+                ? Int64List.fromList(const [0, 1000, 500, 1000, 500, 1000, 500, 1000])
+                : null,
           ),
         ),
     ]);
@@ -229,9 +263,13 @@ class PushNotificationService implements PushPermissionGateway {
   // ── Foreground display (Phase 7) ──
 
   void _handleForegroundMessage(RemoteMessage message) {
+    final category = message.data['category'] as String? ?? '';
+    if (category == 'FORCE_LOGOUT') {
+      unawaited(SingleDeviceEnforcer.handleForceLogoutPush(message.data));
+      return; // Never shown as a normal toast — the sign-out flow owns the UI.
+    }
     final notification = message.notification;
     if (notification == null) return; // data-only message: nothing to show
-    final category = message.data['category'] as String? ?? '';
     if (category == 'GROUP_MESSAGE' &&
         activeGroupId != null &&
         message.data['group_id'] == activeGroupId) {
@@ -272,19 +310,26 @@ class PushNotificationService implements PushPermissionGateway {
   /// (Android) and a "Start Session" / "Snooze 5m" action pair. [payload] is
   /// the deep-link path opened on tap (or after a snooze), exactly like a
   /// push notification's payload.
-  Future<void> scheduleExactNotification({
+  /// Returns true once the OS has actually accepted the schedule, false on
+  /// any failure (not initialized, permission missing, plugin error) — a
+  /// caller that wants to tell the user "reminder set" must check this
+  /// rather than assume success just because nothing threw.
+  Future<bool> scheduleExactNotification({
     required int id,
     required String title,
     required String body,
     required tz.TZDateTime scheduledDate,
     required String payload,
+    /// e.g. `DateTimeComponents.time` to repeat daily at the same
+    /// hour/minute instead of firing once. Null = one-shot (default).
+    DateTimeComponents? matchDateTimeComponents,
   }) async {
     if (!_initialized && _initFuture == null) {
       // Local notifications are set up as part of full initialize(); a
       // caller that schedules before the app has called initialize() gets a
       // clear no-op rather than a plugin-not-ready exception.
       AppLogger.warning('scheduleExactNotification called before PushNotificationService.initialize()');
-      return;
+      return false;
     }
     try {
       await _local.zonedSchedule(
@@ -301,6 +346,19 @@ class PushNotificationService implements PushPermissionGateway {
             priority: Priority.max,
             fullScreenIntent: true,
             category: AndroidNotificationCategory.alarm,
+            // Rings like a real alarm (device's own alarm tone, Alarm
+            // volume stream) rather than chiming once like a notification
+            // — see `_alarmSound`/_createChannels. Stays on screen and
+            // keeps vibrating until the student taps Start Session or
+            // Snooze, instead of being swipe-dismissible like an ordinary
+            // notification.
+            playSound: true,
+            sound: _alarmSound,
+            audioAttributesUsage: AudioAttributesUsage.alarm,
+            enableVibration: true,
+            vibrationPattern: Int64List.fromList(const [0, 1000, 500, 1000, 500, 1000, 500, 1000]),
+            ongoing: true,
+            autoCancel: false,
             actions: const [
               AndroidNotificationAction('start_session', 'Start Session', showsUserInterface: true),
               AndroidNotificationAction(_snoozeActionId, 'Snooze 5m'),
@@ -309,10 +367,13 @@ class PushNotificationService implements PushPermissionGateway {
         ),
         androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
         uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
+        matchDateTimeComponents: matchDateTimeComponents,
         payload: payload,
       );
+      return true;
     } catch (e, st) {
       AppLogger.error('scheduleExactNotification failed for id=$id: $e', stackTrace: st);
+      return false;
     }
   }
 
@@ -393,8 +454,13 @@ class PushNotificationService implements PushPermissionGateway {
   /// platform's own one-shot-unless-permanently-denied rule.
   @override
   Future<SystemPermissionStatus> requestPermissionWithRationale(BuildContext context) async {
-    await _markAsked();
-
+    // Mark "asked" only once we've actually gone through with asking —
+    // either the user answered the rationale dialog, or we're about to fire
+    // the real OS prompt. Marking this BEFORE either of those (as this used
+    // to) permanently poisons hasAskedBefore() the instant this function is
+    // entered — if the widget context happened to be unmounted or the
+    // dialog was interrupted, the real POST_NOTIFICATIONS prompt might
+    // never have fired at all, yet the app would never ask again.
     if (context.mounted) {
       final proceed = await showDialog<bool>(
             context: context,
@@ -418,10 +484,14 @@ class PushNotificationService implements PushPermissionGateway {
             ),
           ) ??
           false;
-      if (!proceed) return checkPermissionStatus();
+      if (!proceed) {
+        await _markAsked();
+        return checkPermissionStatus();
+      }
     }
 
     final result = await Permission.notification.request();
+    await _markAsked();
     return switch (result) {
       PermissionStatus.granted => SystemPermissionStatus.granted,
       PermissionStatus.permanentlyDenied => SystemPermissionStatus.permanentlyDenied,
@@ -443,24 +513,54 @@ class PushNotificationService implements PushPermissionGateway {
   /// persists it.
   @override
   Future<void> registerCurrentDevice() async {
-    if (!_initialized) return;
     if (!Platform.isAndroid) return;
+    // main.dart kicks off initialize() in the background, deferred past the
+    // first frame, so it very often hasn't finished by the time AppShell
+    // calls this on cold start. Bailing out here (as this used to) silently
+    // abandons FCM token registration for the entire app session — nothing
+    // ever retries it — which is exactly why push never worked even with
+    // permission granted. initialize() is idempotent and returns
+    // immediately once already done, so awaiting it here is always safe.
+    await initialize();
+    if (!_initialized) {
+      AppLogger.warning('registerCurrentDevice: skipped — push service failed to initialize');
+      return;
+    }
     final status = await checkPermissionStatus();
+    AppLogger.info('registerCurrentDevice: permission status = $status');
     if (status != SystemPermissionStatus.granted) return;
 
     try {
       final token = await FirebaseMessaging.instance.getToken();
-      if (token != null) await _persistToken(token);
+      AppLogger.info('registerCurrentDevice: FCM token = ${token == null ? 'null' : '${token.substring(0, 12)}…'}');
+      if (token != null) {
+        final deviceId = await DeviceIdentity.current();
+        await _persistToken(token, deviceId: deviceId);
+      }
     } catch (e, st) {
       AppLogger.error('FCM token registration failed: $e', stackTrace: st);
     }
   }
 
-  Future<void> _persistToken(String token) async {
+  /// One retry after a short delay: right after a cold start the device's
+  /// network stack is sometimes not fully up yet (DNS resolution fails for
+  /// a couple of seconds even though the radio reports connected) — a
+  /// one-shot attempt right then can permanently miss registering the
+  /// token for the whole app session, which is exactly what device
+  /// evidence showed. A single retry covers that window without adding
+  /// unbounded retry complexity for a genuinely offline device.
+  Future<void> _persistToken(String token, {String? deviceId, bool isRetry = false}) async {
     try {
-      await _tokenService.registerToken(fcmToken: token, appVersion: null);
+      await _tokenService.registerToken(fcmToken: token, deviceId: deviceId, appVersion: null);
+      AppLogger.info('registerCurrentDevice: token persisted to server successfully');
     } catch (e) {
-      AppLogger.warning('Device token persist failed: $e');
+      if (!isRetry) {
+        AppLogger.warning('Device token persist failed, retrying once in 5s: $e');
+        await Future.delayed(const Duration(seconds: 5));
+        await _persistToken(token, deviceId: deviceId, isRetry: true);
+        return;
+      }
+      AppLogger.warning('Device token persist failed (after retry): $e');
     }
   }
 

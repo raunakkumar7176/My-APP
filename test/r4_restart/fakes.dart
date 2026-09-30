@@ -132,8 +132,73 @@ class FakeTestRepository implements TestRepository {
       joinCode: input.joinCode ?? t.joinCode,
       settings: input.settings ?? t.settings,
       config: input.config ?? t.config,
+      // rpc_update_test has no shuffle parameter — the column is owned by
+      // setShuffleQuestions below and must survive an unrelated update.
+      shuffleQuestions: t.shuffleQuestions,
     );
   }
+
+  /// Mirrors `rpc_set_test_shuffle_questions` (draft-only column writer).
+  /// [failShuffleWith] simulates the RPC being unavailable (e.g. the
+  /// migration not applied yet), which the creation controller must treat
+  /// as non-fatal.
+  Object? failShuffleWith;
+  final List<String> shuffleCalls = [];
+
+  @override
+  Future<void> setShuffleQuestions(String testId, bool shuffle) async {
+    shuffleCalls.add('$testId:$shuffle');
+    if (failShuffleWith != null) throw failShuffleWith!;
+    final t = rows[testId];
+    if (t == null) throw const DataError(message: 'Test not found.');
+    if (t.status != TestStatus.draft) {
+      throw const DataError(
+        message: 'shuffle_questions can only be changed while the test is a draft',
+      );
+    }
+    rows[testId] = _withShuffle(t, shuffle);
+  }
+
+  /// Full-field copy of [t] with only `shuffleQuestions` replaced: the fake
+  /// row must survive a column-only write with EVERY other field intact
+  /// (dropping `endsAt` here once silently broke a schedule assertion).
+  static Test _withShuffle(Test t, bool shuffle) => Test(
+    id: t.id,
+    createdBy: t.createdBy,
+    title: t.title,
+    description: t.description,
+    instructions: t.instructions,
+    subjectId: t.subjectId,
+    classLevel: t.classLevel,
+    status: t.status,
+    durationSec: t.durationSec,
+    marksPerQuestion: t.marksPerQuestion,
+    negativeMarks: t.negativeMarks,
+    startsAt: t.startsAt,
+    endsAt: t.endsAt,
+    groupId: t.groupId,
+    accessCode: t.accessCode,
+    joinCode: t.joinCode,
+    testMode: t.testMode,
+    maxParticipants: t.maxParticipants,
+    allowLateJoin: t.allowLateJoin,
+    isSoftDeleted: t.isSoftDeleted,
+    deletedAt: t.deletedAt,
+    archivedAt: t.archivedAt,
+    tags: t.tags,
+    language: t.language,
+    difficulty: t.difficulty,
+    totalMarks: t.totalMarks,
+    passingMarks: t.passingMarks,
+    totalQuestions: t.totalQuestions,
+    shuffleQuestions: shuffle,
+    showAnswersAfter: t.showAnswersAfter,
+    isPublic: t.isPublic,
+    createdAt: t.createdAt,
+    updatedAt: t.updatedAt,
+    config: t.config,
+    settings: t.settings,
+  );
 
   /// Mirrors `rpc_delete_test`: creator + draft + not already deleted, else
   /// the server error codes the mapper knows. [failDeleteWith] simulates a
@@ -169,6 +234,7 @@ class FakeTestRepository implements TestRepository {
       settings: t.settings,
       isSoftDeleted: true,
       deletedAt: DateTime(2026, 9, 16),
+      shuffleQuestions: t.shuffleQuestions,
     );
   }
 
@@ -191,6 +257,7 @@ class FakeTestRepository implements TestRepository {
       endsAt: t.endsAt,
       settings: t.settings,
       config: t.config,
+      shuffleQuestions: t.shuffleQuestions,
     );
   }
 
@@ -961,6 +1028,17 @@ class FakeResultRepository implements ResultRepository {
 
   @override
   Future<List<Result>> mineForTest(String testId) async => mine;
+
+  /// `rpc_get_my_answer_key` stand-in: attempt id -> (question id -> correct
+  /// option index). Empty until a test seeds it, matching the live RPC's
+  /// "no rows" case (the review screen then shows no verdicts).
+  final Map<String, Map<String, int>> answerKeyByAttempt = {};
+
+  @override
+  Future<Map<String, int>> myAnswerKey(String attemptId) async {
+    calls.add('myAnswerKey:$attemptId');
+    return answerKeyByAttempt[attemptId] ?? const {};
+  }
 
   /// Raw jsonb the fake RPC returns (live shape). Parsed exactly like the
   /// real repository so controller tests exercise the same mapping.

@@ -80,6 +80,7 @@ class ProfileController extends DisposableNotifier {
   String? _saveError;
   AvatarOpState _avatarOpState = AvatarOpState.idle;
   String? _avatarError;
+  bool? _viewerFollows;
 
   bool get isViewingOther =>
       targetUserId != null &&
@@ -94,6 +95,12 @@ class ProfileController extends DisposableNotifier {
   Profile? get profile => isViewingOther
       ? (_targetProfile ?? initialProfile)
       : ProfileService.currentProfile;
+
+  /// Whether the CALLING user already follows the student on screen.
+  /// null until a peer profile has been (or is being) loaded — a peer
+  /// profile seeded from [initialProfile] never asks the server, so the
+  /// caller must treat null as "unknown" and show the inactive state.
+  bool? get viewerFollows => _viewerFollows;
   bool get isEditing => !isViewingOther && _isEditing;
   bool get isSaving => _isSaving;
   String? get saveError => _saveError;
@@ -118,6 +125,10 @@ class ProfileController extends DisposableNotifier {
         if (fetched != null) {
           _targetProfile = fetched;
           _loadState = ProfileLoadState.loaded;
+          // Paint the student immediately, then refine the counts and the
+          // Follow button's real state once those two queries land.
+          notifyListeners();
+          await _loadPeerSocialState(fetched.id);
         } else {
           _loadState = ProfileLoadState.empty;
         }
@@ -156,6 +167,46 @@ class ProfileController extends DisposableNotifier {
       AppLogger.error('Profile load failed: $e', stackTrace: st);
       _loadError = 'Failed to load your profile. Please try again.';
       _loadState = ProfileLoadState.error;
+    }
+    notifyListeners();
+  }
+
+  /// Loads the social layer of an already-fetched peer profile: live
+  /// `user_follows` counts for the Followers / Following tiles, plus
+  /// whether the caller already follows this student (the Follow button's
+  /// real initial state).
+  ///
+  /// Deliberately never throws: the profile row itself is already on
+  /// screen, so a hiccup on either query degrades to what the database
+  /// already gave us (`profiles.followers_count` / `following_count` and
+  /// an inactive Follow button) instead of failing the whole screen.
+  Future<void> _loadPeerSocialState(String peerId) async {
+    try {
+      final counts = await ProfileService.fetchFollowCounts(peerId);
+      _targetProfile = _targetProfile?.copyWith(
+        followersCount: counts.followers,
+        followingCount: counts.following,
+      );
+    } catch (e) {
+      AppLogger.warning('Peer follow counts unavailable for $peerId: $e');
+    }
+
+    try {
+      _viewerFollows = await ProfileService.isFollowingUser(peerId);
+    } catch (e) {
+      AppLogger.warning('Peer follow state unavailable for $peerId: $e');
+    }
+  }
+
+  /// Applies a follow/unfollow the screen just performed successfully:
+  /// keeps [viewerFollows] and the peer's follower count in step with the
+  /// edge the server actually recorded.
+  void applyViewerFollowChange({required bool following}) {
+    _viewerFollows = following;
+    final peer = _targetProfile;
+    if (peer != null) {
+      final next = peer.followersCount + (following ? 1 : -1);
+      _targetProfile = peer.copyWith(followersCount: next < 0 ? 0 : next);
     }
     notifyListeners();
   }

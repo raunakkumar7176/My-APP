@@ -30,6 +30,7 @@ class ConfigurationStep extends StatefulWidget {
     this.lateJoin = LateJoinSettings.defaults,
     this.questionConfig = QuestionConfig.none,
     this.autoSubmit = AutoSubmitSettings.defaults,
+    this.shuffle = ShuffleSettings.defaults,
     this.groups = const [],
     this.groupsLoading = false,
     super.key,
@@ -51,6 +52,9 @@ class ConfigurationStep extends StatefulWidget {
   final LateJoinSettings lateJoin;
   final QuestionConfig questionConfig;
   final AutoSubmitSettings autoSubmit;
+
+  /// Two-level anti-cheat shuffle (questions + options) for this test.
+  final ShuffleSettings shuffle;
   final ValueChanged<Map<String, dynamic>> onChanged;
 
   /// Groups the user belongs to (loaded by the controller).
@@ -72,6 +76,7 @@ class _ConfigurationStepState extends State<ConfigurationStep> {
   late LateJoinSettings _lateJoin;
   late QuestionConfig _questionConfig;
   late AutoSubmitSettings _autoSubmit;
+  late ShuffleSettings _shuffle;
   DateTime? _startsAt;
 
   static const _minDurationMinutes = 10;
@@ -110,6 +115,7 @@ class _ConfigurationStepState extends State<ConfigurationStep> {
     _lateJoin = widget.lateJoin;
     _questionConfig = widget.questionConfig;
     _autoSubmit = widget.autoSubmit;
+    _shuffle = widget.shuffle;
     _startsAt = widget.startsAt;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -150,6 +156,7 @@ class _ConfigurationStepState extends State<ConfigurationStep> {
       'lateJoin': _lateJoin,
       'questionConfig': _questionConfig,
       'autoSubmit': _autoSubmit,
+      'shuffle': _shuffle,
       'accessCode': _accessCodeController.text.isNotEmpty
           ? _accessCodeController.text
           : null,
@@ -492,6 +499,49 @@ class _ConfigurationStepState extends State<ConfigurationStep> {
             ),
           ],
 
+          // ── Anti-Cheat (Shuffle) ──
+          SectionCard(
+            title: 'Anti-Cheat Shuffle',
+            subtitle:
+                'Presentation only — questions, options and correct answers '
+                'are never modified, so scoring is unaffected. Seeded per '
+                'attempt, so an interrupted test always comes back in the '
+                'same order.',
+            children: [
+              SettingTile(
+                icon: Icons.shuffle,
+                title: 'Shuffle Questions',
+                subtitle: _shuffle.questions
+                    ? 'Each student sees the questions in their own order'
+                    : 'Everyone sees questions in the same order',
+                trailing: Switch(
+                  key: const Key('shuffle_questions_switch'),
+                  value: _shuffle.questions,
+                  onChanged: (value) {
+                    setState(() => _shuffle = _shuffle.copyWith(questions: value));
+                    _update();
+                  },
+                ),
+              ),
+              const SizedBox(height: 8),
+              SettingTile(
+                icon: Icons.swap_horiz,
+                title: 'Shuffle Options',
+                subtitle: _shuffle.options
+                    ? 'A/B/C/D order is re-randomised for every student'
+                    : 'Everyone sees A/B/C/D in the same order',
+                trailing: Switch(
+                  key: const Key('shuffle_options_switch'),
+                  value: _shuffle.options,
+                  onChanged: (value) {
+                    setState(() => _shuffle = _shuffle.copyWith(options: value));
+                    _update();
+                  },
+                ),
+              ),
+            ],
+          ),
+
           // ── Attempt Settings (every kind) ──
           SectionCard(
             title: 'Attempt Settings',
@@ -503,6 +553,7 @@ class _ConfigurationStepState extends State<ConfigurationStep> {
                 icon: Icons.replay_outlined,
                 title: 'Allow Re-attempt',
                 trailing: Switch(
+                  key: const Key('allow_reattempt'),
                   value: _attempts.allowReattempt,
                   onChanged: (value) {
                     setState(

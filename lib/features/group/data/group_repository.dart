@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/errors/app_error.dart';
@@ -1132,58 +1134,15 @@ class SupabaseGroupRepository implements GroupRepository {
     required void Function(GroupMessage message) onUpdate,
     void Function(bool connected)? onConnectionChange,
   }) {
-    // Channel name only needs to be unique per subscription on this client;
-    // it carries no server meaning.
-    final channel = _client.channel('group_messages:$groupId');
-    channel
-      ..onPostgresChanges(
-        event: PostgresChangeEvent.insert,
-        schema: 'public',
-        table: 'group_messages',
-        filter: PostgresChangeFilter(
-          type: PostgresChangeFilterType.eq,
-          column: 'group_id',
-          value: groupId,
-        ),
-        callback: (payload) {
-          try {
-            onInsert(GroupMessage.fromJson(payload.newRecord));
-          } catch (e, st) {
-            AppLogger.error(
-              'Realtime group_messages INSERT decode failed: $e',
-              stackTrace: st,
-            );
-          }
-        },
-      )
-      ..onPostgresChanges(
-        event: PostgresChangeEvent.update,
-        schema: 'public',
-        table: 'group_messages',
-        filter: PostgresChangeFilter(
-          type: PostgresChangeFilterType.eq,
-          column: 'group_id',
-          value: groupId,
-        ),
-        callback: (payload) {
-          try {
-            onUpdate(GroupMessage.fromJson(payload.newRecord));
-          } catch (e, st) {
-            AppLogger.error(
-              'Realtime group_messages UPDATE decode failed: $e',
-              stackTrace: st,
-            );
-          }
-        },
-      )
-      ..subscribe((status, error) {
-        if (error != null) {
-          AppLogger.warning('group_messages realtime channel error: $error');
-        }
-        onConnectionChange?.call(status == RealtimeSubscribeStatus.subscribed);
-      });
-
-    return _SupabaseGroupMessageSubscription(_client, channel);
+    final subscription = _RetryingGroupMessageSubscription(
+      client: _client,
+      groupId: groupId,
+      onInsert: onInsert,
+      onUpdate: onUpdate,
+      onConnectionChange: onConnectionChange,
+    );
+    subscription.start();
+    return subscription;
   }
 
   @override
@@ -1247,14 +1206,135 @@ class SupabaseGroupRepository implements GroupRepository {
   }
 }
 
-class _SupabaseGroupMessageSubscription implements GroupMessageSubscription {
-  _SupabaseGroupMessageSubscription(this._client, this._channel);
+/// Wraps one `group_messages` Realtime channel and keeps it alive:
+/// `channelError`/`timedOut`/`closed` no longer leave the UI stuck on a
+/// permanent "Reconnecting…" banner — this resubscribes itself with
+/// exponential backoff (2s, 4s, 8s, 16s, capped at 30s) until [cancel] is
+/// called. Also refreshes the socket's auth token before each (re)connect,
+/// since a channel opened with a since-expired access token can silently
+/// fail to authorize on the server side without necessarily erroring
+/// client-side first.
+class _RetryingGroupMessageSubscription implements GroupMessageSubscription {
+  _RetryingGroupMessageSubscription({
+    required this._client,
+    required this.groupId,
+    required this.onInsert,
+    required this.onUpdate,
+    this.onConnectionChange,
+  });
 
   final SupabaseClient _client;
-  final RealtimeChannel _channel;
+  final String groupId;
+  final void Function(GroupMessage message) onInsert;
+  final void Function(GroupMessage message) onUpdate;
+  final void Function(bool connected)? onConnectionChange;
+
+  RealtimeChannel? _channel;
+  Timer? _retryTimer;
+  int _retryCount = 0;
+  bool _cancelled = false;
+
+  void start() {
+    if (_cancelled) return;
+    unawaited(_connect());
+  }
+
+  Future<void> _connect() async {
+    if (_cancelled) return;
+    try {
+      await _client.realtime.setAuth(_client.auth.currentSession?.accessToken);
+    } catch (e) {
+      AppLogger.warning('group_messages realtime setAuth failed: $e');
+    }
+    if (_cancelled) return;
+
+    // Unique per attempt so a slow-to-close previous channel can never be
+    // confused with the new one by the realtime client.
+    final channel = _client.channel(
+      'group_messages:$groupId:${DateTime.now().microsecondsSinceEpoch}',
+    );
+    _channel = channel;
+    channel
+      ..onPostgresChanges(
+        event: PostgresChangeEvent.insert,
+        schema: 'public',
+        table: 'group_messages',
+        filter: PostgresChangeFilter(
+          type: PostgresChangeFilterType.eq,
+          column: 'group_id',
+          value: groupId,
+        ),
+        callback: (payload) {
+          try {
+            onInsert(GroupMessage.fromJson(payload.newRecord));
+          } catch (e, st) {
+            AppLogger.error(
+              'Realtime group_messages INSERT decode failed: $e',
+              stackTrace: st,
+            );
+          }
+        },
+      )
+      ..onPostgresChanges(
+        event: PostgresChangeEvent.update,
+        schema: 'public',
+        table: 'group_messages',
+        filter: PostgresChangeFilter(
+          type: PostgresChangeFilterType.eq,
+          column: 'group_id',
+          value: groupId,
+        ),
+        callback: (payload) {
+          try {
+            onUpdate(GroupMessage.fromJson(payload.newRecord));
+          } catch (e, st) {
+            AppLogger.error(
+              'Realtime group_messages UPDATE decode failed: $e',
+              stackTrace: st,
+            );
+          }
+        },
+      )
+      ..subscribe((status, error) {
+        if (_cancelled) return;
+        if (error != null) {
+          AppLogger.warning('group_messages realtime channel error: $error');
+        }
+        if (status == RealtimeSubscribeStatus.subscribed) {
+          _retryCount = 0;
+          onConnectionChange?.call(true);
+          return;
+        }
+        onConnectionChange?.call(false);
+        if (status == RealtimeSubscribeStatus.channelError ||
+            status == RealtimeSubscribeStatus.timedOut ||
+            status == RealtimeSubscribeStatus.closed) {
+          _scheduleRetry();
+        }
+      });
+  }
+
+  void _scheduleRetry() {
+    if (_cancelled) return;
+    _retryTimer?.cancel();
+    final seconds = (1 << _retryCount.clamp(0, 4)) * 2; // 2,4,8,16,32->capped
+    final delay = Duration(seconds: seconds.clamp(2, 30));
+    _retryCount++;
+    AppLogger.warning(
+      'group_messages realtime retrying in ${delay.inSeconds}s (attempt $_retryCount)',
+    );
+    final deadChannel = _channel;
+    if (deadChannel != null) unawaited(_client.removeChannel(deadChannel));
+    _retryTimer = Timer(delay, () {
+      if (!_cancelled) unawaited(_connect());
+    });
+  }
 
   @override
   Future<void> cancel() async {
-    await _client.removeChannel(_channel);
+    _cancelled = true;
+    _retryTimer?.cancel();
+    final channel = _channel;
+    if (channel != null) await _client.removeChannel(channel);
   }
 }

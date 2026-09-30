@@ -8,6 +8,7 @@ import '../../../core/services/subject_service.dart';
 import '../../../core/services/syllabus_service.dart';
 import '../data/question_bank_repository.dart';
 import '../domain/json_question_parser.dart';
+import '../domain/question_text_parser.dart';
 import '../models/question_draft.dart';
 import '../screens/ai_generation_screen.dart';
 import 'section_card.dart';
@@ -29,7 +30,7 @@ extension QuestionSourceInfo on QuestionSource {
   String get label {
     switch (this) {
       case QuestionSource.manual:
-        return 'Manual / JSON Paste';
+        return 'Manual / Smart Paste';
       case QuestionSource.myStudy:
         return 'My Study';
       case QuestionSource.document:
@@ -43,7 +44,7 @@ extension QuestionSourceInfo on QuestionSource {
   String get description {
     switch (this) {
       case QuestionSource.manual:
-        return 'Write questions yourself, or paste a JSON array to generate them instantly.';
+        return 'Write questions yourself, or paste any AI chatbot\'s plain-text MCQs to generate them instantly.';
       case QuestionSource.myStudy:
         return 'Pick a subject and chapter you\'re studying; pulls from the question bank scoped to it.';
       case QuestionSource.document:
@@ -643,14 +644,30 @@ class _ManualOrJsonSourceState extends State<_ManualOrJsonSource> {
     super.dispose();
   }
 
+  /// Auto-detects the pasted format: JSON (starts with `{`/`[`) uses the
+  /// strict JSON parser; anything else — the plain text any AI chatbot
+  /// naturally writes for an MCQ set — goes through the Smart Paste parser.
+  /// The student never has to know or choose which one applies.
   void _parse() {
-    final result = JsonQuestionParser.parse(_controller.text);
+    final text = _controller.text;
+    final looksLikeJson = RegExp(r'^\s*[\[\{]').hasMatch(text);
+    final List<String> errors;
+    final List<QuestionDraft> drafts;
+    if (looksLikeJson) {
+      final result = JsonQuestionParser.parse(text);
+      errors = result.errors;
+      drafts = result.drafts;
+    } else {
+      final result = QuestionTextParser.parse(text);
+      errors = result.errors;
+      drafts = result.drafts;
+    }
     setState(() {
-      _errors = result.errors;
-      _parsedCount = result.drafts.length;
+      _errors = errors;
+      _parsedCount = drafts.length;
     });
-    if (result.isValid) {
-      widget.onJsonParsed(result.drafts);
+    if (errors.isEmpty && drafts.isNotEmpty) {
+      widget.onJsonParsed(drafts);
     }
   }
 
@@ -658,18 +675,19 @@ class _ManualOrJsonSourceState extends State<_ManualOrJsonSource> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return SectionCard(
-      title: 'Paste JSON / Raw MCQ',
-      subtitle: 'Write questions in the Questions step, or paste a JSON array here.',
+      title: 'Smart Paste',
+      subtitle: 'Write questions in the Questions step, or paste any AI chatbot\'s '
+          'plain-text MCQ output here — no JSON needed.',
       children: [
         TextField(
           key: const Key('json_paste_field'),
           controller: _controller,
-          maxLines: 8,
+          maxLines: 10,
           style: const TextStyle(fontFamily: 'monospace', fontSize: 12.5),
           decoration: const InputDecoration(
-            hintText:
-                '[{"question": "...", "options": ["A","B","C","D"], '
-                '"correct_option": 0, "explanation": "..."}]',
+            hintText: '1. 1857 ki kranti kahan se shuru hui thi?\n'
+                'A. Meerut\nB. Delhi\nC. Kanpur\nD. Jhansi\n'
+                'Ans: A\nExp: Yeh kranti 10 May 1857 ko Meerut se shuru hui thi.',
             border: OutlineInputBorder(),
           ),
         ),
@@ -677,8 +695,8 @@ class _ManualOrJsonSourceState extends State<_ManualOrJsonSource> {
         FilledButton.icon(
           key: const Key('json_paste_parse_btn'),
           onPressed: _parse,
-          icon: const Icon(Icons.data_object),
-          label: const Text('Paste JSON / Raw MCQ'),
+          icon: const Icon(Icons.auto_fix_high),
+          label: const Text('Parse Questions'),
         ),
         if (_errors.isNotEmpty) ...[
           const SizedBox(height: 8),

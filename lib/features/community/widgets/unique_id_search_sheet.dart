@@ -546,7 +546,11 @@ class _UniqueIdSearchSheetState extends State<UniqueIdSearchSheet> {
                 child: FilledButton.icon(
                   onPressed: () {
                     Navigator.of(context).pop();
-                    context.push('/profile?userId=${student.id}');
+                    // Path parameter, NOT ?userId= — the /profile route
+                    // only reads :userId, so the query form silently
+                    // opened the viewer's own profile instead of this
+                    // student's.
+                    context.push('/profile/${student.id}');
                   },
                   icon: const Icon(Icons.account_circle_outlined, size: 18),
                   label: const Text('View Profile'),

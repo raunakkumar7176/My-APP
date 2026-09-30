@@ -189,7 +189,12 @@ abstract final class PublishReadiness {
       );
     }
 
-    if (i.kind.requiresScope && i.syllabusNodeCount != null) {
+    // A syllabus topic is only required to SCOPE a test that still needs
+    // its questions found/generated from that scope. Once real questions
+    // already exist (Manual, JSON paste, Document, AI, or Question Bank),
+    // the scope no longer gates anything real — the test already has
+    // concrete content — so it is not enforced here.
+    if (i.kind.requiresScope && i.syllabusNodeCount != null && total == 0) {
       final ok = i.syllabusNodeCount! > 0;
       items.add(
         ReadinessItem(

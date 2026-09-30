@@ -302,6 +302,10 @@ void main() {
           'allow_reattempt': true,
           'max_attempts': 3,
           'auto_submit': true,
+          // Shuffle defaults OFF for self-paced kinds; both flags are always
+          // written so the settings copy can never lag the column.
+          'shuffle_questions': false,
+          'shuffle_options': false,
         }); // Practice default
 
         final c2 =
@@ -322,6 +326,9 @@ void main() {
           'max_attempts': 1,
           'late_join_minutes': 10,
           'auto_submit': true,
+          // Anti-cheat shuffle defaults ON for kinds taken side by side.
+          'shuffle_questions': true,
+          'shuffle_options': true,
         });
       },
     );
@@ -338,6 +345,8 @@ void main() {
           'allow_reattempt': false,
           'max_attempts': 1,
           'auto_submit': true,
+          'shuffle_questions': false,
+          'shuffle_options': false,
         });
         expect(c.questionsGuidance, contains('5–10'));
       },

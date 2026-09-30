@@ -110,6 +110,13 @@ abstract interface class TestRepository {
 
   Future<void> publish(String testId);
 
+  /// `rpc_set_test_shuffle_questions(p_test_id, p_shuffle)` — the only
+  /// writer of the `tests.shuffle_questions` COLUMN (draft-only on the
+  /// server). Callers must not treat a failure as fatal: the attempt engine
+  /// also reads the `settings.shuffle_questions` mirror, so the feature
+  /// still works while this RPC is unavailable.
+  Future<void> setShuffleQuestions(String testId, bool shuffle);
+
   /// Draft-only soft delete via `rpc_delete_test` (creator, status = draft,
   /// not already deleted — all enforced by the server). Nothing is
   /// physically removed.
@@ -225,6 +232,16 @@ class SupabaseTestRepository implements TestRepository {
     );
     AppLogger.rpcShape('rpc_publish_test', response);
   }, TestErrorContext.publish);
+
+  @override
+  Future<void> setShuffleQuestions(String testId, bool shuffle) =>
+      _guard(() async {
+        final response = await _client.rpc(
+          'rpc_set_test_shuffle_questions',
+          params: {'p_test_id': testId, 'p_shuffle': shuffle},
+        );
+        AppLogger.rpcShape('rpc_set_test_shuffle_questions', response);
+      }, TestErrorContext.save);
 
   @override
   Future<void> deleteDraft(String testId, {String? reason}) => _guard(() async {

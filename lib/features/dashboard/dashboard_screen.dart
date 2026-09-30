@@ -17,7 +17,9 @@ import '../routine/widgets/today_routine_card.dart';
 import '../test/data/test_repository.dart';
 import '../test/domain/backend_mapping.dart';
 import '../test/domain/test_lifecycle.dart';
+import '../test/state/test_activity.dart';
 import '../test/widgets/test_formatters.dart';
+import '../../l10n/app_localizations.dart';
 import 'domain/greeting.dart';
 import 'widgets/continue_studying_card.dart';
 import 'widgets/dashboard_quick_actions.dart';
@@ -70,6 +72,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   bool _loadingUpcoming = true;
   String? _upcomingError;
   int _draftsCount = 0;
+  int _seenTestActivity = TestActivity.revision.value;
 
   @override
   void initState() {
@@ -81,6 +84,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _clockTimer = Timer.periodic(const Duration(minutes: 1), (_) {
       if (mounted) setState(() {});
     });
+    // AppShell keeps this screen mounted via IndexedStack, so it never
+    // re-runs initState after a test finishes on another tab — reload when
+    // TestActivity signals a fresh submission (see test_activity.dart).
+    TestActivity.revision.addListener(_onTestActivity);
     _loadAll();
   }
 
@@ -88,9 +95,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (mounted) setState(() {});
   }
 
+  void _onTestActivity() {
+    if (TestActivity.revision.value == _seenTestActivity) return;
+    _seenTestActivity = TestActivity.revision.value;
+    if (mounted) _loadAll();
+  }
+
   @override
   void dispose() {
     _clockTimer?.cancel();
+    TestActivity.revision.removeListener(_onTestActivity);
     _performance.removeListener(_onChanged);
     _performance.dispose();
     super.dispose();
@@ -160,6 +174,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final l10n = AppLocalizations.of(context)!;
 
     return Scaffold(
       backgroundColor: isDark
@@ -200,16 +215,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   const SizedBox(height: 20),
                   _sectionHeader(
                     context,
-                    "Today's Schedule",
-                    action: ('View Routine', () => context.push('/routine')),
+                    l10n.dashboardTodaySchedule,
+                    action: (l10n.dashboardViewRoutine, () => context.push('/routine')),
                   ),
                   const SizedBox(height: 8),
                   const TodayRoutineCard(),
                   const SizedBox(height: 20),
                   _sectionHeader(
                     context,
-                    'Performance Snapshot',
-                    action: ('Analytics', () => context.push('/performance')),
+                    l10n.dashboardPerformanceSnapshot,
+                    action: (l10n.dashboardAnalytics, () => context.push('/performance')),
                   ),
                   const SizedBox(height: 8),
                   _buildPerformanceSnapshot(),
@@ -227,8 +242,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ],
                   _sectionHeader(
                     context,
-                    'Recent Tests',
-                    action: ('All Papers', () => context.push('/tests?tab=2')),
+                    l10n.dashboardRecentTests,
+                    action: (l10n.dashboardAllPapers, () => context.push('/tests?tab=2')),
                   ),
                   const SizedBox(height: 8),
                   _buildRecentTests(),
@@ -537,6 +552,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     '${next.totalQuestions} Questions',
                   TestFormatters.duration(next.durationSec),
                   kind.label,
+                  next.startsAt != null
+                      ? TestFormatters.dateTime(next.startsAt)
+                      : 'Created ${TestFormatters.dateTime(next.createdAt)}',
                 ].join(' • '),
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurface.withValues(alpha: 0.65),
@@ -683,22 +701,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
       );
     }
 
+    final l10n = AppLocalizations.of(context)!;
     final snapshot = _performance.latestSnapshot;
     final cards = [
       (
-        'Tests Attempted',
+        l10n.dashboardTestsAttempted,
         '${_performance.testsAttempted}',
         Icons.assignment_turned_in_outlined,
         const Color(0xFF2563EB),
       ),
       (
-        'Average Score',
+        l10n.dashboardAverageScore,
         '${_performance.averageScorePercent.toStringAsFixed(0)}%',
         Icons.speed_outlined,
         const Color(0xFF059669),
       ),
       (
-        'Accuracy Rate',
+        l10n.dashboardAccuracyRate,
         '${_performance.averageAccuracy.toStringAsFixed(0)}%',
         Icons.check_circle_outline,
         const Color(0xFF7C3AED),
@@ -1509,7 +1528,9 @@ class _UpcomingTestRow extends StatelessWidget {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        TestFormatters.dateTime(test.startsAt),
+                        test.startsAt != null
+                            ? TestFormatters.dateTime(test.startsAt)
+                            : 'Created ${TestFormatters.dateTime(test.createdAt)}',
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: theme.colorScheme.onSurface.withValues(
                             alpha: 0.6,

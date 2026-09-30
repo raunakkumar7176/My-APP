@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/theme/app_colors.dart';
 import '../../../core/models/group_member.dart';
@@ -244,6 +245,21 @@ class MemberDetailSheet extends StatelessWidget {
             context,
             'Member since',
             '${joined.year}-${two(joined.month)}-${two(joined.day)}',
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              key: const Key('member_view_profile'),
+              onPressed: () {
+                Navigator.of(context).pop();
+                // Real user id in the path parameter — ProfileScreen
+                // resolves it (or a student code) straight back to a row.
+                context.push(isMe ? '/profile' : '/profile/${member.userId}');
+              },
+              icon: const Icon(Icons.account_circle_outlined, size: 18),
+              label: const Text('View Profile'),
+            ),
           ),
         ],
       ),

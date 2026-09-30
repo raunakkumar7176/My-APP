@@ -1,5 +1,6 @@
 import '../../../core/errors/app_error.dart';
 import '../../../core/logging/app_logger.dart';
+import '../../../core/models/performance_summary.dart';
 import '../../../core/models/progress_snapshot.dart';
 import '../../../core/models/result.dart';
 import '../../../core/models/result_analytics.dart';
@@ -10,6 +11,7 @@ import '../../test/data/test_repository.dart';
 import '../../test/domain/result_analytics_mapper.dart';
 import '../../test/domain/test_lifecycle.dart';
 import '../../test/state/disposable_notifier.dart';
+import '../data/performance_repository.dart';
 
 /// One completed test plus the caller's latest result on it.
 final class RecentTestResult {
@@ -30,11 +32,14 @@ class PerformanceController extends DisposableNotifier {
   PerformanceController({
     TestRepository? testRepository,
     ResultRepository? resultRepository,
+    PerformanceRepository? performanceRepository,
   })  : _tests = testRepository ?? const SupabaseTestRepository(),
-        _results = resultRepository ?? const SupabaseResultRepository();
+        _results = resultRepository ?? const SupabaseResultRepository(),
+        _performanceRepo = performanceRepository ?? const SupabasePerformanceRepository();
 
   final TestRepository _tests;
   final ResultRepository _results;
+  final PerformanceRepository _performanceRepo;
 
   static const _maxTestsScanned = 15;
 
@@ -44,6 +49,103 @@ class PerformanceController extends DisposableNotifier {
 
   List<RecentTestResult> _recent = [];
   List<ProgressSnapshot> _snapshots = [];
+
+  // ── 0072 server-authoritative analytics (time-filtered) ──
+  TimeFilter _filter = TimeFilter.week;
+  bool _analyticsLoading = false;
+  String? _analyticsError;
+  PerformanceSummary? _summary;
+  PerformanceSummary? _previousSummary; // for the delta indicator
+  List<SubjectWiseBreakdown> _subjectBreakdown = [];
+  List<DailyActivity> _dailyActivity = [];
+  WeeklyPerformanceReport? _weeklyReport;
+
+  TimeFilter get filter => _filter;
+  bool get isAnalyticsLoading => _analyticsLoading;
+  String? get analyticsError => _analyticsError;
+  PerformanceSummary get summary => _summary ?? PerformanceSummary.empty;
+  double? get accuracyDelta => (_summary != null && _previousSummary != null)
+      ? _summary!.accuracyPercentage - _previousSummary!.accuracyPercentage
+      : null;
+  List<SubjectWiseBreakdown> get subjectBreakdown => List.unmodifiable(_subjectBreakdown);
+  List<DailyActivity> get dailyActivity => List.unmodifiable(_dailyActivity);
+  WeeklyPerformanceReport? get weeklyReport => _weeklyReport;
+
+  /// True on Sundays with no report yet generated for the current week —
+  /// drives the "Your Weekly Study Audit is Ready" banner's visibility.
+  bool get shouldOfferWeeklyReport {
+    if (DateTime.now().weekday != DateTime.sunday) return false;
+    if (_weeklyReport == null) return true;
+    final now = DateTime.now();
+    final weekStart = _weeklyReport!.weekStartDate;
+    return now.difference(weekStart).inDays >= 7;
+  }
+
+  /// Loads the time-filtered summary/breakdown/daily-activity in parallel.
+  /// Also fetches the 'week' summary as a delta baseline when filtering by
+  /// week isn't already the active filter, so "+4% vs last week" has a real
+  /// number to compare against rather than a guess.
+  Future<void> loadAnalytics() async {
+    _analyticsLoading = true;
+    _analyticsError = null;
+    notifyListeners();
+    try {
+      final results = await Future.wait([
+        _performanceRepo.fetchSummary(_filter),
+        _performanceRepo.fetchSubjectBreakdown(_filter),
+        _performanceRepo.fetchDailyActivity(),
+        _performanceRepo.fetchLatestWeeklyReport(),
+      ]);
+      _summary = results[0] as PerformanceSummary;
+      _subjectBreakdown = results[1] as List<SubjectWiseBreakdown>;
+      _dailyActivity = results[2] as List<DailyActivity>;
+      _weeklyReport = results[3] as WeeklyPerformanceReport?;
+      // Delta baseline: the previous week's own summary (only meaningful
+      // when the active filter IS week — a month-over-month or all-time
+      // delta against "last week" would be comparing different periods).
+      _previousSummary = _filter == TimeFilter.week && _weeklyReport != null
+          ? PerformanceSummary(
+              filter: 'week',
+              totalTestsCompleted: _weeklyReport!.testsCount,
+              totalQuestionsAttempted: 0,
+              accuracyPercentage: _weeklyReport!.accuracyPct,
+              totalStudyMinutes: _weeklyReport!.totalHours * 60,
+              speedAvgSecondsPerQ: 0,
+            )
+          : null;
+    } on AppError catch (e) {
+      _analyticsError = e.message;
+    } catch (e, st) {
+      AppLogger.error('PerformanceController.loadAnalytics failed: $e', stackTrace: st);
+      _analyticsError = 'Failed to load your performance analytics. Please try again.';
+    }
+    _analyticsLoading = false;
+    notifyListeners();
+  }
+
+  Future<void> setFilter(TimeFilter filter) async {
+    if (filter == _filter) return;
+    _filter = filter;
+    await loadAnalytics();
+  }
+
+  /// The results behind one Subject Mastery row, for the active filter —
+  /// let the caller (a drill-down sheet) surface the real error rather than
+  /// swallowing it, since this is triggered by an explicit tap, not a
+  /// screen-level load.
+  Future<List<SubjectResultEntry>> fetchSubjectResults(String groupKey) =>
+      _performanceRepo.fetchSubjectResults(groupKey, _filter);
+
+  Future<void> generateWeeklyReport() async {
+    try {
+      await _performanceRepo.generateWeeklyReport();
+      _weeklyReport = await _performanceRepo.fetchLatestWeeklyReport();
+      notifyListeners();
+    } on AppError catch (e) {
+      _analyticsError = e.message;
+      notifyListeners();
+    }
+  }
 
   bool get isLoading => _loading;
   bool get hasLoaded => _loadedOnce;

@@ -79,7 +79,7 @@ class AnswerGrid extends StatelessWidget {
           'Unanswered',
           Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4),
         ),
-        _legendItem(context, 'Marked', AppColors.warning),
+        _legendItem(context, 'Marked for review', const Color(0xFF8B5CF6)),
       ],
     );
   }
@@ -116,11 +116,11 @@ class AnswerGrid extends StatelessWidget {
         bgColor = theme.colorScheme.surfaceContainerHighest;
         fgColor = theme.colorScheme.onSurface;
       case AnswerStatus.markedReview:
-        bgColor = AppColors.warning;
+        bgColor = const Color(0xFF8B5CF6);
         fgColor = Colors.white;
       case AnswerStatus.markedAndAnswered:
-        bgColor = theme.colorScheme.primary;
-        fgColor = theme.colorScheme.onPrimary;
+        bgColor = const Color(0xFF7C3AED);
+        fgColor = Colors.white;
     }
 
     return GestureDetector(

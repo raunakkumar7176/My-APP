@@ -167,7 +167,7 @@ class SupabaseQuestionBankRepository implements QuestionBankRepository {
     // Build the query: from → select → filters → order → range
     var query = _client
         .from('question_bank')
-        .select('*, profiles!question_bank_created_by_fkey(display_name)');
+        .select('*, profiles!question_bank_created_by_fkey(full_name)');
 
     // Apply filters (server-side) BEFORE order/range
     if (filter.search != null && filter.search!.trim().isNotEmpty) {
@@ -295,7 +295,7 @@ class SupabaseQuestionBankRepository implements QuestionBankRepository {
   Future<QuestionBankItem?> getById(String id) => _guard(() async {
     final data = await _client
         .from('question_bank')
-        .select('*, profiles!question_bank_created_by_fkey(display_name)')
+        .select('*, profiles!question_bank_created_by_fkey(full_name)')
         .eq('id', id)
         .maybeSingle();
 

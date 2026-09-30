@@ -7,6 +7,7 @@ import '../../../core/models/routine.dart';
 import '../../../core/models/routine_log.dart';
 import '../../../core/models/subject.dart';
 import '../../../core/services/subject_service.dart';
+import '../../../core/widgets/xp_celebration_overlay.dart';
 import '../domain/routine_schedule.dart';
 import '../state/routine_controller.dart';
 
@@ -362,10 +363,19 @@ class _RoutineDetailScreenState extends State<RoutineDetailScreen> {
                     onPressed: _busy
                         ? null
                         : () => _run(
-                            () => _controller.markComplete(
-                              _routine!.id,
-                              durationMinutes: _routine!.targetDurationMinutes,
-                            ),
+                            () async {
+                              await _controller.markComplete(
+                                _routine!.id,
+                                durationMinutes: _routine!.targetDurationMinutes,
+                              );
+                              if (mounted) {
+                                XpCelebrationOverlay.show(
+                                  context,
+                                  points: _controller.lastRoutinePointsAwarded,
+                                  label: 'Routine complete!',
+                                );
+                              }
+                            },
                             success: 'Marked complete',
                           ),
                     icon: const Icon(Icons.check),

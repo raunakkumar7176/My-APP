@@ -14,6 +14,7 @@ import '../data/question_repository.dart';
 import '../data/test_repository.dart';
 import '../domain/attempt_lifecycle.dart';
 import '../domain/backend_mapping.dart';
+import '../domain/creation_settings.dart';
 import '../domain/deterministic_shuffle.dart';
 import '../domain/test_kind.dart';
 import 'attempt_launch_store.dart';
@@ -310,16 +311,27 @@ class AttemptController extends DisposableNotifier {
     }
   }
 
+  /// Presentation-only two-level shuffle (anti-cheat): question order is
+  /// seeded with the attempt id, each question's option order with
+  /// `${attemptId}_${questionId}`, so every student sees a different order
+  /// while a resume/crash recovery of the SAME attempt sees the same one
+  /// again. Nothing here mutates the stored question or its
+  /// `correct_option`: answers are keyed by question id and carry the
+  /// master array index (`QuestionOption.index`), never the display
+  /// position, so scoring is unaffected by construction.
   void _applyQuestions(List<Question> qs) {
-    final shuffle = _test?.shuffleQuestions ?? false;
+    final flags = ShuffleSettings.fromRow(
+      column: _test?.shuffleQuestions ?? false,
+      settings: _test?.settings,
+    );
     final seed = _attempt!.id;
-    _questionsInOrder = shuffle
+    _questionsInOrder = flags.questions
         ? DeterministicShuffle.questions(qs, seed)
         : List.of(qs);
     _optionsInOrder.clear();
     for (final q in _questionsInOrder) {
       if (!q.hasOptions) continue;
-      _optionsInOrder[q.id] = shuffle
+      _optionsInOrder[q.id] = flags.options
           ? DeterministicShuffle.options(q.options!, '${seed}_${q.id}')
           : List.of(q.options!);
     }

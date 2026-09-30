@@ -15,15 +15,62 @@ final class JsonQuestionParseResult {
   bool get isValid => errors.isEmpty && drafts.isNotEmpty;
 }
 
+/// Question-text keys accepted, in priority order.
+const _questionKeys = ['question', 'q', 'title', 'problem'];
+
+/// Options-list keys accepted, in priority order.
+const _optionsKeys = ['options', 'choices', 'answers'];
+
+/// Correct-answer keys accepted, in priority order. Note 'answers' is
+/// deliberately NOT here — it's an options alias above; a plain 'answer'
+/// singular is the correct-answer key instead.
+const _correctKeys = ['correct_option', 'correct_answer', 'answer', 'correctIndex', 'correct'];
+
 /// Parses and validates a raw JSON string pasted by the creator into a list
 /// of [QuestionDraft]s. Accepts either a single question object or a JSON
-/// array of them. Required schema per question:
+/// array of them. Canonical schema per question:
 ///   { "question": string, "options": [string, string, string, string],
 ///     "correct_option": 0-3, "explanation": string (optional) }
-/// Nothing is guessed: a missing/malformed field is reported, never
-/// defaulted to a fabricated value (e.g. a missing `correct_option` is a
-/// validation error, not silently 0).
+/// Also accepts, per field, whichever alias/format the paste actually used
+/// (see [_questionKeys]/[_optionsKeys]/[_correctKeys] and
+/// [_resolveCorrectIndex]) — real flexibility, not fabrication: every value
+/// still has to resolve to something unambiguous, or it's a reported error,
+/// never a silent default (e.g. a missing correct-answer key is still a
+/// validation error, not a guessed 0).
 abstract final class JsonQuestionParser {
+  /// First present key from [keys] in [map], or null.
+  static Object? _firstOf(Map<String, dynamic> map, List<String> keys) {
+    for (final k in keys) {
+      if (map.containsKey(k)) return map[k];
+    }
+    return null;
+  }
+
+  /// Resolves a raw correct-answer value into a 0-based option index, given
+  /// how many options this question actually has. Accepts:
+  ///   - an int/num already 0-based (0..optionCount-1)
+  ///   - an int/num 1-based (1..optionCount), converted to 0-based
+  ///   - a letter ('A'/'B'/'C'/'D', any case), converted by alphabet position
+  /// Returns null when the value doesn't unambiguously resolve — the caller
+  /// reports that as an error rather than guessing.
+  static int? _resolveCorrectIndex(Object? raw, int optionCount) {
+    if (raw is String) {
+      final trimmed = raw.trim();
+      if (trimmed.length == 1) {
+        final letterIndex = trimmed.toUpperCase().codeUnitAt(0) - 'A'.codeUnitAt(0);
+        if (letterIndex >= 0 && letterIndex < optionCount) return letterIndex;
+      }
+      final asNum = num.tryParse(trimmed);
+      if (asNum != null) return _resolveCorrectIndex(asNum, optionCount);
+      return null;
+    }
+    final asInt = raw is int ? raw : (raw is num ? raw.toInt() : null);
+    if (asInt == null) return null;
+    if (asInt >= 0 && asInt < optionCount) return asInt; // already 0-based
+    if (asInt >= 1 && asInt <= optionCount) return asInt - 1; // 1-based
+    return null;
+  }
+
   static JsonQuestionParseResult parse(String raw) {
     final trimmed = raw.trim();
     if (trimmed.isEmpty) {
@@ -63,15 +110,17 @@ abstract final class JsonQuestionParser {
       }
       final map = Map<String, dynamic>.from(item);
 
-      final question = map['question'];
+      final question = _firstOf(map, _questionKeys);
       if (question is! String || question.trim().isEmpty) {
-        errors.add('$label: "question" must be a non-empty string.');
+        errors.add('$label: a question text field (question/q/title/problem) '
+            'must be a non-empty string.');
         continue;
       }
 
-      final rawOptions = map['options'];
+      final rawOptions = _firstOf(map, _optionsKeys);
       if (rawOptions is! List || rawOptions.length != 4) {
-        errors.add('$label: "options" must be an array of exactly 4 strings.');
+        errors.add('$label: an options field (options/choices/answers) must '
+            'be an array of exactly 4 strings.');
         continue;
       }
       final options = <QuestionOptionDraft>[];
@@ -87,14 +136,13 @@ abstract final class JsonQuestionParser {
       }
       if (!optionsOk) continue;
 
-      final rawCorrect = map['correct_option'];
-      final correctOption = rawCorrect is int
-          ? rawCorrect
-          : rawCorrect is num
-              ? rawCorrect.toInt()
-              : null;
-      if (correctOption == null || correctOption < 0 || correctOption > 3) {
-        errors.add('$label: "correct_option" must be an integer 0-3.');
+      final rawCorrect = _firstOf(map, _correctKeys);
+      final correctOption = _resolveCorrectIndex(rawCorrect, options.length);
+      if (correctOption == null) {
+        errors.add('$label: a correct-answer field (correct_option/'
+            'correct_answer/answer/correctIndex/correct) must identify one '
+            'of the ${options.length} options — as a 0-based index, a '
+            '1-based index, or a letter (A-${String.fromCharCode(65 + options.length - 1)}).');
         continue;
       }
 

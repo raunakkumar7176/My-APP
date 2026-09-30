@@ -1235,6 +1235,12 @@ class _TestCard extends StatelessWidget {
                       Icons.schedule_rounded,
                       TestFormatters.dateTime(test.startsAt),
                       textSecondary,
+                    )
+                  else if (test.createdAt != null)
+                    _chip(
+                      Icons.edit_calendar_outlined,
+                      'Created ${TestFormatters.dateTime(test.createdAt)}',
+                      textSecondary,
                     ),
                 ],
               ),

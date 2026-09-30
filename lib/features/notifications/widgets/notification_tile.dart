@@ -28,35 +28,85 @@ class NotificationTile extends StatelessWidget {
 
   static const _navyInk = Color(0xFF172033);
 
-  /// Filter/pill color follows the broad bucket (Tests/Routine/Groups/
-  /// System), but the leading ICON keeps a finer distinction the task's
-  /// design calls for: results/leaderboard get a green trophy even though
-  /// they still file under the "Tests" filter chip.
+  /// Per-category "template": every notification TYPE gets its own icon so
+  /// a test-starting alert, a group announcement and a new-follower ping
+  /// are visually distinct at a glance, not just generically bucketed.
+  /// The pill/border color still follows the broad bucket (so the 6 filter
+  /// chips stay visually consistent), except results/leaderboard which
+  /// keep a green trophy treatment even though they file under "Tests".
+  static const _urgentRed = Color(0xFFDC2626);
+
   static Color _iconColorFor(NotificationCategory category, NotificationBroadCategory broad) {
     if (category == NotificationCategory.resultsAvailable ||
         category == NotificationCategory.leaderboardUpdated) {
       return const Color(0xFF2B9B62); // green trophy
     }
+    if (category == NotificationCategory.streakAtRisk) {
+      return _urgentRed;
+    }
     return _pillColorFor(broad);
   }
 
   static IconData _iconFor(NotificationCategory category, NotificationBroadCategory broad) {
-    if (category == NotificationCategory.resultsAvailable ||
-        category == NotificationCategory.leaderboardUpdated) {
-      return Icons.emoji_events_outlined;
+    switch (category) {
+      case NotificationCategory.resultsAvailable:
+      case NotificationCategory.leaderboardUpdated:
+        return Icons.emoji_events_outlined;
+      case NotificationCategory.testInvitation:
+        return Icons.sports_kabaddi_outlined; // "challenge" swords-style
+      case NotificationCategory.testLive:
+      case NotificationCategory.testStarted:
+      case NotificationCategory.testStartingSoon:
+        return Icons.timer_outlined;
+      case NotificationCategory.testEnded:
+      case NotificationCategory.testCompleted:
+        return Icons.stop_circle_outlined;
+      case NotificationCategory.testReminder:
+      case NotificationCategory.testScheduled:
+      case NotificationCategory.groupTestAssigned:
+      case NotificationCategory.groupTestReminder:
+        return Icons.assignment_outlined;
+      case NotificationCategory.groupJoin:
+      case NotificationCategory.groupJoinRequest:
+      case NotificationCategory.joinAccepted:
+      case NotificationCategory.joinRejected:
+        return Icons.person_add_outlined;
+      case NotificationCategory.groupAnnouncement:
+        return Icons.campaign_outlined;
+      case NotificationCategory.groupMessage:
+        return Icons.chat_bubble_outline;
+      case NotificationCategory.roleChanged:
+      case NotificationCategory.memberRemoved:
+        return Icons.admin_panel_settings_outlined;
+      case NotificationCategory.routineReminder:
+      case NotificationCategory.routineDue:
+      case NotificationCategory.routineMissed:
+      case NotificationCategory.routineCompleted:
+        return Icons.menu_book_outlined;
+      case NotificationCategory.streakMilestone:
+        return Icons.local_fire_department_outlined;
+      case NotificationCategory.streakAtRisk:
+        return Icons.local_fire_department;
+      case NotificationCategory.reportReady:
+        return Icons.bar_chart_outlined;
+      case NotificationCategory.levelUp:
+        return Icons.military_tech_outlined;
+      case NotificationCategory.newFollower:
+        return Icons.person_outline;
+      case NotificationCategory.contentReviewResult:
+        return Icons.fact_check_outlined;
+      case NotificationCategory.systemNotification:
+      case NotificationCategory.unknown:
+        return Icons.info_outline;
     }
-    return switch (broad) {
-      NotificationBroadCategory.tests => Icons.assignment_outlined,
-      NotificationBroadCategory.routine => Icons.schedule_outlined,
-      NotificationBroadCategory.groups => Icons.groups_outlined,
-      NotificationBroadCategory.system => Icons.info_outline,
-    };
   }
 
   static Color _pillColorFor(NotificationBroadCategory broad) => switch (broad) {
     NotificationBroadCategory.tests => const Color(0xFF2457D6),
     NotificationBroadCategory.routine => const Color(0xFFE59A2F),
     NotificationBroadCategory.groups => const Color(0xFF0F9F92),
+    NotificationBroadCategory.performance => const Color(0xFF2B9B62),
+    NotificationBroadCategory.social => const Color(0xFF8B5CF6),
     NotificationBroadCategory.system => const Color(0xFF64748B),
   };
 
@@ -80,15 +130,23 @@ class NotificationTile extends StatelessWidget {
     final iconColor = _iconColorFor(category, broad);
     final pillColor = _pillColorFor(broad);
     final actionLabel = category.actionLabel;
+    // Urgent categories (a live/imminent test, an at-risk streak) get a
+    // stronger filled-card treatment instead of the standard subtle tint,
+    // so they stand out from routine background chatter even when read.
+    final urgent = category.isUrgent;
 
     return Container(
       key: Key('notification_${notification.id}'),
       decoration: BoxDecoration(
-        color: unread ? pillColor.withValues(alpha: 0.05) : null,
+        color: urgent
+            ? iconColor.withValues(alpha: unread ? 0.1 : 0.05)
+            : (unread ? pillColor.withValues(alpha: 0.05) : null),
         border: Border(
           left: BorderSide(
-            color: unread ? theme.colorScheme.primary : Colors.transparent,
-            width: 3,
+            color: urgent
+                ? iconColor
+                : (unread ? theme.colorScheme.primary : Colors.transparent),
+            width: urgent ? 4 : 3,
           ),
         ),
       ),

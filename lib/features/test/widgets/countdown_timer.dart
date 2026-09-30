@@ -76,28 +76,46 @@ class _CountdownTimerState extends State<CountdownTimer> {
         '${seconds.toString().padLeft(2, '0')}';
   }
 
-  Color _color() {
-    if (_remaining.inSeconds <= 60) return AppColors.error;
-    if (_remaining.inSeconds <= 300) return AppColors.warning;
-    return AppColors.textPrimaryLight;
-  }
-
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(Icons.timer_outlined, size: 18, color: _color()),
-        const SizedBox(width: 4),
-        Text(
-          _format(_remaining),
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            color: _color(),
-            fontWeight: FontWeight.w600,
-            fontFeatures: const [FontFeature.tabularFigures()],
+    final theme = Theme.of(context);
+    // Urgent tint when time remaining is less than 2 minutes (120 seconds)
+    final isUrgent = _remaining.inSeconds <= 120 && _remaining > Duration.zero;
+    final fgColor = isUrgent ? AppColors.error : theme.colorScheme.onSurface;
+    final bgColor = isUrgent
+        ? AppColors.error.withValues(alpha: 0.12)
+        : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.65);
+    final borderColor = isUrgent
+        ? AppColors.error.withValues(alpha: 0.35)
+        : theme.colorScheme.outlineVariant.withValues(alpha: 0.5);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: borderColor),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            isUrgent ? Icons.timer_outlined : Icons.access_time_rounded,
+            size: 16,
+            color: fgColor,
           ),
-        ),
-      ],
+          const SizedBox(width: 6),
+          Text(
+            _format(_remaining),
+            style: theme.textTheme.titleSmall?.copyWith(
+              color: fgColor,
+              fontWeight: FontWeight.w700,
+              fontFeatures: const [FontFeature.tabularFigures()],
+              letterSpacing: 0.5,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

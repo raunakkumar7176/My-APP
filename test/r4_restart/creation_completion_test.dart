@@ -124,21 +124,36 @@ void main() {
       );
       final id = await c.saveDraft();
       expect(tests.rows[id]!.settings!['test_kind'], 'practice');
-      // Readiness requires a syllabus scope for Practice.
+      // Scope is only enforced while the test still has zero questions — a
+      // real question already exists here (added above), so it is not
+      // required and the readiness item isn't shown at all.
       expect(
-        c.readiness
-            .firstWhere((i) => i.label == 'Syllabus scope selected')
-            .isValid,
-        isFalse,
-      );
-      c.setSyllabusNodeIds(['n-1']);
-      expect(
-        c.readiness
-            .firstWhere((i) => i.label == 'Syllabus scope selected')
-            .isValid,
-        isTrue,
+        c.readiness.where((i) => i.label == 'Syllabus scope selected'),
+        isEmpty,
       );
     });
+
+    test(
+      'B2 Practice: scope IS required while the test still has zero questions',
+      () async {
+        final c = _controller()
+          ..setTitle('P2')
+          ..setKind(TestKind.practice);
+        expect(
+          c.readiness
+              .firstWhere((i) => i.label == 'Syllabus scope selected')
+              .isValid,
+          isFalse,
+        );
+        c.setSyllabusNodeIds(['n-1']);
+        expect(
+          c.readiness
+              .firstWhere((i) => i.label == 'Syllabus scope selected')
+              .isValid,
+          isTrue,
+        );
+      },
+    );
 
     test(
       'C Quick: test_kind quick, 10 min, target count, total capped at 15',

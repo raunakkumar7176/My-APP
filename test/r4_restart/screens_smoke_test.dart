@@ -249,7 +249,7 @@ void main() {
       findsNothing,
       reason: 'server gave a deadline',
     );
-    expect(find.text('1 / 1'), findsOneWidget);
+    expect(find.text('Q 1 of 1'), findsOneWidget);
 
     await tester.tap(find.text('4'));
     await tester.pump();

@@ -17,6 +17,12 @@ abstract interface class ResultRepository {
   /// The current user's results for a test, newest first (attempt history).
   Future<List<Result>> mineForTest(String testId);
 
+  /// `{question_id: correct_option}` for [attemptId], via
+  /// `rpc_get_my_answer_key` (migration 0079) — returns rows only when
+  /// [attemptId] is the caller's own AND already submitted; empty otherwise
+  /// (never an error, so a not-yet-submitted attempt just gets no key).
+  Future<Map<String, int>> myAnswerKey(String attemptId);
+
   /// Requests batch result generation via `rpc_generate_results`. The server
   /// authorizes (test owner, or group user with GENERATE_RESULTS) and returns
   /// the batch state directly — that JSON is the authoritative result. The
@@ -95,6 +101,19 @@ class SupabaseResultRepository implements ResultRepository {
       }
     }
     return row == null ? null : Result.fromJson(row);
+  }, TestErrorContext.load);
+
+  @override
+  Future<Map<String, int>> myAnswerKey(String attemptId) => _guard(() async {
+    final rows = await _client.rpc(
+      'rpc_get_my_answer_key',
+      params: {'p_attempt_id': attemptId},
+    );
+    AppLogger.rpcShape('rpc_get_my_answer_key', rows);
+    return {
+      for (final r in rows as List)
+        (r as Map)['question_id'] as String: (r['correct_option'] as num).toInt(),
+    };
   }, TestErrorContext.load);
 
   @override

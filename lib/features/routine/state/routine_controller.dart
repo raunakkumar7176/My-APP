@@ -9,6 +9,7 @@ import '../../../core/models/routine_log.dart';
 import '../../../core/services/academic_alarm_service.dart';
 import '../../../core/services/profile_service.dart';
 import '../../calendar/domain/calendar_clock.dart';
+import '../../gamification/data/gamification_repository.dart';
 import '../../test/state/disposable_notifier.dart';
 import '../data/routine_repository.dart';
 import '../domain/routine_schedule.dart';
@@ -52,6 +53,14 @@ class RoutineController extends DisposableNotifier {
   final RoutineRepository _repository;
   final CalendarClock clock;
   final DateTime Function() _now;
+  final GamificationRepository _gamification = const GamificationRepository();
+
+  /// `points_awarded` from the most recent [markComplete] call — 0 if
+  /// already paid for that session, capped, or not actually completed.
+  /// Read by the calling screen right after `await markComplete(...)` to
+  /// decide whether to show the XP celebration toast.
+  int _lastRoutinePointsAwarded = 0;
+  int get lastRoutinePointsAwarded => _lastRoutinePointsAwarded;
 
   /// Bumped after every successful mutation so independent widgets (the home
   /// card, the list screen) can reload without sharing a controller.
@@ -85,6 +94,9 @@ class RoutineController extends DisposableNotifier {
   /// Today's live weekday: 0 = Sunday … 6 = Saturday.
   int get todayWeekday => clock.today().weekday % 7;
 
+  /// The current wall-clock date/time in the user's timezone.
+  DateTime get nowInUserZone => clock.toUserWall(_now());
+
   /// The next pending item of today by wall-clock start time (the first one
   /// that has not started yet, else the earliest pending).
   RoutineWithLog? get upNext {
@@ -99,6 +111,16 @@ class RoutineController extends DisposableNotifier {
       }
     }
     return pending.first;
+  }
+
+  /// The item from today's routines whose scheduled time is actively ongoing
+  /// right now, or null if none.
+  RoutineWithLog? get currentTodayItem {
+    final now = clock.toUserWall(_now());
+    for (final i in _todayItems) {
+      if (i.isOngoingAt(now)) return i;
+    }
+    return null;
   }
 
   /// Active routines scheduled on the given weekday (for "upcoming" views).
@@ -403,14 +425,21 @@ class RoutineController extends DisposableNotifier {
 
   Future<void> _log(String routineId, String status, {int? durationMinutes}) async {
     try {
+      final date = todayDate;
       await _repository.upsertLog(
         routineId: routineId,
-        logDate: todayDate,
+        logDate: date,
         status: status,
         durationMinutes: durationMinutes,
       );
       revision.value++;
       await loadToday();
+      if (status == 'COMPLETED') {
+        _lastRoutinePointsAwarded = await _gamification.awardRoutineSessionPoints(
+          routineId: routineId,
+          logDate: date,
+        );
+      }
     } catch (e) {
       AppLogger.error('RoutineController.$status: $e');
       rethrow;

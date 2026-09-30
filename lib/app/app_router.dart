@@ -30,6 +30,7 @@ import '../features/profile/profile_screen.dart';
 import '../features/profile/refer_and_earn_screen.dart';
 import '../features/profile/screens/avatar_viewer_screen.dart';
 import '../features/community/screens/community_hub_screen.dart';
+import '../features/gamification/presentation/xp_rewards_hub_screen.dart';
 import '../features/about/screens/about_app_screen.dart';
 import '../features/settings/settings_screen.dart';
 import 'app_shell.dart';
@@ -47,6 +48,10 @@ import '../features/test/screens/challenge_waiting_room_screen.dart';
 import '../features/test/state/challenge_controller.dart';
 import '../features/test/screens/question_bank_screen.dart';
 import '../features/test/screens/question_bank_detail_screen.dart';
+import '../features/test/screens/pyq_explorer_screen.dart';
+import '../features/test/screens/question_wallet_screen.dart';
+import '../features/test/screens/pyq_practice_screen.dart';
+import '../features/test/screens/pyq_test_screen.dart';
 import '../features/test/screens/question_review_screen.dart';
 import '../features/test/screens/test_creation_screen.dart';
 import '../features/test/screens/camera_capture_screen.dart';
@@ -183,6 +188,11 @@ final class AppRouter {
         builder: (context, state) => const CommunityHubScreen(),
       ),
       GoRoute(
+        path: '/xp-rewards',
+        name: 'xp-rewards',
+        builder: (context, state) => const XpRewardsHubScreen(),
+      ),
+      GoRoute(
         path: '/about',
         name: 'about',
         builder: (context, state) => const AboutAppScreen(),
@@ -191,7 +201,7 @@ final class AppRouter {
         path: '/performance',
         name: 'performance',
         builder: (context, state) => Scaffold(
-          appBar: AppBar(title: const Text('Performance')),
+          appBar: AppBar(title: const Text('Performance & Insights')),
           body: const PerformanceScreen(),
         ),
       ),
@@ -706,6 +716,44 @@ final class AppRouter {
             ),
           ),
         ],
+      ),
+      // ── PYQ (Previous Year Questions) Explorer ──
+      GoRoute(
+        path: '/pyq-explorer',
+        name: 'pyq-explorer',
+        builder: (context, state) => const PyqExplorerScreen(),
+        routes: [
+          GoRoute(
+            path: 'practice',
+            name: 'pyq-practice',
+            builder: (context, state) {
+              final extra = state.extra as Map<String, dynamic>? ?? {};
+              return PyqPracticeScreen(
+                examName: extra['examName'] as String? ?? '',
+                examYear: extra['examYear'] as int? ?? 0,
+                examShift: extra['examShift'] as String?,
+              );
+            },
+          ),
+          GoRoute(
+            path: 'test',
+            name: 'pyq-test',
+            builder: (context, state) {
+              final extra = state.extra as Map<String, dynamic>? ?? {};
+              return PyqTestScreen(
+                examName: extra['examName'] as String? ?? '',
+                examYear: extra['examYear'] as int? ?? 0,
+                examShift: extra['examShift'] as String?,
+              );
+            },
+          ),
+        ],
+      ),
+      // ── Question Wallet (reuse questions from past tests) ──
+      GoRoute(
+        path: '/question-wallet',
+        name: 'question-wallet',
+        builder: (context, state) => const QuestionWalletScreen(),
       ),
     ],
     errorBuilder: (context, state) => Scaffold(

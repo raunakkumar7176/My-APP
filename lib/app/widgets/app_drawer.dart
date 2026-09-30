@@ -75,9 +75,15 @@ class AppDrawer extends StatelessWidget {
                   ),
                   _item(
                     context,
-                    icon: Icons.library_books_outlined,
-                    label: 'Question Bank',
-                    onTap: () => context.push('/question-bank'),
+                    icon: Icons.history_edu_outlined,
+                    label: 'Previous Year Questions',
+                    onTap: () => context.push('/pyq-explorer'),
+                  ),
+                  _item(
+                    context,
+                    icon: Icons.recycling_outlined,
+                    label: 'Question Wallet',
+                    onTap: () => context.push('/question-wallet'),
                   ),
                   const Divider(height: 1),
                   _item(

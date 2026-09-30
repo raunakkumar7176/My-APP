@@ -14,6 +14,8 @@ class QuestionCard extends StatelessWidget {
     required this.onOptionSelected,
     required this.onMarkReview,
     this.interactive = true,
+    this.showProgressHeader = true,
+    this.kindLabel,
     super.key,
   });
 
@@ -22,6 +24,8 @@ class QuestionCard extends StatelessWidget {
   final Answer? answer;
   final int questionNumber;
   final int totalQuestions;
+  final bool showProgressHeader;
+  final String? kindLabel;
 
   /// Called with the option's index in the server's `options` array
   /// (`QuestionOption.index`), which is what the backend stores and scores.
@@ -59,6 +63,77 @@ class QuestionCard extends StatelessWidget {
 
   Widget _buildHeader(BuildContext context, bool isMarked) {
     final theme = Theme.of(context);
+    if (!showProgressHeader) {
+      return Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: AppColors.success.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text(
+              '+${question.marks} mark${question.marks != 1 ? 's' : ''}',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: AppColors.success,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          if ((question.negativeMarks ?? 0) > 0) ...[
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppColors.error.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                '-${question.negativeMarks}',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: AppColors.error,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+          const Spacer(),
+          if (kindLabel != null) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                kindLabel!,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 10,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text(
+              question.difficulty.name.toUpperCase(),
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
+                fontSize: 10,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
     return Row(
       children: [
         Container(
@@ -84,7 +159,9 @@ class QuestionCard extends StatelessWidget {
           ),
           child: Text(
             '${question.marks} mark${question.marks != 1 ? 's' : ''}',
-            style: theme.textTheme.labelSmall?.copyWith(color: AppColors.success),
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: AppColors.success,
+            ),
           ),
         ),
         const Spacer(),
@@ -127,7 +204,9 @@ class QuestionCard extends StatelessWidget {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(10),
           side: BorderSide(
-            color: isSelected ? theme.colorScheme.primary : theme.colorScheme.outlineVariant,
+            color: isSelected
+                ? theme.colorScheme.primary
+                : theme.colorScheme.outlineVariant,
             width: isSelected ? 2 : 1,
           ),
         ),
@@ -144,8 +223,12 @@ class QuestionCard extends StatelessWidget {
                   child: Text(
                     option.text,
                     style: theme.textTheme.bodyMedium?.copyWith(
-                      color: isSelected ? theme.colorScheme.primary : theme.colorScheme.onSurface,
-                      fontWeight: isSelected ? FontWeight.w500 : FontWeight.w400,
+                      color: isSelected
+                          ? theme.colorScheme.primary
+                          : theme.colorScheme.onSurface,
+                      fontWeight: isSelected
+                          ? FontWeight.w500
+                          : FontWeight.w400,
                     ),
                   ),
                 ),
@@ -165,7 +248,9 @@ class QuestionCard extends StatelessWidget {
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         border: Border.all(
-          color: isSelected ? theme.colorScheme.primary : theme.colorScheme.outline,
+          color: isSelected
+              ? theme.colorScheme.primary
+              : theme.colorScheme.outline,
           width: 2,
         ),
         color: isSelected ? theme.colorScheme.primary : Colors.transparent,
@@ -191,7 +276,11 @@ class QuestionCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(Icons.info_outline, size: 18, color: theme.colorScheme.onSurface),
+          Icon(
+            Icons.info_outline,
+            size: 18,
+            color: theme.colorScheme.onSurface,
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(

@@ -51,7 +51,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
   late TextEditingController _mobileController;
   DateTime? _selectedDob;
 
-  bool _isFollowing = false;
+  /// Local, optimistic answer to "does the viewer follow this student?".
+  /// null means "use the server's answer" ([ProfileController.viewerFollows]);
+  /// a non-null value is the in-flight toggle, reverted the moment the
+  /// server disagrees so the button never shows a state that wasn't saved.
+  bool? _followOverride;
+
+  bool get _isFollowing => _followOverride ?? _c.viewerFollows ?? false;
   bool _isFollowLoading = false;
   bool _isApplyingVerification = false;
 
@@ -561,21 +567,35 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _toggleFollow(Profile profile) async {
-    setState(() => _isFollowLoading = true);
+    if (_isFollowLoading) return;
+    final willFollow = !_isFollowing;
+
+    // Optimistic: flip instantly, then confirm against the server.
+    setState(() {
+      _isFollowLoading = true;
+      _followOverride = willFollow;
+    });
+
     try {
-      if (_isFollowing) {
-        await ProfileService.unfollowUser(profile.id);
-        if (mounted) setState(() => _isFollowing = false);
-        _snack('Unfollowed ${profile.displayName}.');
-      } else {
-        await ProfileService.followUser(profile.id);
-        if (mounted) setState(() => _isFollowing = true);
-        _snack('Following ${profile.displayName}!');
-      }
+      await ProfileService.toggleFollow(
+        profile.id,
+        currentlyFollowing: !willFollow,
+      );
+      if (!mounted) return;
+      // Drop the override so the button now reads from the controller's
+      // confirmed state, and move the peer's follower count with it.
+      setState(() => _followOverride = null);
+      _c.applyViewerFollowChange(following: willFollow);
+      _snack(
+        willFollow
+            ? 'Following ${profile.displayName}!'
+            : 'Unfollowed ${profile.displayName}.',
+      );
     } catch (e) {
-      if (mounted) {
-        _snack(e.toString().replaceAll('Exception: ', ''), error: true);
-      }
+      if (!mounted) return;
+      // Server said no — fall straight back to the last known truth.
+      setState(() => _followOverride = null);
+      _snack(e.toString().replaceAll('Exception: ', ''), error: true);
     } finally {
       if (mounted) setState(() => _isFollowLoading = false);
     }
@@ -626,12 +646,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
         );
 
       case ProfileLoadState.empty:
-        return _EmptyState(onRetry: _c.load);
+        return _EmptyState(onRetry: _c.load, isPeer: _isViewingOther);
 
       case ProfileLoadState.loaded:
         final profile = _c.profile;
         if (profile == null) {
-          return _EmptyState(onRetry: _c.load);
+          return _EmptyState(onRetry: _c.load, isPeer: _isViewingOther);
         }
         return _buildLoaded(profile);
     }
@@ -744,7 +764,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             profile.verifiedBadge,
                             isDark,
                           ),
-                          if (ageString != null)
+                          // The age badge is derived from date_of_birth,
+                          // which is the student's own private field — only
+                          // ever show it on your own profile.
+                          if (ageString != null && !_isViewingOther)
                             Container(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 10,
@@ -854,6 +877,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     // 5. Main Card: View / Edit Form
                     if (_c.isEditing)
                       _buildEditCard(profile, isDark)
+                    else if (_isViewingOther)
+                      _buildPeerViewCard(profile)
                     else
                       _buildViewCard(profile),
                   ],
@@ -912,6 +937,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  /// Real age computed from `date_of_birth` (readable for any profile since
+  /// migration 0073 opened `profiles` SELECT to every authenticated user) —
+  /// '--' when the person never set a DOB, never a guessed or fabricated age.
+  String _ageLabel(DateTime? dob) {
+    if (dob == null) return '--';
+    final now = DateTime.now();
+    var age = now.year - dob.year;
+    if (now.month < dob.month || (now.month == dob.month && now.day < dob.day)) {
+      age--;
+    }
+    return age >= 0 ? '$age' : '--';
+  }
+
   Widget _buildMetricsStrip(Profile profile, bool isDark, ThemeData theme) {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
@@ -953,9 +991,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 isDark,
                 isHighlight: true,
               ),
+              // Own profile always shows your own age; a peer's age only
+              // shows when they've opted in via Settings > Show Age Badge
+              // (profiles.show_age_badge, migration 0084) — never forced.
+              if (!_isViewingOther || profile.showAgeBadge) ...[
+                _buildVerticalDivider(isDark),
+                _buildCounterItem(
+                  'Age',
+                  _ageLabel(profile.dateOfBirth),
+                  isDark,
+                ),
+              ],
             ],
           ),
-          if (_isViewingOther) ...[
+          // The offline/hermetic founder fallback (see fallbackFounderProfile)
+          // uses a non-UUID sentinel id — there is no real row to follow, so
+          // the button would only ever fail; hide it rather than offer an
+          // action that can't work.
+          if (_isViewingOther && profile.id != 'founder_official_uid') ...[
             const SizedBox(height: 14),
             SizedBox(
               width: double.infinity,
@@ -1479,6 +1532,86 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  /// Read-only card for SOMEONE ELSE'S profile. Deliberately narrower than
+  /// the owner's own card:
+  ///   * no Email row — the only email available client-side is the
+  ///     viewer's own (`_currentEmail()`), which would be plainly wrong on
+  ///     another student's profile;
+  ///   * no Phone and no Date of Birth — those stay private to the profile
+  ///     owner even though the row is readable for peer lookup (migration
+  ///     0073).
+  /// Everything shown is real `profiles` data: name, target exams, bio and
+  /// join date. Counts/points live in the metrics strip above.
+  Widget _buildPeerViewCard(Profile profile) {
+    final theme = Theme.of(context);
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: theme.brightness == Brightness.dark
+              ? const Color(0xFF334155)
+              : const Color(0xFFE2E8F0),
+        ),
+      ),
+      child: Column(
+        children: [
+          _InfoTile(
+            icon: Icons.person_outline,
+            label: 'Full Name',
+            value: profile.fullName.isEmpty ? '—' : profile.fullName,
+          ),
+          if (profile.examTargets.isNotEmpty) ...[
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.flag_outlined,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final exam in profile.examTargets)
+                          Chip(
+                            label: Text(exam),
+                            visualDensity: VisualDensity.compact,
+                            materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          if (profile.bio.isNotEmpty) ...[
+            const Divider(height: 1),
+            _InfoTile(
+              icon: Icons.info_outline,
+              label: 'Bio',
+              value: profile.bio,
+            ),
+          ],
+          const Divider(height: 1),
+          _InfoTile(
+            icon: Icons.calendar_today_outlined,
+            label: 'Member since',
+            value: _formatDate(profile.createdAt),
+            showDivider: false,
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildViewCard(Profile profile) {
     return Card(
       elevation: 0,
@@ -1759,9 +1892,13 @@ class _ErrorState extends StatelessWidget {
 }
 
 class _EmptyState extends StatelessWidget {
-  const _EmptyState({required this.onRetry});
+  const _EmptyState({required this.onRetry, this.isPeer = false});
 
   final Future<void> Function() onRetry;
+
+  /// True when we were looking for ANOTHER student — the copy has to be
+  /// honest about that ("your profile is missing" would be confusing).
+  final bool isPeer;
 
   @override
   Widget build(BuildContext context) {
@@ -1778,7 +1915,12 @@ class _EmptyState extends StatelessWidget {
                   .withValues(alpha: 0.6),
             ),
             const SizedBox(height: 16),
-            const Text('No profile found.', textAlign: TextAlign.center),
+            Text(
+              isPeer
+                  ? 'No profile found for this student.'
+                  : 'No profile found.',
+              textAlign: TextAlign.center,
+            ),
             const SizedBox(height: 24),
             ElevatedButton(onPressed: onRetry, child: const Text('Retry')),
           ],

@@ -6,6 +6,7 @@ import '../errors/app_error.dart';
 import '../logging/app_logger.dart';
 import 'profile_service.dart';
 import 'push_notification_service.dart';
+import 'single_device_enforcer.dart';
 import 'supabase_service.dart';
 
 enum AuthStatus { unknown, authenticated, unauthenticated }
@@ -59,6 +60,10 @@ final class AuthService {
           // PushNotificationService.registerCurrentDevice) — only sends a
           // token if the OS permission was already granted.
           unawaited(PushNotificationService.instance.registerCurrentDevice());
+          // Single-device-login: tell the server this device is now the
+          // active one — independent of push permission, since enforcement
+          // must work even for a user who denied notifications.
+          unawaited(SingleDeviceEnforcer.registerThisDevice());
         } else {
           ProfileService.reset();
         }

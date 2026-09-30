@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/services/auth_service.dart';
 import '../../core/services/profile_service.dart';
+import '../../core/services/single_device_enforcer.dart';
 import '../../core/services/supabase_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/app_button.dart';
@@ -47,6 +48,33 @@ class _AuthScreenState extends State<AuthScreen>
     } else {
       _flip.reverse();
     }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    // Single-device-login: if this screen was reached because the server
+    // just force-logged this device out (another device logged in), show
+    // that explanation once, then forget it.
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final message = await SingleDeviceEnforcer.takePendingMessage();
+      if (message != null && mounted) {
+        showDialog<void>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            icon: const Icon(Icons.lock_outline, size: 40, color: AppColors.error),
+            title: const Text('Logged Out'),
+            content: Text(message),
+            actions: [
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+      }
+    });
   }
 
   @override

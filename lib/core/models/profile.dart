@@ -58,6 +58,8 @@ final class Profile {
     this.socialLinks = const {},
     this.followersCount = 0,
     this.followingCount = 0,
+    this.showAgeBadge = true,
+    this.groupInvitePolicy = 'anyone',
   });
 
   final String id;
@@ -108,6 +110,19 @@ final class Profile {
   final int followersCount;
   final int followingCount;
 
+  /// `profiles.show_age_badge` (migration 0084) — whether the computed age
+  /// (from [dateOfBirth]) may be shown to OTHER students viewing this
+  /// profile. Always true-effectively on the owner's own profile view
+  /// (a person always sees their own age); this only gates what a peer
+  /// sees, and ProfileScreen is the one place that checks it.
+  final bool showAgeBadge;
+
+  /// `profiles.group_invite_policy` (migration 0085) -- 'anyone' |
+  /// 'only_following' | 'none'. Enforced server-side by the
+  /// `group_invitations` INSERT RLS policy via `fn_can_invite_to_group` --
+  /// not just a display preference.
+  final String groupInvitePolicy;
+
   factory Profile.fromJson(Map<String, dynamic> json) {
     return Profile(
       id: json['id'] as String,
@@ -139,6 +154,8 @@ final class Profile {
           const {},
       followersCount: (json['followers_count'] as num?)?.toInt() ?? 0,
       followingCount: (json['following_count'] as num?)?.toInt() ?? 0,
+      showAgeBadge: json['show_age_badge'] as bool? ?? true,
+      groupInvitePolicy: json['group_invite_policy'] as String? ?? 'anyone',
     );
   }
 
@@ -163,6 +180,8 @@ final class Profile {
       'social_links': socialLinks,
       'followers_count': followersCount,
       'following_count': followingCount,
+      'show_age_badge': showAgeBadge,
+      'group_invite_policy': groupInvitePolicy,
     };
   }
 
@@ -180,6 +199,8 @@ final class Profile {
       'exam_targets': examTargets,
       'date_of_birth': dateOfBirth?.toIso8601String(),
       'social_links': socialLinks,
+      'show_age_badge': showAgeBadge,
+      'group_invite_policy': groupInvitePolicy,
     };
   }
 
@@ -205,6 +226,8 @@ final class Profile {
     Map<String, String>? socialLinks,
     int? followersCount,
     int? followingCount,
+    bool? showAgeBadge,
+    String? groupInvitePolicy,
   }) {
     return Profile(
       id: id,
@@ -226,6 +249,8 @@ final class Profile {
       socialLinks: socialLinks ?? this.socialLinks,
       followersCount: followersCount ?? this.followersCount,
       followingCount: followingCount ?? this.followingCount,
+      showAgeBadge: showAgeBadge ?? this.showAgeBadge,
+      groupInvitePolicy: groupInvitePolicy ?? this.groupInvitePolicy,
     );
   }
 
@@ -261,6 +286,8 @@ final class Profile {
           dateOfBirth == other.dateOfBirth &&
           followersCount == other.followersCount &&
           followingCount == other.followingCount &&
+          showAgeBadge == other.showAgeBadge &&
+          groupInvitePolicy == other.groupInvitePolicy &&
           _mapEquals(socialLinks, other.socialLinks) &&
           _listEquals(examTargets, other.examTargets);
 
@@ -283,6 +310,8 @@ final class Profile {
         dateOfBirth,
         followersCount,
         followingCount,
+        showAgeBadge,
+        groupInvitePolicy,
         Object.hashAll(examTargets),
       );
 

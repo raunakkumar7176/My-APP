@@ -12,6 +12,7 @@ class QuestionReviewCard extends StatelessWidget {
     required this.answer,
     required this.questionNumber,
     required this.totalQuestions,
+    this.correctOption,
     super.key,
   });
 
@@ -20,11 +21,23 @@ class QuestionReviewCard extends StatelessWidget {
   final int questionNumber;
   final int totalQuestions;
 
+  /// The real correct option index, from `rpc_get_my_answer_key` (migration
+  /// 0079) — only ever populated for the caller's own already-submitted
+  /// attempt. Null means the key wasn't available (e.g. offline, or the
+  /// migration isn't deployed yet); the card then falls back to the plain
+  /// "Answered"/"Unanswered" status rather than guessing a verdict.
+  final int? correctOption;
+
   ReviewStatus get _status {
     if (answer == null || !answer!.isAnswered) {
       return ReviewStatus.unanswered;
     }
-    return ReviewStatus.answered;
+    if (correctOption == null) {
+      return ReviewStatus.answered;
+    }
+    return answer!.selectedOption == correctOption
+        ? ReviewStatus.correct
+        : ReviewStatus.wrong;
   }
 
   @override
@@ -52,6 +65,7 @@ class QuestionReviewCard extends StatelessWidget {
                   context,
                   option: opt,
                   isSelected: selectedIndex == opt.index,
+                  isCorrect: correctOption != null && correctOption == opt.index,
                 ),
               ),
             // Typed-answer questions have no storage on the live backend.
@@ -187,40 +201,53 @@ class QuestionReviewCard extends StatelessWidget {
     BuildContext context, {
     required QuestionOption option,
     required bool isSelected,
+    required bool isCorrect,
   }) {
+    // isCorrect always wins the styling (even if the student didn't pick
+    // it, so they can see what the right answer was); a selected-but-wrong
+    // option is called out in red; anything else falls back to the plain
+    // selected/unselected look.
+    final theme = Theme.of(context);
+    final Color? accent = isCorrect
+        ? AppColors.success
+        : (isSelected ? AppColors.error : null);
+    final bool highlighted = isCorrect || isSelected;
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: isSelected
-              ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.08)
+          color: highlighted
+              ? (accent ?? theme.colorScheme.primary).withValues(alpha: 0.08)
               : Colors.transparent,
           border: Border.all(
-            color: isSelected
-                ? Theme.of(context).colorScheme.primary
-                : Theme.of(context).colorScheme.outlineVariant,
+            color: highlighted
+                ? (accent ?? theme.colorScheme.primary)
+                : theme.colorScheme.outlineVariant,
           ),
           borderRadius: BorderRadius.circular(8),
         ),
         child: Row(
           children: [
             Icon(
-              isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
+              isCorrect
+                  ? Icons.check_circle
+                  : (isSelected ? Icons.cancel : Icons.radio_button_off),
               size: 18,
-              color: isSelected
-                  ? Theme.of(context).colorScheme.primary
-                  : Theme.of(context).colorScheme.onSurfaceVariant
-                        .withValues(alpha: 0.6),
+              color: highlighted
+                  ? (accent ?? theme.colorScheme.primary)
+                  : theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
             ),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
                 option.text,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: isSelected
-                      ? Theme.of(context).colorScheme.primary
-                      : Theme.of(context).colorScheme.onSurface,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: highlighted
+                      ? (accent ?? theme.colorScheme.primary)
+                      : theme.colorScheme.onSurface,
+                  fontWeight: isCorrect ? FontWeight.w600 : null,
                 ),
               ),
             ),

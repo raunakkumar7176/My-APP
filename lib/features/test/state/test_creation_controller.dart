@@ -81,6 +81,15 @@ class TestCreationController extends DisposableNotifier {
   /// Whether the timer forces submission at 00:00 (`settings.auto_submit`).
   AutoSubmitSettings autoSubmit = AutoSubmitSettings.defaults;
 
+  /// Two-level anti-cheat shuffle: question order (column + settings
+  /// mirror) and option order (`settings.shuffle_options`). See
+  /// [ShuffleSettings] for why both stores are written.
+  ShuffleSettings shuffle = ShuffleSettings.defaults;
+
+  /// What the server currently holds for the `shuffle_questions` column, so
+  /// the draft-only sync RPC runs only when the value actually changed.
+  bool? _serverShuffleQuestions;
+
   /// Derived, never typed: `starts_at + duration_sec` (null without a start).
   DateTime? get calculatedEndsAt =>
       ScheduleMath.endFor(startsAt: startsAt, durationSec: durationSec);
@@ -256,6 +265,11 @@ class TestCreationController extends DisposableNotifier {
     );
     questionConfig = QuestionConfig.fromSettings(t.settings);
     autoSubmit = AutoSubmitSettings.fromSettings(t.settings);
+    shuffle = ShuffleSettings.fromRow(
+      column: t.shuffleQuestions,
+      settings: t.settings,
+    );
+    _serverShuffleQuestions = t.shuffleQuestions;
   }
 
   // ── G19: template preloading ──
@@ -305,6 +319,10 @@ class TestCreationController extends DisposableNotifier {
       settings: settingsMap,
     );
     questionConfig = QuestionConfig.fromSettings(settingsMap);
+    shuffle = ShuffleSettings.fromRow(
+      column: false,
+      settings: settingsMap,
+    );
 
     notifyListeners();
   }
@@ -347,6 +365,7 @@ class TestCreationController extends DisposableNotifier {
       );
       allowLateJoin = newKind.supportsLateJoin;
       lateJoin = LateJoinSettings.defaults;
+      shuffle = newKind.defaultShuffle;
       if (!newKind.isScheduled) {
         startsAt = null;
         endsAt = null;
@@ -377,6 +396,7 @@ class TestCreationController extends DisposableNotifier {
     LateJoinSettings? lateJoin,
     QuestionConfig? questionConfig,
     AutoSubmitSettings? autoSubmit,
+    ShuffleSettings? shuffle,
   }) => _set(() {
     if (attemptSettings != null) this.attemptSettings = attemptSettings;
     if (lateJoin != null) {
@@ -385,6 +405,7 @@ class TestCreationController extends DisposableNotifier {
     }
     if (questionConfig != null) this.questionConfig = questionConfig;
     if (autoSubmit != null) this.autoSubmit = autoSubmit;
+    if (shuffle != null) this.shuffle = shuffle;
     this.durationSec = durationSec;
     this.marksPerQuestion = marksPerQuestion;
     this.negativeMarks = negativeMarks;
@@ -519,6 +540,7 @@ class TestCreationController extends DisposableNotifier {
     if (kind.supportsLateJoin) settings = lateJoin.applyTo(settings);
     settings = questionConfig.applyTo(settings);
     settings = autoSubmit.applyTo(settings);
+    settings = shuffle.applyTo(settings);
     String? clean(String? s) =>
         (s == null || s.trim().isEmpty) ? null : s.trim();
     return TestWriteInput(
@@ -547,14 +569,36 @@ class TestCreationController extends DisposableNotifier {
   Future<String> _persistTestRow() async {
     final input = _writeInput();
     final existing = _persisted;
+    final String id;
     if (existing != null) {
       await _tests.update(existing.id, input);
-      return existing.id;
+      id = existing.id;
+    } else {
+      final created = await _tests.create(input);
+      _persisted = created; // from here on, retries update instead of create
+      _serverShuffleQuestions = created.shuffleQuestions;
+      id = created.id;
+      notifyListeners();
     }
-    final created = await _tests.create(input);
-    _persisted = created; // from here on, retries update instead of create
-    notifyListeners();
-    return created.id;
+    await _syncShuffleColumn(id);
+    return id;
+  }
+
+  /// Best-effort mirror of the question-order flag into the
+  /// `tests.shuffle_questions` COLUMN via the draft-only
+  /// `rpc_set_test_shuffle_questions`. The `settings` copy written by
+  /// [_writeInput] is what actually activates the shuffle in the attempt
+  /// engine, so a missing or rejected RPC (e.g. the migration not applied
+  /// yet) must not fail the save — it only leaves the column stale until
+  /// the next save retries it.
+  Future<void> _syncShuffleColumn(String testId) async {
+    if (_serverShuffleQuestions == shuffle.questions) return;
+    try {
+      await _tests.setShuffleQuestions(testId, shuffle.questions);
+      _serverShuffleQuestions = shuffle.questions;
+    } catch (e) {
+      AppLogger.warning('shuffle_questions column sync failed: $e');
+    }
   }
 
   Future<void> _persistQuestions(String testId, {required bool approve}) async {

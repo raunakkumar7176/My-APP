@@ -10,9 +10,9 @@ import '../state/results_controller.dart';
 import '../widgets/question_review_card.dart';
 
 /// Post-submission review by attempt id: safe questions + the user's own
-/// answers. Correct/incorrect per question is NOT shown — the backend does
-/// not expose the answer key or per-question correctness, and the client
-/// never fabricates it.
+/// answers, plus the real correct option via `rpc_get_my_answer_key`
+/// (migration 0079) — which only ever reveals it for the caller's own
+/// already-submitted attempt, never mid-test or for someone else's.
 class QuestionReviewScreen extends StatefulWidget {
   const QuestionReviewScreen({
     required this.attemptId,
@@ -172,6 +172,7 @@ class _QuestionReviewScreenState extends State<QuestionReviewScreen> {
                     answer: _c.answerFor(q.id),
                     questionNumber: i + 1,
                     totalQuestions: _c.questions.length,
+                    correctOption: _c.correctOptionFor(q.id),
                   ),
                 );
               },

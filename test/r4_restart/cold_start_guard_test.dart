@@ -24,7 +24,7 @@ AttemptController _c(FakeAttemptRepository a, {String attemptId = 'a-100'}) =>
       questions: FakeQuestionRepository(),
       answers: _NoAnswers(),
       tests: FakeTestRepository()
-        ..rows['t-1'] = Test(
+        ..rows['t-1'] = const Test(
           id: 't-1',
           createdBy: 'c',
           title: 'T',

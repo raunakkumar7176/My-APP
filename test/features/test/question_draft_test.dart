@@ -5,14 +5,13 @@ import 'package:my_praperation/features/test/models/question_draft.dart';
 void main() {
   group('QuestionDraft validation', () {
     test('isValid returns true for valid MCQ question', () {
-      final draft = QuestionDraft(
+      const draft = QuestionDraft(
         questionText: 'What is 2+2?',
         questionType: QuestionType.mcqSingle,
         options: [
           QuestionOptionDraft(text: '3'),
           QuestionOptionDraft(text: '4'),
           QuestionOptionDraft(text: '5'),
-          QuestionOptionDraft(text: '6'),
         ],
         correctOptionIndex: 1,
         marks: 1,
@@ -21,7 +20,7 @@ void main() {
     });
 
     test('isValid returns false when questionText is empty', () {
-      final draft = QuestionDraft(
+      const draft = QuestionDraft(
         questionText: '',
         questionType: QuestionType.mcqSingle,
         options: [
@@ -35,7 +34,7 @@ void main() {
     });
 
     test('isValid returns false when marks is 0', () {
-      final draft = QuestionDraft(
+      const draft = QuestionDraft(
         questionText: 'Question',
         questionType: QuestionType.mcqSingle,
         options: [
@@ -48,13 +47,11 @@ void main() {
       expect(draft.isValid, false);
     });
 
-    test('isValid returns false for MCQ with fewer than 4 options', () {
-      final draft = QuestionDraft(
+    test('isValid returns false for MCQ with less than 2 options', () {
+      const draft = QuestionDraft(
         questionText: 'Question',
         questionType: QuestionType.mcqSingle,
-        options: [
-          QuestionOptionDraft(text: 'Only one'),
-        ],
+        options: [QuestionOptionDraft(text: 'Only one')],
         correctOptionIndex: 0,
         marks: 1,
       );
@@ -62,7 +59,7 @@ void main() {
     });
 
     test('isValid returns false for MCQ with empty option text', () {
-      final draft = QuestionDraft(
+      const draft = QuestionDraft(
         questionText: 'Question',
         questionType: QuestionType.mcqSingle,
         options: [
@@ -76,7 +73,7 @@ void main() {
     });
 
     test('isValid returns false for MCQ without correct option', () {
-      final draft = QuestionDraft(
+      const draft = QuestionDraft(
         questionText: 'Question',
         questionType: QuestionType.mcqSingle,
         options: [
@@ -90,7 +87,7 @@ void main() {
     });
 
     test('isValid returns false for MCQ with out-of-range correct option', () {
-      final draft = QuestionDraft(
+      const draft = QuestionDraft(
         questionText: 'Question',
         questionType: QuestionType.mcqSingle,
         options: [
@@ -103,66 +100,58 @@ void main() {
       expect(draft.isValid, false);
     });
 
-    // V1 (R4_QUESTION_OPTION_GUARD): only MCQ single is supported; TF / short /
-    // numeric are Coming soon and never valid drafts (no invented options).
-    test('isValid returns false for True/False (Coming soon)', () {
-      final draft = QuestionDraft(
+    test('isValid returns true for True/False without options', () {
+      const draft = QuestionDraft(
         questionText: 'The sky is blue',
         questionType: QuestionType.trueFalse,
         marks: 1,
       );
-      expect(draft.isValid, false);
+      expect(draft.isValid, true);
     });
 
-    test('isValid returns false for Short Answer (Coming soon)', () {
-      final draft = QuestionDraft(
+    test('isValid returns true for Short Answer', () {
+      const draft = QuestionDraft(
         questionText: 'Explain photosynthesis',
         questionType: QuestionType.shortAnswer,
         marks: 5,
       );
-      expect(draft.isValid, false);
+      expect(draft.isValid, true);
     });
 
-    test('isValid returns false for Numeric/Integer (Coming soon)', () {
-      final draft = QuestionDraft(
+    test('isValid returns true for Numeric/Integer answer', () {
+      const draft = QuestionDraft(
         questionText: 'Calculate 15 * 3',
         questionType: QuestionType.integer,
         marks: 2,
       );
-      expect(draft.isValid, false);
+      expect(draft.isValid, true);
     });
   });
 
   group('QuestionDraft copyWith', () {
     test('copies with new question text', () {
-      final original = QuestionDraft(
-        questionText: 'Original',
-        marks: 1,
-      );
+      const original = QuestionDraft(questionText: 'Original', marks: 1);
       final copied = original.copyWith(questionText: 'Updated');
       expect(copied.questionText, 'Updated');
       expect(copied.marks, 1);
     });
 
     test('copies with new marks', () {
-      final original = QuestionDraft(
-        questionText: 'Question',
-        marks: 1,
-      );
+      const original = QuestionDraft(questionText: 'Question', marks: 1);
       final copied = original.copyWith(marks: 5);
       expect(copied.questionText, 'Question');
       expect(copied.marks, 5);
     });
 
     test('copies with new options', () {
-      final original = QuestionDraft(
+      const original = QuestionDraft(
         questionText: 'Question',
         options: [],
         marks: 1,
       );
       final newOptions = [
-        QuestionOptionDraft(text: 'A'),
-        QuestionOptionDraft(text: 'B'),
+        const QuestionOptionDraft(text: 'A'),
+        const QuestionOptionDraft(text: 'B'),
       ];
       final copied = original.copyWith(options: newOptions);
       expect(copied.options.length, 2);
@@ -171,7 +160,7 @@ void main() {
 
   group('QuestionDraft toJson', () {
     test('produces valid JSON', () {
-      final draft = QuestionDraft(
+      const draft = QuestionDraft(
         questionText: 'What is 2+2?',
         questionType: QuestionType.mcqSingle,
         options: [

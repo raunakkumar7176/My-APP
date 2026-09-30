@@ -210,6 +210,101 @@ final class AutoSubmitSettings {
   int get hashCode => enabled.hashCode;
 }
 
+/// Two-level anti-cheat shuffle (question order + option order), the
+/// presentation-only randomisation that stops a neighbour copying answers
+/// ("terte ka B laga le") in a group/challenge test.
+///
+/// Storage is split exactly the way the server and the web builder already
+/// split it:
+///  * `questions` → the `tests.shuffle_questions` COLUMN, mirrored into
+///    `settings.shuffle_questions` by [applyTo] on every save;
+///  * `options`   → `settings.shuffle_options`, the key the web builder
+///    writes.
+///
+/// The mirror exists because `rpc_create_test`/`rpc_update_test` have no
+/// `p_shuffle_questions` parameter, so the column alone can only be written
+/// through the separate draft-only `rpc_set_test_shuffle_questions` (which
+/// may not be applied everywhere yet). The attempt engine ORs both copies
+/// ([questionsFrom]), so the feature activates from `settings` alone and
+/// self-heals the column on the next save.
+///
+/// Shuffling never touches stored data: answers keep their `question_id` +
+/// master `selected_option` index, so scoring is unaffected.
+final class ShuffleSettings {
+  const ShuffleSettings({this.questions = false, this.options = false});
+
+  /// `settings` keys (shared with the web builder).
+  static const questionsKey = 'shuffle_questions';
+  static const optionsKey = 'shuffle_options';
+
+  static const defaults = ShuffleSettings();
+
+  final bool questions;
+  final bool options;
+
+  /// Effective question-order flag for a stored row: the column OR the
+  /// settings mirror (whichever says true), so a row written by either
+  /// path randomises.
+  static bool questionsFrom({
+    required bool column,
+    Map<String, dynamic>? settings,
+  }) =>
+      column || settings?[questionsKey] == true;
+
+  /// Effective option-order flag. An absent key falls back to
+  /// [shuffleQuestions], which is exactly how the two levels behaved before
+  /// they were split — rows created before this setting existed keep their
+  /// current (both shuffled together) behaviour.
+  static bool optionsFrom({
+    required bool shuffleQuestions,
+    Map<String, dynamic>? settings,
+  }) {
+    final raw = settings?[optionsKey];
+    return raw is bool ? raw : shuffleQuestions;
+  }
+
+  /// Flags exactly as a stored row carries them: the effective question
+  /// flag (column OR mirror) plus the option flag. This is what every load
+  /// path uses, so a row written through either store reads back the same.
+  static ShuffleSettings fromRow({
+    required bool column,
+    Map<String, dynamic>? settings,
+  }) {
+    final questions = questionsFrom(column: column, settings: settings);
+    return ShuffleSettings(
+      questions: questions,
+      options: optionsFrom(
+        shuffleQuestions: questions,
+        settings: settings,
+      ),
+    );
+  }
+
+  /// Merges both flags into `tests.settings`, preserving every unrelated
+  /// key. Both keys are always written (even `false`) so the settings copy
+  /// can never drift from what the creator last chose.
+  Map<String, dynamic> applyTo(Map<String, dynamic>? existing) => {
+    ...?existing,
+    questionsKey: questions,
+    optionsKey: options,
+  };
+
+  ShuffleSettings copyWith({bool? questions, bool? options}) =>
+      ShuffleSettings(
+        questions: questions ?? this.questions,
+        options: options ?? this.options,
+      );
+
+  @override
+  bool operator ==(Object other) =>
+      other is ShuffleSettings &&
+      other.questions == questions &&
+      other.options == options;
+
+  @override
+  int get hashCode => Object.hash(questions, options);
+}
+
 /// Duration-driven schedule: the creator picks a start time and a duration;
 /// the end is derived (`ends_at = starts_at + duration_sec`), never typed.
 abstract final class ScheduleMath {

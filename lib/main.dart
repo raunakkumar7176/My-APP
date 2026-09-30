@@ -7,6 +7,7 @@ import 'app/app_config.dart';
 import 'core/errors/error_handler.dart';
 import 'core/logging/app_logger.dart';
 import 'core/services/auth_service.dart';
+import 'core/services/locale_service.dart';
 import 'core/services/push_notification_service.dart';
 import 'core/services/supabase_service.dart';
 import 'core/services/theme_service.dart';
@@ -29,6 +30,7 @@ void main() {
       AppLogger.error('Failed to initialize services: $e');
     }
     await ThemeService.initialize();
+    await LocaleService.initialize();
 
     runApp(App(config: config));
 

@@ -21,6 +21,8 @@ import '../domain/backend_mapping.dart';
 import '../domain/result_analytics_mapper.dart';
 import '../domain/test_kind.dart';
 import '../domain/test_pdf.dart';
+import '../../../core/services/pdf/exam_report_pdf_generator.dart';
+import '../../../core/services/profile_service.dart';
 import 'attempt_launch_store.dart';
 import 'disposable_notifier.dart';
 
@@ -61,6 +63,7 @@ class ResultsController extends DisposableNotifier {
   List<TopicBreakdownItem> _topics = const [];
   List<Question> _questionsList = const [];
   Map<String, Answer> _answersById = const {};
+  Map<String, int> _answerKey = const {};
   bool _loading = false;
   bool _reviewLoaded = false;
   bool _answersLoadFailed = false;
@@ -74,6 +77,10 @@ class ResultsController extends DisposableNotifier {
   List<TopicBreakdownItem> get topicBreakdown => _topics;
   List<Question> get questions => _questionsList;
   Answer? answerFor(String questionId) => _answersById[questionId];
+
+  /// The real correct option for [questionId], from `rpc_get_my_answer_key`
+  /// (0079) — null until it loads, or if it couldn't (never fabricated).
+  int? correctOptionFor(String questionId) => _answerKey[questionId];
   bool get isLoading => _loading;
   bool get isBusy => _busy;
   bool get reviewLoaded => _reviewLoaded;
@@ -159,6 +166,14 @@ class ResultsController extends DisposableNotifier {
         _answersLoadFailed = true;
         _answersById = const {};
       }
+      try {
+        _answerKey = await _results.myAnswerKey(attemptId);
+      } catch (e) {
+        // Best-effort: an empty key just means every question falls back to
+        // the plain "Answered"/"Unanswered" status, never a fabricated verdict.
+        AppLogger.warning('Review: answer key unavailable: $e');
+        _answerKey = const {};
+      }
       _reviewLoaded = true;
     } on AppError catch (e) {
       _error = e.message;
@@ -227,6 +242,172 @@ class ResultsController extends DisposableNotifier {
     } catch (e, st) {
       AppLogger.error('Result PDF failed: $e', stackTrace: st);
       throw const DataError(message: 'Could not generate the result PDF.');
+    }
+  }
+
+  /// The attempt row behind [r]: the history join first, then the own-attempts
+  /// list read independently on load (the two reads fail independently).
+  Attempt? _attemptFor(Result r) {
+    final joined = currentEntry?.attempt;
+    if (joined != null) return joined;
+    for (final a in _myAttempts) {
+      if (a.id == r.attemptId) return a;
+    }
+    return null;
+  }
+
+  /// Generates the consolidated 2-column detailed report card PDF with
+  /// Devanagari font support, candidate responses, scorecard, and watermark.
+  Future<Uint8List> buildDetailedReportPdf({
+    required String studentName,
+    String? studentCode,
+  }) async {
+    final r = _result;
+    if (r == null) throw const ValidationError(message: 'No result loaded.');
+    final t = _test;
+
+    if (!_reviewLoaded) {
+      await loadReview();
+    }
+    if (_answersLoadFailed) {
+      // Never generate a report whose header says "67 correct" while every
+      // question body says "Not Attempted" — that contradiction is worse
+      // than a clear error. Let the caller retry instead.
+      throw const DataError(
+        message:
+            'Could not load your saved answers for this report. Please try again.',
+      );
+    }
+
+    // Best-effort: rpc_get_my_answer_key (0079) only returns rows for the
+    // caller's own already-submitted attempt, so this is empty (never an
+    // error) if the RPC isn't deployed yet or the attempt somehow isn't
+    // submitted — the report still generates, just without verdicts.
+    Map<String, int> answerKey = const {};
+    try {
+      answerKey = await _results.myAnswerKey(attemptId);
+    } catch (e) {
+      AppLogger.warning('buildDetailedReportPdf: answer key unavailable: $e');
+    }
+
+    final questionItems = <ExamReportQuestionResponse>[];
+    for (var i = 0; i < _questionsList.length; i++) {
+      final q = _questionsList[i];
+      final a = _answersById[q.id];
+      final optList = q.options?.map((o) => o.text).toList() ?? <String>[];
+
+      String? userOptionStr;
+      if (a?.selectedOption != null && a!.selectedOption! >= 0) {
+        // One source of truth for the label the PDF parses back.
+        userOptionStr = ExamReportPdfGenerator.optionLetter(a.selectedOption!);
+      }
+
+      final correctIndex = answerKey[q.id];
+      final correctOptionStr = correctIndex != null
+          ? ExamReportPdfGenerator.optionLetter(correctIndex)
+          : null;
+      final isCorrect = (correctIndex != null && a?.selectedOption != null)
+          ? a!.selectedOption == correctIndex
+          : null;
+
+      questionItems.add(
+        ExamReportQuestionResponse(
+          index: i,
+          questionText: q.question,
+          options: optList,
+          userOption: userOptionStr,
+          // Only populated once the attempt is actually submitted (0079's
+          // RPC withholds it otherwise) — null here still renders a neutral
+          // answer line rather than inventing a verdict.
+          correctOption: correctOptionStr,
+          isCorrect: isCorrect,
+          explanation: q.explanation,
+        ),
+      );
+    }
+
+    var attempt = _attemptFor(r);
+    if (attempt == null) {
+      // The own-attempts read can fail on load (RLS/network), which leaves
+      // the history join empty. Retry once so the Performance Matrix gets a
+      // real duration instead of an empty "Time Taken" cell.
+      try {
+        final mine = await _attempts.mine(r.testId);
+        for (final a in mine) {
+          if (a.id == r.attemptId) {
+            attempt = a;
+            _myAttempts = mine;
+            break;
+          }
+        }
+      } catch (e) {
+        AppLogger.warning('Attempt re-read for report timing failed: $e');
+      }
+    }
+    final start = attempt?.startedAt;
+    final end =
+        attempt?.submittedAt ?? currentEntry?.completedAt ?? r.computedAt;
+    final timeTaken = (start != null && end != null && !end.isBefore(start))
+        ? end.difference(start)
+        : null;
+
+    final totalQ =
+        r.totalQuestions ??
+        (_questionsList.isNotEmpty ? _questionsList.length : 0);
+    final correct = r.correctCount ?? 0;
+    final wrong = r.wrongCount ?? 0;
+    final unans = r.unansweredCount ?? (totalQ - correct - wrong);
+    final attempted = correct + wrong;
+    final totalMarks = r.score ?? r.marksObtained ?? 0.0;
+    final maxMarks = r.maxScore ?? (r.totalMarks?.toDouble());
+    final pct =
+        r.percentage ??
+        (maxMarks != null && maxMarks > 0
+            ? (totalMarks / maxMarks * 100)
+            : 0.0);
+    final acc =
+        r.accuracy ?? (attempted > 0 ? (correct / attempted * 100) : 0.0);
+
+    final scorecard = ExamReportScorecard(
+      totalQuestions: totalQ,
+      attempted: attempted,
+      correct: correct,
+      incorrect: wrong,
+      skipped: unans,
+      totalMarks: totalMarks,
+      maxMarks: maxMarks,
+      percentage: pct,
+      accuracy: acc,
+      timeTaken: timeTaken,
+    );
+
+    final candidate = ExamReportCandidateInfo(
+      fullName: studentName,
+      studentCode:
+          studentCode ??
+          ProfileService.currentProfile?.studentCode ??
+          'MP-STUDENT',
+    );
+
+    final metadata = ExamReportTestMetadata(
+      testTitle: t?.title ?? 'Official Assessment',
+      attemptDate: currentEntry?.completedAt ?? r.computedAt ?? DateTime.now(),
+      duration: t?.durationSec != null
+          ? Duration(seconds: t!.durationSec!)
+          : null,
+      timeTaken: timeTaken,
+    );
+
+    try {
+      return await ExamReportPdfGenerator.generate(
+        candidateInfo: candidate,
+        testMetadata: metadata,
+        testResult: scorecard,
+        testQuestionsWithResponses: questionItems,
+      );
+    } catch (e, st) {
+      AppLogger.error('Detailed report PDF failed: $e', stackTrace: st);
+      throw const DataError(message: 'Could not generate the report card.');
     }
   }
 

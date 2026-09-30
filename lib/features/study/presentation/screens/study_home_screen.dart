@@ -212,6 +212,8 @@ class _StudyHomeScreenState extends State<StudyHomeScreen> {
         if (_isSearchVisible) ...[_buildSearchBar(isDark), AppSpacing.vGapMd],
         _buildContinueLearningSection(isDark),
         AppSpacing.vGapLg,
+        _buildPyqEntryCard(isDark),
+        AppSpacing.vGapLg,
         _buildProgressSummaryRow(isDark),
         AppSpacing.vGapLg,
         _buildSubjectsSection(isDark),
@@ -403,6 +405,53 @@ class _StudyHomeScreenState extends State<StudyHomeScreen> {
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  // ── PYQ Entry Point ─────────────────────────────────────────────────────────
+  Widget _buildPyqEntryCard(bool isDark) {
+    return AppCard(
+      variant: AppCardVariant.filled,
+      backgroundColor: isDark
+          ? AppColors.secondaryContainerDark.withAlpha(60)
+          : AppColors.secondaryContainerLight,
+      padding: AppSpacing.cardPadding,
+      onTap: () => context.push('/pyq-explorer'),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: isDark ? Colors.white10 : Colors.white,
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.history_edu_rounded, color: AppColors.secondaryLight, size: 24),
+          ),
+          AppSpacing.hGapMd,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _controller.isHindi ? 'पिछले वर्षों के प्रश्न (PYQ)' : 'Previous Year Questions',
+                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+                ),
+                AppSpacing.vGapXs,
+                Text(
+                  _controller.isHindi
+                      ? 'Exam, साल और शिफ्ट चुनकर Practice या Test mode में हल करें।'
+                      : 'Pick an exam, year & shift — practice untimed or take a full test simulation.',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Icon(Icons.chevron_right_rounded, color: AppColors.textSecondaryLight),
         ],
       ),
     );

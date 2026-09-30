@@ -58,20 +58,38 @@ class _TestResultScreenState extends State<TestResultScreen> {
     return AuthService.currentUser?.email ?? 'Student';
   }
 
-  Future<void> _downloadResultPdf() async {
+  Future<void> _downloadDetailedReportPdf() async {
     if (_pdfBusy) return;
     setState(() => _pdfBusy = true);
     try {
-      final bytes = await _c.buildResultPdf(studentName: _studentName());
+      final bytes = await _c.buildDetailedReportPdf(
+        studentName: _studentName(),
+        studentCode: ProfileService.currentProfile?.studentCode,
+      );
       if (!mounted) return;
       await Printing.sharePdf(
         bytes: bytes,
-        filename: '${_c.test?.title ?? 'test'} - result.pdf',
+        filename: 'MyPrep_Report_${_c.result?.testId ?? widget.attemptId}.pdf',
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Report card generated successfully.'),
+          backgroundColor: AppColors.success,
+        ),
       );
     } on AppError catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.message), backgroundColor: AppColors.error),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to generate report card: $e'),
+          backgroundColor: AppColors.error,
+        ),
       );
     } finally {
       if (mounted) setState(() => _pdfBusy = false);
@@ -83,7 +101,8 @@ class _TestResultScreenState extends State<TestResultScreen> {
       final launch = await _c.reattempt();
       if (!mounted) return;
       context.pushReplacement(
-          '/attempts/${launch.attemptId}/take?test=${launch.testId}');
+        '/attempts/${launch.attemptId}/take?test=${launch.testId}',
+      );
     } on AppError catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -289,23 +308,30 @@ class _TestResultScreenState extends State<TestResultScreen> {
           ],
           const SizedBox(height: 20),
           FilledButton.icon(
-            onPressed: () =>
-                context.push('/attempts/${widget.attemptId}/review'),
-            icon: const Icon(Icons.fact_check_outlined),
-            label: const Text('Review Answers'),
-          ),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
             key: const Key('download_result_pdf'),
-            onPressed: _pdfBusy ? null : _downloadResultPdf,
+            onPressed: _pdfBusy ? null : _downloadDetailedReportPdf,
             icon: _pdfBusy
                 ? const SizedBox(
                     width: 16,
                     height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
                   )
-                : const Icon(Icons.picture_as_pdf_outlined),
-            label: Text(_pdfBusy ? 'Preparing PDF…' : 'Download Result PDF'),
+                : const Icon(Icons.file_download_outlined),
+            label: Text(
+              _pdfBusy
+                  ? 'Generating Report Card…'
+                  : '📥 Download Detailed Report Card (PDF)',
+            ),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: () =>
+                context.push('/attempts/${widget.attemptId}/review'),
+            icon: const Icon(Icons.fact_check_outlined),
+            label: const Text('Review Answers'),
           ),
           const SizedBox(height: 8),
           // Only an explicit re-attempt may request attempt N+1 (server-enforced).

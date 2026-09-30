@@ -68,6 +68,36 @@ void main() {
   });
 
   group('Founder Profile & Responsive Polish Tests', () {
+    // A rich, fully-populated founder profile FOR THIS TEST'S OWN
+    // ASSERTIONS ONLY. `ProfileService.fallbackFounderProfile` (the real
+    // production fallback shown when no DB row exists) deliberately no
+    // longer carries fake stats/badges/social links — this fixture is what
+    // that widget renders when it's actually handed a genuine, populated
+    // founder profile (real DB row or otherwise), which is what these tests
+    // are really validating.
+    Profile richFounderProfile() => Profile(
+          id: 'founder_official_uid',
+          fullName: 'Raunak Kumar',
+          timezone: 'Asia/Kolkata',
+          createdAt: DateTime(2026, 1, 1),
+          studentCode: 'MP-FOUNDER',
+          bio: 'Founder & Lead Architect of My Preparation.',
+          mobile: '',
+          examTargets: [],
+          totalPoints: 25000,
+          weeklyPoints: 3450,
+          appRole: AppRole.owner,
+          isVip: true,
+          verifiedBadge: true,
+          socialLinks: {
+            'LinkedIn': 'https://linkedin.com',
+            'YouTube': 'https://youtube.com',
+            'GitHub': 'https://github.com',
+          },
+          followersCount: 1240,
+          followingCount: 18,
+        );
+
     Widget createTestApp(Widget child, {Size size = const Size(390, 844)}) {
       final router = GoRouter(
         initialLocation: '/test',
@@ -83,7 +113,7 @@ void main() {
     testWidgets(
       'renders founder profile with golden tick, credentials & social chips',
       (tester) async {
-        final founderProfile = ProfileService.fallbackFounderProfile;
+        final founderProfile = richFounderProfile();
 
         final controller = ProfileController(
           targetUserId: founderProfile.id,
@@ -177,7 +207,7 @@ void main() {
         tester.view.devicePixelRatio = 1.0;
         addTearDown(() => tester.view.resetPhysicalSize());
 
-        final founderProfile = ProfileService.fallbackFounderProfile;
+        final founderProfile = richFounderProfile();
         final controller = ProfileController(
           targetUserId: founderProfile.id,
           initialProfile: founderProfile,

@@ -1,6 +1,10 @@
 /// Product-level test types. Labels here are the ONLY user-facing names.
 /// Storage representation lives in [BackendMapping]; never compare a kind
 /// against a raw `test_mode` string outside that file.
+library;
+
+import 'creation_settings.dart';
+
 enum TestKind {
   self,
   challengeWithFriends,
@@ -143,4 +147,13 @@ extension TestKindCreation on TestKind {
 
   /// Upper bound the Quick configuration accepts for the total question target.
   int? get maxQuestionTarget => this == TestKind.quick ? 15 : null;
+
+  /// Anti-cheat shuffle default for a NEW test of this kind. ON for the two
+  /// kinds taken side by side (group test, challenge with friends — a
+  /// neighbour can simply read the screen), OFF for self-paced kinds where
+  /// there is nobody to copy from. Always editable in the wizard.
+  ShuffleSettings get defaultShuffle =>
+      (this == TestKind.group || this == TestKind.challengeWithFriends)
+      ? const ShuffleSettings(questions: true, options: true)
+      : ShuffleSettings.defaults;
 }

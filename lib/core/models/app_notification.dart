@@ -135,6 +135,9 @@ enum NotificationCategory {
   joinRejected('JOIN_REJECTED'),
   roleChanged('ROLE_CHANGED'),
   memberRemoved('MEMBER_REMOVED'),
+  newFollower('NEW_FOLLOWER'),
+  levelUp('LEVEL_UP'),
+  streakAtRisk('STREAK_AT_RISK'),
   unknown('UNKNOWN');
 
   const NotificationCategory(this.label);
@@ -163,18 +166,35 @@ enum NotificationCategory {
   };
 
   bool get isRoutineRelated => switch (this) {
-    routineReminder || routineDue || routineMissed || routineCompleted || streakMilestone => true,
+    routineReminder || routineDue || routineMissed || routineCompleted ||
+    streakMilestone || streakAtRisk => true,
     _ => false,
   };
 
-  /// The 4 broad buckets the Notification Center's filter chips group into.
-  /// Derived from the existing `is*Related` flags — routine wins over group
-  /// (a group-test reminder is still fundamentally "when do I sit the
-  /// test", i.e. test-related, which `isTestRelated` already covers first).
+  /// "Performance & Milestone" — weekly report + XP level-ups. Distinct
+  /// from `isTestRelated`'s per-test results/leaderboard: this bucket is
+  /// about progress over time, not a single test's outcome.
+  bool get isPerformanceRelated => switch (this) {
+    reportReady || levelUp => true,
+    _ => false,
+  };
+
+  bool get isSocialRelated => switch (this) {
+    newFollower => true,
+    _ => false,
+  };
+
+  /// The 6 broad buckets the Notification Center's filter chips group into,
+  /// matching the app's real notification taxonomy: Tests & Challenges,
+  /// Groups & Community, Routine & Discipline, Performance & Milestones,
+  /// Follow & Social, System. Tests wins over routine/group ties (a
+  /// group-test reminder is still fundamentally "when do I sit the test").
   NotificationBroadCategory get broadCategory {
     if (isTestRelated) return NotificationBroadCategory.tests;
     if (isRoutineRelated) return NotificationBroadCategory.routine;
     if (isGroupRelated) return NotificationBroadCategory.groups;
+    if (isPerformanceRelated) return NotificationBroadCategory.performance;
+    if (isSocialRelated) return NotificationBroadCategory.social;
     return NotificationBroadCategory.system;
   }
 
@@ -184,16 +204,28 @@ enum NotificationCategory {
   /// correspond to where the deep link actually goes.
   String? get actionLabel => switch (this) {
     testLive || testStarted || testStartingSoon => 'Start Test',
+    testInvitation => 'Join Now',
     resultsAvailable => 'View Result',
     leaderboardUpdated => 'View Leaderboard',
-    routineReminder || routineDue => 'Open Routine',
+    routineReminder || routineDue || streakAtRisk => 'Open Routine',
     groupMessage || groupAnnouncement => 'Open Chat',
     groupJoinRequest => 'Review Request',
+    reportReady => 'View Insights',
+    newFollower => 'View Profile',
     _ => null,
+  };
+
+  /// True for notifications urgent enough to warrant a stronger visual
+  /// treatment (filled card, not just a subtle tint) in the notification
+  /// list — a live/imminent test or an at-risk streak needs to stand out
+  /// from routine background chatter.
+  bool get isUrgent => switch (this) {
+    testLive || testStartingSoon || testStarted || streakAtRisk => true,
+    _ => false,
   };
 }
 
-/// The 4 broad groupings shown as filter chips in the Notification Center.
+/// The 6 broad groupings shown as filter chips in the Notification Center.
 /// Deliberately just a label here (no `Color`/`IconData`) so this model file
 /// stays pure Dart, matching every other model in `core/models/` — the
 /// widget layer (`notification_tile.dart`) owns the visual mapping.
@@ -201,6 +233,8 @@ enum NotificationBroadCategory {
   tests('Tests'),
   routine('Routine'),
   groups('Groups'),
+  performance('Performance'),
+  social('Social'),
   system('System');
 
   const NotificationBroadCategory(this.label);

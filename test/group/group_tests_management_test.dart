@@ -644,6 +644,9 @@ class _Delegating implements TestRepository {
   @override
   Future<void> publish(String testId) => inner.publish(testId);
   @override
+  Future<void> setShuffleQuestions(String testId, bool shuffle) =>
+      inner.setShuffleQuestions(testId, shuffle);
+  @override
   Future<void> deleteDraft(String testId, {String? reason}) => inner.deleteDraft(testId, reason: reason);
   @override
   Future<List<TestSyllabus>> syllabusFor(String testId) => inner.syllabusFor(testId);

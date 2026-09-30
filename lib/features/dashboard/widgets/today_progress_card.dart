@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -20,6 +22,7 @@ class _TodayProgressCardState extends State<TodayProgressCard> {
   late final RoutineController _controller;
   late final bool _ownsController;
   int _seenRevision = RoutineController.revision.value;
+  Timer? _tickerTimer;
 
   @override
   void initState() {
@@ -29,6 +32,9 @@ class _TodayProgressCardState extends State<TodayProgressCard> {
     _controller.addListener(_onChanged);
     _controller.loadToday();
     RoutineController.revision.addListener(_onRevision);
+    _tickerTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (mounted) setState(() {});
+    });
   }
 
   void _onChanged() {
@@ -43,6 +49,7 @@ class _TodayProgressCardState extends State<TodayProgressCard> {
 
   @override
   void dispose() {
+    _tickerTimer?.cancel();
     RoutineController.revision.removeListener(_onRevision);
     _controller.removeListener(_onChanged);
     if (_ownsController) _controller.dispose();
@@ -316,6 +323,51 @@ class _TodayProgressCardState extends State<TodayProgressCard> {
                   : theme.colorScheme.primary,
             ),
           ),
+          if (_controller.currentTodayItem != null) ...[
+            const SizedBox(height: 10),
+            Builder(
+              builder: (context) {
+                final activeItem = _controller.currentTodayItem!;
+                final nowWall = _controller.nowInUserZone;
+                final remainingMins = activeItem.routine.remainingMinutesAt(nowWall);
+                final elapsedPct = (activeItem.progressAt(nowWall) * 100).round();
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primary.withValues(alpha: isDark ? 0.2 : 0.08),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: theme.colorScheme.primary.withValues(alpha: 0.2),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 7,
+                        height: 7,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF10B981),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Live now: ${activeItem.routine.title} · ${remainingMins}m left ($elapsedPct% elapsed)',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: theme.colorScheme.primary,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ],
           const SizedBox(height: 10),
           Row(
             children: [

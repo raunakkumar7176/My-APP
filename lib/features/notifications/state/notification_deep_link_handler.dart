@@ -132,8 +132,12 @@ class NotificationDeepLinkHandler {
       case NotificationCategory.routineReminder:
       case NotificationCategory.routineDue:
       case NotificationCategory.streakMilestone:
+      case NotificationCategory.streakAtRisk:
         return '/routine';
+      case NotificationCategory.levelUp:
+        return '/xp-rewards';
       case NotificationCategory.reportReady:
+        return '/performance';
       case NotificationCategory.resultsAvailable:
         if (testId != null) return '/tests/$testId';
         return '/tests';

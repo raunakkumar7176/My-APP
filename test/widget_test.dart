@@ -1,11 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:my_praperation/core/models/question.dart';
+import 'package:my_praperation/core/models/material_chunk.dart';
+import 'package:my_praperation/core/models/progress_snapshot.dart';
+import 'package:my_praperation/core/models/study_material.dart';
 import 'package:my_praperation/core/models/subject.dart';
 import 'package:my_praperation/core/models/syllabus_node.dart';
-import 'package:my_praperation/core/models/test.dart';
-import 'package:my_praperation/core/models/test_syllabus.dart';
+import 'package:my_praperation/core/services/material_service.dart';
+import 'package:my_praperation/core/services/profile_service.dart';
+import 'package:my_praperation/features/auth/splash_screen.dart';
+import 'package:my_praperation/features/auth/login_screen.dart';
+import 'package:my_praperation/features/auth/signup_screen.dart';
 
 Widget wrapWithApp(Widget child) {
   return MaterialApp(home: child);
@@ -89,131 +94,259 @@ void main() {
     });
   });
 
-  group('Question Model', () {
-    test('parses from JSON with live RPC values', () {
+  group('StudyMaterial Model', () {
+    test('parses from JSON correctly', () {
       final json = {
-        'id': 'q-1',
-        'test_id': 't-1',
-        'ordinal': 1,
-        'question': 'What is 2+2?',
-        'options': [
-          {'id': '1', 'text': '3'},
-          {'id': '2', 'text': '4'},
-          {'id': '3', 'text': '5'},
-        ],
-        'difficulty': 'easy',
-        'marks': 1,
-        'status': 'active',
-        'question_type': 'mcq',
+        'id': 'mat-1',
+        'group_id': 'grp-1',
+        'uploaded_by': 'user-1',
+        'title': 'Chapter 1 Notes',
+        'storage_path': 'materials/ch1.pdf',
+        'mime_type': 'application/pdf',
+        'status': 'ready',
+        'created_at': '2025-01-15T10:30:00Z',
       };
-      final q = Question.fromJson(json);
-      expect(q.id, 'q-1');
-      expect(q.testId, 't-1');
-      expect(q.ordinal, 1);
-      expect(q.question, 'What is 2+2?');
-      expect(q.options?.length, 3);
-      expect(q.difficulty, DifficultyLevel.easy);
-      expect(q.marks, 1);
-      expect(q.status, 'active');
-      expect(q.questionType, QuestionType.mcqSingle);
+      final material = StudyMaterial.fromJson(json);
+      expect(material.id, 'mat-1');
+      expect(material.title, 'Chapter 1 Notes');
+      expect(material.status, MaterialStatus.ready);
+      expect(material.isPdf, isTrue);
+      expect(material.isReady, isTrue);
     });
 
-    test('toJson does not include correct_option', () {
+    test('handles unknown status', () {
       final json = {
-        'id': 'q-1',
-        'test_id': 't-1',
-        'question': 'Q',
-        'difficulty': 'easy',
-        'marks': 1,
-        'status': 'active',
-        'question_type': 'mcq',
-        'correct_option': 2,
+        'id': 'mat-1',
+        'group_id': 'grp-1',
+        'uploaded_by': 'user-1',
+        'title': 'Notes',
+        'storage_path': 'path',
+        'mime_type': 'application/pdf',
+        'status': 'unknown_status',
+        'created_at': '2025-01-15T10:30:00Z',
       };
-      final q = Question.fromJson(json);
-      final serialized = q.toJson();
-      expect(serialized.containsKey('correct_option'), isFalse);
+      final material = StudyMaterial.fromJson(json);
+      expect(material.status, MaterialStatus.unknown);
+    });
+
+    test('handles nullable mime_type', () {
+      final json = {
+        'id': 'mat-1',
+        'group_id': 'grp-1',
+        'uploaded_by': 'user-1',
+        'title': 'Notes',
+        'storage_path': 'path',
+        'mime_type': null,
+        'status': 'uploaded',
+        'created_at': '2025-01-15T10:30:00Z',
+      };
+      final material = StudyMaterial.fromJson(json);
+      expect(material.mimeType, 'application/pdf');
+    });
+  });
+
+  group('MaterialChunk Model', () {
+    test('parses from JSON correctly', () {
+      final json = {
+        'id': 'chunk-1',
+        'material_id': 'mat-1',
+        'idx': 0,
+        'content': 'Hello World',
+      };
+      final chunk = MaterialChunk.fromJson(json);
+      expect(chunk.id, 'chunk-1');
+      expect(chunk.materialId, 'mat-1');
+      expect(chunk.idx, 0);
+      expect(chunk.content, 'Hello World');
     });
 
     test('equality works', () {
-      final a = Question(
+      const a = MaterialChunk(
         id: '1',
-        testId: 't-1',
-        question: 'Q',
-        difficulty: DifficultyLevel.easy,
-        marks: 1,
-        status: 'active',
+        materialId: 'm1',
+        idx: 0,
+        content: 'text',
       );
-      final b = Question(
+      const b = MaterialChunk(
         id: '1',
-        testId: 't-1',
-        question: 'Q',
-        difficulty: DifficultyLevel.easy,
-        marks: 1,
-        status: 'active',
+        materialId: 'm1',
+        idx: 0,
+        content: 'text',
       );
       expect(a, equals(b));
-      expect(a.hashCode, b.hashCode);
     });
   });
 
-  group('Test Model', () {
+  group('ProgressSnapshot Model', () {
     test('parses from JSON correctly', () {
       final json = {
-        'id': 't-1',
-        'created_by': 'user-1',
-        'title': 'Math Quiz',
-        'description': 'Algebra',
-        'duration_sec': 3600,
-        'status': 'draft',
-        'created_at': '2025-01-15T10:30:00Z',
+        'id': 'prog-1',
+        'user_id': 'user-1',
+        'period_type': 'weekly',
+        'period_start': '2025-01-13',
+        'stats': {
+          'completed_topics': 5,
+          'total_topics': 20,
+          'study_minutes': 120,
+        },
+        'computed_at': '2025-01-15T10:30:00Z',
       };
-      final test = Test.fromJson(json);
-      expect(test.id, 't-1');
-      expect(test.createdBy, 'user-1');
-      expect(test.title, 'Math Quiz');
-      expect(test.description, 'Algebra');
-      expect(test.durationSec, 3600);
-      expect(test.status, TestStatus.draft);
+      final snapshot = ProgressSnapshot.fromJson(json);
+      expect(snapshot.id, 'prog-1');
+      expect(snapshot.periodType, 'weekly');
+      expect(snapshot.completedTopics, 5);
+      expect(snapshot.totalTopics, 20);
+      expect(snapshot.studyMinutes, 120);
+      expect(snapshot.completionPercentage, 25.0);
     });
 
-    test('parses published status', () {
+    test('defaults for missing stats', () {
       final json = {
-        'id': 't-1',
-        'created_by': 'user-1',
-        'title': 'Math Quiz',
-        'status': 'published',
-        'created_at': '2025-01-15T10:30:00Z',
+        'id': 'prog-1',
+        'user_id': 'user-1',
+        'period_type': 'weekly',
+        'period_start': '2025-01-13',
+        'stats': {},
+        'computed_at': '2025-01-15T10:30:00Z',
       };
-      final test = Test.fromJson(json);
-      expect(test.status, TestStatus.published);
+      final snapshot = ProgressSnapshot.fromJson(json);
+      expect(snapshot.completedTopics, 0);
+      expect(snapshot.totalTopics, 0);
+      expect(snapshot.studyMinutes, 0);
+      expect(snapshot.completionPercentage, 0.0);
+    });
+
+    test('handles null stats', () {
+      final json = {
+        'id': 'prog-1',
+        'user_id': 'user-1',
+        'period_type': 'weekly',
+        'period_start': '2025-01-13',
+        'stats': null,
+        'computed_at': '2025-01-15T10:30:00Z',
+      };
+      final snapshot = ProgressSnapshot.fromJson(json);
+      expect(snapshot.completedTopics, 0);
+      expect(snapshot.totalTopics, 0);
     });
   });
 
-  group('TestSyllabus Model', () {
-    test('parses from JSON correctly', () {
-      final json = {
-        'id': 'ts-1',
-        'test_id': 't-1',
-        'syllabus_node_id': 'n-1',
-        'material_ids': ['m-1', 'm-2'],
-        'created_at': '2025-01-15T10:30:00Z',
-      };
-      final ts = TestSyllabus.fromJson(json);
-      expect(ts.id, 'ts-1');
-      expect(ts.testId, 't-1');
-      expect(ts.syllabusNodeId, 'n-1');
-      expect(ts.materialIds, ['m-1', 'm-2']);
+  group('MaterialService', () {
+    test('getFullContent joins chunks in order', () {
+      final chunks = [
+        const MaterialChunk(id: '1', materialId: 'm1', idx: 2, content: 'C'),
+        const MaterialChunk(id: '2', materialId: 'm1', idx: 0, content: 'A'),
+        const MaterialChunk(id: '3', materialId: 'm1', idx: 1, content: 'B'),
+      ];
+      final content = MaterialService.getFullContent(chunks);
+      expect(content, 'A\n\nB\n\nC');
     });
 
-    test('handles null material_ids', () {
-      final json = {
-        'id': 'ts-1',
-        'test_id': 't-1',
-        'syllabus_node_id': 'n-1',
-        'created_at': '2025-01-15T10:30:00Z',
-      };
-      final ts = TestSyllabus.fromJson(json);
-      expect(ts.materialIds, isNull);
+    test('getFullContent handles empty list', () {
+      final content = MaterialService.getFullContent([]);
+      expect(content, isEmpty);
+    });
+  });
+
+  group('ProfileStatus', () {
+    test('has all expected states', () {
+      expect(
+        ProfileStatus.values,
+        containsAll([
+          ProfileStatus.initial,
+          ProfileStatus.loading,
+          ProfileStatus.loaded,
+          ProfileStatus.error,
+          ProfileStatus.empty,
+        ]),
+      );
+    });
+  });
+
+  group('SplashScreen', () {
+    testWidgets('renders correctly', (WidgetTester tester) async {
+      await tester.pumpWidget(wrapWithApp(const SplashScreen()));
+      expect(find.text('My Preparation'), findsOneWidget);
+      expect(find.byIcon(Icons.school), findsOneWidget);
+    });
+  });
+
+  group('LoginScreen', () {
+    testWidgets('renders email and password fields', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(wrapWithApp(const LoginScreen()));
+      expect(find.byType(TextFormField), findsNWidgets(2));
+      expect(find.text('Sign In'), findsOneWidget);
+    });
+
+    testWidgets('shows validation errors for empty fields', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(wrapWithApp(const LoginScreen()));
+      await tester.tap(find.text('Sign In'));
+      await tester.pump();
+      expect(find.text('Please enter your email'), findsOneWidget);
+      expect(find.text('Please enter your password'), findsOneWidget);
+    });
+
+    testWidgets('shows validation error for invalid email', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(wrapWithApp(const LoginScreen()));
+      await tester.enterText(find.byType(TextFormField).first, 'invalid-email');
+      await tester.tap(find.text('Sign In'));
+      await tester.pump();
+      expect(find.text('Please enter a valid email address'), findsOneWidget);
+    });
+
+    testWidgets('shows validation error for short password', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(wrapWithApp(const LoginScreen()));
+      await tester.enterText(
+        find.byType(TextFormField).first,
+        'test@example.com',
+      );
+      await tester.enterText(find.byType(TextFormField).last, '123');
+      await tester.tap(find.text('Sign In'));
+      await tester.pump();
+      expect(
+        find.text('Password must be at least 6 characters'),
+        findsOneWidget,
+      );
+    });
+  });
+
+  group('SignUpScreen', () {
+    testWidgets('renders all form fields', (WidgetTester tester) async {
+      await tester.pumpWidget(wrapWithApp(const SignUpScreen()));
+      expect(find.byType(TextFormField), findsNWidgets(3));
+      expect(find.byType(ElevatedButton), findsOneWidget);
+    });
+
+    testWidgets('shows validation errors for empty fields', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(wrapWithApp(const SignUpScreen()));
+      await tester.tap(find.byType(ElevatedButton));
+      await tester.pump();
+      expect(find.text('Please enter your email'), findsOneWidget);
+      expect(find.text('Please enter your password'), findsOneWidget);
+      expect(find.text('Please confirm your password'), findsOneWidget);
+    });
+
+    testWidgets('shows password mismatch error', (WidgetTester tester) async {
+      await tester.pumpWidget(wrapWithApp(const SignUpScreen()));
+      await tester.enterText(
+        find.byType(TextFormField).first,
+        'test@example.com',
+      );
+      await tester.enterText(find.byType(TextFormField).at(1), 'password123');
+      await tester.enterText(find.byType(TextFormField).at(2), 'password456');
+      await tester.tap(find.byType(ElevatedButton));
+      await tester.pump();
+      expect(find.text('Passwords do not match'), findsOneWidget);
     });
   });
 }
