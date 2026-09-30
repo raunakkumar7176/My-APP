@@ -8,6 +8,7 @@ import 'core/errors/error_handler.dart';
 import 'core/logging/app_logger.dart';
 import 'core/services/auth_service.dart';
 import 'core/services/locale_service.dart';
+import 'core/services/network_status_service.dart';
 import 'core/services/push_notification_service.dart';
 import 'core/services/supabase_service.dart';
 import 'core/services/theme_service.dart';
@@ -33,6 +34,10 @@ void main() {
     await LocaleService.initialize();
 
     runApp(App(config: config));
+
+    // Defaults to "online" until this resolves, so a slow connectivity
+    // plugin init never flashes a false "no internet" card on cold start.
+    unawaited(NetworkStatusService.instance.initialize());
 
     // Push setup must never block app startup or crash it — e.g. before a
     // real google-services.json is configured, Firebase.initializeApp()

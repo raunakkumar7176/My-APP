@@ -5,6 +5,7 @@ import '../../../core/constants/theme/app_colors.dart';
 import '../../../core/errors/app_error.dart';
 import '../../../core/logging/app_logger.dart';
 import '../../../core/models/answer.dart';
+import '../../../core/services/network_status_service.dart';
 import '../../../core/widgets/xp_celebration_overlay.dart';
 import '../data/challenge_repository.dart';
 import '../domain/creation_settings.dart';
@@ -67,6 +68,10 @@ class _TestTakingScreenState extends State<TestTakingScreen> {
     _c.addListener(_onChanged);
     _c.load();
     _integrity = TestIntegrityMonitor(controller: _c)..start();
+    // While this screen is up, a lost connection shows the small
+    // non-intrusive "Reconnecting…" banner instead of the full-screen
+    // overlay, which would cover the question/timer during a live attempt.
+    NetworkStatusService.instance.enterActiveTestScreen();
   }
 
   void _onChanged() {
@@ -125,6 +130,7 @@ class _TestTakingScreenState extends State<TestTakingScreen> {
     _integrity.stop();
     _pages.dispose();
     if (_owns) _c.dispose();
+    NetworkStatusService.instance.exitActiveTestScreen();
     super.dispose();
   }
 
