@@ -6,10 +6,12 @@ import 'package:go_router/go_router.dart';
 
 import '../core/logging/app_logger.dart';
 import '../core/models/referral_status.dart';
+import '../core/services/academic_alarm_service.dart';
 import '../core/services/profile_service.dart';
 import '../core/services/push_notification_service.dart';
 import '../core/services/single_device_enforcer.dart';
 import '../features/notifications/data/notification_feed_repository.dart';
+import '../features/routine/data/routine_repository.dart';
 import '../features/dashboard/dashboard_screen.dart';
 import '../features/dashboard/profile_tab_screen.dart';
 import '../features/dashboard/study_tab_screen.dart';
@@ -63,6 +65,13 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     // catches a force-logout push this device missed entirely while it
     // was closed.
     SingleDeviceEnforcer.checkStillActive();
+    // Academic routine alarms: Android wipes every exact alarm on device
+    // reboot (no boot receiver is registered), and this service otherwise
+    // only resyncs when a routine is actually created/edited/completed —
+    // so without this, a user who just opens the app (never touches a
+    // routine) or reboots their phone would have alarms silently stop
+    // firing. Every app open re-covers the rolling 14-day window.
+    unawaited(_resyncRoutineAlarms());
     _referralSub = ProfileService.referralAppliedStream.listen(_onReferralApplied);
     // Redraws the AppBar XP pill the instant a points award updates
     // ProfileService.currentProfile (e.g. XpCelebrationOverlay.show).
@@ -117,6 +126,19 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       // Single-device-login authoritative check — see initState's call for
       // why this can't rely solely on the force-logout push arriving.
       SingleDeviceEnforcer.checkStillActive();
+      // Same reasoning as initState's call: a resume (not just a cold
+      // start) is also a good, frequent point to make sure alarms weren't
+      // silently dropped by a reboot that happened while backgrounded.
+      unawaited(_resyncRoutineAlarms());
+    }
+  }
+
+  Future<void> _resyncRoutineAlarms() async {
+    try {
+      final routines = await const SupabaseRoutineRepository().list();
+      await AcademicAlarmService.resyncAlarms(routines);
+    } catch (e) {
+      AppLogger.warning('AppShell: routine alarm resync failed: $e');
     }
   }
 
