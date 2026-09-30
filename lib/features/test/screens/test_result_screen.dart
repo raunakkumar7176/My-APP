@@ -7,6 +7,8 @@ import '../../../core/errors/app_error.dart';
 import '../../../core/models/result.dart';
 import '../../../core/services/auth_service.dart';
 import '../../../core/services/profile_service.dart';
+import '../../radio/domain/radio_track.dart';
+import '../../radio/state/radio_player_controller.dart';
 import '../domain/attempt_history.dart';
 import '../state/results_controller.dart';
 import '../widgets/subject_analysis_card.dart';
@@ -109,6 +111,28 @@ class _TestResultScreenState extends State<TestResultScreen> {
         SnackBar(content: Text(e.message), backgroundColor: AppColors.error),
       );
     }
+  }
+
+  Future<void> _startRadioRevision() async {
+    if (!_c.reviewLoaded) {
+      await _c.loadReview();
+    }
+    if (!mounted) return;
+    final wrongTracks = <RadioTrack>[
+      for (final q in _c.questions)
+        if (_c.answerFor(q.id)?.selectedOption != _c.correctOptionFor(q.id))
+          RadioTrack(question: q, correctOption: _c.correctOptionFor(q.id)),
+    ];
+    if (wrongTracks.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No mistakes to revise — great job!')),
+      );
+      return;
+    }
+    await RadioPlayerController.instance.loadPlaylist(
+      wrongTracks,
+      sourceTitle: 'Radio Revision — ${_c.test?.title ?? 'Test'}',
+    );
   }
 
   @override
@@ -332,6 +356,13 @@ class _TestResultScreenState extends State<TestResultScreen> {
                 context.push('/attempts/${widget.attemptId}/review'),
             icon: const Icon(Icons.fact_check_outlined),
             label: const Text('Review Answers'),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            key: const Key('radio_revision_button'),
+            onPressed: _startRadioRevision,
+            icon: const Icon(Icons.radio_rounded),
+            label: const Text('📻 Radio Revision - Suniye'),
           ),
           const SizedBox(height: 8),
           // Only an explicit re-attempt may request attempt N+1 (server-enforced).

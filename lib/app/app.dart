@@ -5,6 +5,7 @@ import '../core/constants/theme/app_theme.dart';
 import '../core/services/locale_service.dart';
 import '../core/services/theme_service.dart';
 import '../core/widgets/no_internet_overlay.dart';
+import '../features/radio/widgets/mini_radio_player_bar.dart';
 import '../l10n/app_localizations.dart';
 import 'app_config.dart';
 import 'app_router.dart';
@@ -34,7 +35,14 @@ final class App extends StatelessWidget {
             GlobalCupertinoLocalizations.delegate,
           ],
           routerConfig: AppRouter.router,
-          builder: (context, child) => NetworkAwareOverlay(child: child ?? const SizedBox.shrink()),
+          builder: (context, child) => NetworkAwareOverlay(
+            child: Column(
+              children: [
+                Expanded(child: child ?? const SizedBox.shrink()),
+                const MiniRadioPlayerBar(),
+              ],
+            ),
+          ),
         );
       },
     );

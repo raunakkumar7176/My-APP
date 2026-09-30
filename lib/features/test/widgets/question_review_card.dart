@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../../../core/constants/theme/app_colors.dart';
 import '../../../core/models/answer.dart';
 import '../../../core/models/question.dart';
+import '../../radio/domain/radio_track.dart';
+import '../../radio/state/radio_player_controller.dart';
 
 enum ReviewStatus { correct, wrong, answered, unanswered }
 
@@ -160,6 +162,14 @@ class QuestionReviewCard extends StatelessWidget {
           ),
         ),
         const Spacer(),
+        IconButton(
+          key: const Key('question_review_speak_button'),
+          tooltip: 'Suniye',
+          icon: const Icon(Icons.volume_up_rounded, size: 20),
+          onPressed: () => RadioPlayerController.instance.speakOnce(
+            RadioTrack(question: question, correctOption: correctOption),
+          ),
+        ),
         _buildDifficultyBadge(context),
       ],
     );
