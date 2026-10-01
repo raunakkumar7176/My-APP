@@ -35,6 +35,15 @@ String questionTypeToRpc(QuestionType? type) {
 abstract interface class QuestionRepository {
   Future<List<Question>> safeQuestions(String testId, {String? accessCode});
 
+  /// Questions for the caller's own already-submitted [attemptId] — no
+  /// access/join code required, since owning a submitted attempt already
+  /// proves legitimate access. This is what the Review screen and the
+  /// detailed PDF report must use instead of [safeQuestions] for a
+  /// code-protected test (e.g. Challenge with Friends): by the time the
+  /// result is being viewed, the code used to join is no longer threaded
+  /// through, so `safeQuestions(testId)` with no code returns nothing.
+  Future<List<Question>> reviewQuestionsForAttempt(String attemptId);
+
   /// Returns the new question id.
   Future<String> create(String testId, QuestionDraft draft);
 
@@ -68,6 +77,21 @@ class SupabaseQuestionRepository implements QuestionRepository {
             'SECURITY: get_test_questions_safe returned a correct_option key',
           );
         }
+        return list
+            .map((r) => Question.fromJson(r as Map<String, dynamic>))
+            .toList();
+      }, TestErrorContext.load);
+
+  @override
+  Future<List<Question>> reviewQuestionsForAttempt(String attemptId) =>
+      _guard(() async {
+        final response = await _client.rpc(
+          'rpc_get_review_questions',
+          params: {'p_attempt_id': attemptId},
+        );
+        AppLogger.rpcShape('rpc_get_review_questions', response);
+        if (response == null) return const <Question>[];
+        final list = response is List ? response : [response];
         return list
             .map((r) => Question.fromJson(r as Map<String, dynamic>))
             .toList();

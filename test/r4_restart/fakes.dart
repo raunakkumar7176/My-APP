@@ -379,6 +379,12 @@ class FakeQuestionRepository implements QuestionRepository {
   }
 
   @override
+  Future<List<Question>> reviewQuestionsForAttempt(String attemptId) async {
+    calls.add('reviewForAttempt:$attemptId');
+    return List.of(byTest[attemptId] ?? const []);
+  }
+
+  @override
   Future<String> create(String testId, QuestionDraft draft) async {
     calls.add('create:${draft.questionText}');
     if (failOnce.remove(draft.questionText)) {

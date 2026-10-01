@@ -154,7 +154,7 @@ class ResultsController extends DisposableNotifier {
     _busy = true;
     notifyListeners();
     try {
-      _questionsList = await _questions.safeQuestions(r.testId);
+      _questionsList = await _loadReviewQuestions(r.testId);
       try {
         final answers = await _answers.forAttempt(attemptId);
         _answersById = {for (final a in answers) a.questionId: a};
@@ -181,6 +181,25 @@ class ResultsController extends DisposableNotifier {
       _busy = false;
       notifyListeners();
     }
+  }
+
+  /// Prefers the attempt-scoped RPC (0095) — no access/join code needed,
+  /// since owning a submitted attempt already proves access, which is what
+  /// a code-protected test (e.g. Challenge with Friends) needs: the code
+  /// used to join isn't threaded through to the Review/Report screen, so
+  /// plain `safeQuestions(testId)` returns nothing for those tests. Falls
+  /// back to the old path (an empty result there just means "no questions
+  /// either way") so this keeps working before 0095 is deployed.
+  Future<List<Question>> _loadReviewQuestions(String testId) async {
+    try {
+      final viaAttempt = await _questions.reviewQuestionsForAttempt(
+        attemptId,
+      );
+      if (viaAttempt.isNotEmpty) return viaAttempt;
+    } catch (e) {
+      AppLogger.warning('reviewQuestionsForAttempt unavailable: $e');
+    }
+    return _questions.safeQuestions(testId);
   }
 
   // ── attempt history / policy (stored rows only) ──

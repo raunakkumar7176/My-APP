@@ -1144,31 +1144,43 @@ abstract final class ExamReportPdfGenerator {
     } else if (verdict == false) {
       final hasKey =
           correctIndex != null || (item.correctOption?.trim().isNotEmpty ?? false);
-      final rawResp = pw.RichText(
-        text: pw.TextSpan(
-          children: [
-            plain('Your Answer: '),
-            pw.TextSpan(
-              text: '${label(userIndex, rawUser)} [INCORRECT]',
-              style: const pw.TextStyle(
-                fontSize: 8,
-                fontWeight: pw.FontWeight.bold,
-                color: _incorrectColor,
+      final rawResp = pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.RichText(
+            text: pw.TextSpan(
+              children: [
+                plain('Your Answer: '),
+                pw.TextSpan(
+                  text: '${label(userIndex, rawUser)} [INCORRECT]',
+                  style: const pw.TextStyle(
+                    fontSize: 8,
+                    fontWeight: pw.FontWeight.bold,
+                    color: _incorrectColor,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (hasKey) ...[
+            pw.SizedBox(height: 2),
+            pw.RichText(
+              text: pw.TextSpan(
+                children: [
+                  plain('Correct Answer: '),
+                  pw.TextSpan(
+                    text: label(correctIndex, item.correctOption),
+                    style: const pw.TextStyle(
+                      fontSize: 8,
+                      fontWeight: pw.FontWeight.bold,
+                      color: _correctColor,
+                    ),
+                  ),
+                ],
               ),
             ),
-            if (hasKey) ...[
-              plain('   Correct Answer: '),
-              pw.TextSpan(
-                text: label(correctIndex, item.correctOption),
-                style: const pw.TextStyle(
-                  fontSize: 8,
-                  fontWeight: pw.FontWeight.bold,
-                  color: _correctColor,
-                ),
-              ),
-            ],
           ],
-        ),
+        ],
       );
 
       if (hasDevanagariInResponse) {
@@ -1194,8 +1206,9 @@ abstract final class ExamReportPdfGenerator {
               ),
             ),
             if (hasKey) ...[
+              const TextSpan(text: '\n'),
               const TextSpan(
-                text: '   Correct Answer: ',
+                text: 'Correct Answer: ',
                 style: TextStyle(
                   fontSize: 8,
                   color: Color(0xFF616161),
