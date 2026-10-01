@@ -635,6 +635,8 @@ class _Delegating implements TestRepository {
   @override
   Future<List<Test>> listMyDrafts({int limit = 50}) => inner.listMyDrafts(limit: limit);
   @override
+  Future<Set<String>> myAttemptedTestIds() => inner.myAttemptedTestIds();
+  @override
   Future<List<Test>> listByGroup(String groupId, {int limit = 100}) =>
       inner.listByGroup(groupId, limit: limit);
   @override

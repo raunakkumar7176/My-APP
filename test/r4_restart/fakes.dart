@@ -76,6 +76,14 @@ class FakeTestRepository implements TestRepository {
         .toList();
   }
 
+  final Set<String> attemptedTestIds = {};
+
+  @override
+  Future<Set<String>> myAttemptedTestIds() async {
+    calls.add('myAttemptedTestIds');
+    return Set.of(attemptedTestIds);
+  }
+
   @override
   Future<Test> create(TestWriteInput input) async {
     calls.add('create');

@@ -98,6 +98,12 @@ abstract interface class TestRepository {
 
   Future<List<Test>> listMyDrafts({int limit = 50});
 
+  /// Test ids the caller has at least one completed (submitted/
+  /// auto_submitted/scored) attempt for — used to also surface a
+  /// still-reattemptable test under the "Previous" listing tab as attempt
+  /// history, without removing it from "Upcoming" (it's still startable).
+  Future<Set<String>> myAttemptedTestIds();
+
   /// Non-deleted tests assigned to [groupId], newest first. RLS limits
   /// visibility to group members; the server enforces this.
   Future<List<Test>> listByGroup(String groupId, {int limit = 100});
@@ -183,6 +189,18 @@ class SupabaseTestRepository implements TestRepository {
         .order('created_at', ascending: false)
         .range(0, limit - 1);
     return _rows(rows);
+  }, TestErrorContext.load);
+
+  @override
+  Future<Set<String>> myAttemptedTestIds() => _guard(() async {
+    final response = await _client.rpc('rpc_my_attempted_test_ids');
+    AppLogger.rpcShape('rpc_my_attempted_test_ids', response);
+    if (response == null) return const <String>{};
+    final list = response is List ? response : [response];
+    return {
+      for (final r in list)
+        if (r is Map && r['test_id'] != null) r['test_id'].toString(),
+    };
   }, TestErrorContext.load);
 
   @override

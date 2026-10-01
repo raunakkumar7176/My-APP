@@ -26,6 +26,7 @@ class TestListingController extends DisposableNotifier {
 
   List<Test> _accessible = const [];
   List<Test> _drafts = const [];
+  Set<String> _attemptedTestIds = const {};
   bool _loading = false;
   bool _loadedOnce = false;
   String? _error;
@@ -93,17 +94,33 @@ class TestListingController extends DisposableNotifier {
     final now = _clock();
     return [
       for (final t in _accessible)
-        if (TestLifecycle.categorize(
-              status: t.status,
-              testMode: t.testMode,
-              startsAt: t.startsAt,
-              endsAt: t.endsAt,
-              isSoftDeleted: t.isSoftDeleted,
-              now: now,
-            ) ==
-            category)
-          t,
+        if (_inCategory(t, category, now)) t,
     ];
+  }
+
+  /// A test's primary lifecycle bucket decides most tabs, but "Previous"
+  /// also pulls in any test the user has already completed at least one
+  /// attempt for — even a still-reattemptable Self-mode test that stays in
+  /// "Upcoming" forever (it has no schedule window to end). That test is
+  /// shown in BOTH tabs: still startable in Upcoming, and as attempt
+  /// history in Previous. Never removes anything from its primary tab.
+  bool _inCategory(Test t, ListingCategory category, DateTime now) {
+    final primary = TestLifecycle.categorize(
+      status: t.status,
+      testMode: t.testMode,
+      startsAt: t.startsAt,
+      endsAt: t.endsAt,
+      isSoftDeleted: t.isSoftDeleted,
+      now: now,
+    );
+    if (primary == category) return true;
+    if (category == ListingCategory.previous &&
+        primary != ListingCategory.drafts &&
+        primary != ListingCategory.hidden &&
+        _attemptedTestIds.contains(t.id)) {
+      return true;
+    }
+    return false;
   }
 
   List<Test> _applyFilters(List<Test> source) {
@@ -146,6 +163,9 @@ class TestListingController extends DisposableNotifier {
     final results = await Future.wait<Object?>([
       _capture(() async => _accessible = await _repo.listAccessible()),
       _capture(() async => _drafts = await _repo.listMyDrafts()),
+      // Best-effort: if this fails, Previous simply falls back to the old
+      // status-only behaviour rather than blocking the whole listing.
+      _capture(() async => _attemptedTestIds = await _repo.myAttemptedTestIds()),
     ]);
     _error = results[0] as String?;
     _draftsError = results[1] as String?;
