@@ -152,7 +152,7 @@ class _FullRadioPlayerSheetState extends State<FullRadioPlayerSheet> {
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Hands-Free Drill'),
-                subtitle: const Text('3 second pause after the question before the answer.'),
+                subtitle: const Text('33 second pause after the question before the answer.'),
                 value: _controller.handsFreeMode,
                 onChanged: _controller.setHandsFreeMode,
               ),

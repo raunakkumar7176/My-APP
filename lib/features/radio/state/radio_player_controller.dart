@@ -51,7 +51,9 @@ final class RadioPlayerController extends ChangeNotifier {
 
   Future<void> _ensureInit() async {
     if (_ttsInitialized) return;
-    await _tts.setPitch(1.0);
+    // A touch higher than neutral (1.0) reads as a softer, "sweeter" tone
+    // on most engines without distorting into a chipmunk voice.
+    await _tts.setPitch(1.05);
     await _tts.setSpeechRate(_speedToRate(_speed));
     await _tts.awaitSpeakCompletion(true);
     _tts.setCompletionHandler(_onUtteranceDone);
@@ -60,6 +62,54 @@ final class RadioPlayerController extends ChangeNotifier {
       AppLogger.warning('RadioPlayerController TTS error: $msg');
     });
     _ttsInitialized = true;
+  }
+
+  /// Best-effort female-voice pick for [locale] from whatever voices are
+  /// actually installed on this device — there is no universal voice id
+  /// that exists on every phone/TTS engine, so this reads the real
+  /// `getVoices()` list and matches on it rather than hard-coding a name
+  /// that might not be present. Silently does nothing if the engine
+  /// doesn't expose gender metadata or has no matching voice; the app
+  /// still speaks, just with whatever the device's default voice is.
+  final Set<String> _triedLocales = {};
+  Future<void> _applyFemaleVoiceFor(String locale) async {
+    if (_triedLocales.contains(locale)) return;
+    _triedLocales.add(locale);
+    try {
+      final raw = await _tts.getVoices;
+      if (raw is! List) return;
+      final voices = raw.whereType<Map>().toList();
+      final localePrefix = locale.split('-').first.toLowerCase();
+      bool matchesLocale(Map v) =>
+          (v['locale']?.toString().toLowerCase() ?? '').startsWith(localePrefix);
+      bool looksFemale(Map v) {
+        final name = (v['name']?.toString() ?? '').toLowerCase();
+        final gender = (v['gender']?.toString() ?? '').toLowerCase();
+        return gender.contains('female') ||
+            name.contains('female') ||
+            name.contains('#female') ||
+            RegExp(r'\bf(-|_)?local\b|\bfemale\b').hasMatch(name);
+      }
+
+      final candidate = voices.firstWhere(
+        (v) => matchesLocale(v) && looksFemale(v),
+        orElse: () => const {},
+      );
+      if (candidate.isNotEmpty) {
+        await _tts.setVoice({
+          'name': candidate['name'].toString(),
+          'locale': candidate['locale'].toString(),
+        });
+      }
+    } catch (e) {
+      AppLogger.warning('RadioPlayerController: voice lookup failed: $e');
+    }
+  }
+
+  Future<void> _setLanguageForTrack(RadioTrack track) async {
+    final locale = SpokenScriptBuilder.localeFor(track);
+    await _tts.setLanguage(locale);
+    await _applyFemaleVoiceFor(locale);
   }
 
   /// `flutter_tts`'s rate is 0.0-1.0 on Android, not a real "1.0x/1.5x"
@@ -149,7 +199,7 @@ final class RadioPlayerController extends ChangeNotifier {
   /// the per-card 🔊 "Suniye" button on the Review screen.
   Future<void> speakOnce(RadioTrack track) async {
     await _ensureInit();
-    await _tts.setLanguage(SpokenScriptBuilder.localeFor(track));
+    await _setLanguageForTrack(track);
     await _tts.speak(SpokenScriptBuilder.questionPhrase(track));
     final answer = SpokenScriptBuilder.answerPhrase(track);
     if (answer != null) {
@@ -163,7 +213,7 @@ final class RadioPlayerController extends ChangeNotifier {
       await stop();
       return;
     }
-    await _tts.setLanguage(SpokenScriptBuilder.localeFor(track));
+    await _setLanguageForTrack(track);
     notifyListeners();
     if (!_speakingAnswer) {
       await _tts.speak(SpokenScriptBuilder.questionPhrase(track));
@@ -185,7 +235,7 @@ final class RadioPlayerController extends ChangeNotifier {
     if (!_speakingAnswer) {
       _speakingAnswer = true;
       if (_handsFreeMode) {
-        Timer(const Duration(seconds: 3), () {
+        Timer(const Duration(seconds: 33), () {
           if (_state == RadioPlaybackState.playing) _speakCurrentPhrase();
         });
       } else {

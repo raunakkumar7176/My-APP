@@ -68,6 +68,10 @@ class QuestionReviewCard extends StatelessWidget {
                   option: opt,
                   isSelected: selectedIndex == opt.index,
                   isCorrect: correctOption != null && correctOption == opt.index,
+                  // The answer key wasn't available for this attempt — don't
+                  // paint the selection red, which claims a verdict ("you
+                  // got this wrong") the app doesn't actually have.
+                  verdictKnown: correctOption != null,
                 ),
               ),
             // Typed-answer questions have no storage on the live backend.
@@ -212,15 +216,21 @@ class QuestionReviewCard extends StatelessWidget {
     required QuestionOption option,
     required bool isSelected,
     required bool isCorrect,
+    required bool verdictKnown,
   }) {
     // isCorrect always wins the styling (even if the student didn't pick
     // it, so they can see what the right answer was); a selected-but-wrong
-    // option is called out in red; anything else falls back to the plain
-    // selected/unselected look.
+    // option is called out in red — but only once a verdict is actually
+    // known (the answer key loaded). Without it, red would claim "this was
+    // wrong" when the truth is just "unknown"; the selection is shown in
+    // the neutral primary colour instead, matching the header's own
+    // "Answered" (not "Wrong") status in that case.
     final theme = Theme.of(context);
     final Color? accent = isCorrect
         ? AppColors.success
-        : (isSelected ? AppColors.error : null);
+        : (isSelected
+              ? (verdictKnown ? AppColors.error : theme.colorScheme.primary)
+              : null);
     final bool highlighted = isCorrect || isSelected;
 
     return Padding(

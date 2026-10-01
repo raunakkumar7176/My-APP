@@ -175,6 +175,17 @@ class ResultsController extends DisposableNotifier {
         _answerKey = const {};
       }
       _reviewLoaded = true;
+      // TEMP DIAGNOSTIC — remove once the "every answer shows Wrong" report
+      // is root-caused. Dumps, per question, the exact raw values the
+      // Review screen compares, so a mismatch (wrong id match, index base,
+      // stale key, etc.) is visible in adb logcat instead of guessed at.
+      for (final q in _questionsList) {
+        final a = _answersById[q.id];
+        AppLogger.warning(
+          'REVIEW_DIAG q=${q.id} selected=${a?.selectedOption} '
+          'correct=${_answerKey[q.id]} answerKeyHasEntry=${_answerKey.containsKey(q.id)}',
+        );
+      }
     } on AppError catch (e) {
       _error = e.message;
     } finally {
