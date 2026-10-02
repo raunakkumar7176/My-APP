@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/models/question.dart';
 import '../../../core/theme/app_colors.dart';
+import '../data/question_repository.dart';
 import '../data/question_wallet_repository.dart';
 import '../domain/question_wallet_models.dart';
 
@@ -19,7 +21,9 @@ class QuestionWalletScreen extends StatefulWidget {
 class _QuestionWalletScreenState extends State<QuestionWalletScreen> {
   final _repo = const SupabaseQuestionWalletRepository();
   List<PastTestSummary> _pastTests = [];
+  List<MistakeTestGroup> _mistakeGroups = [];
   bool _isLoading = true;
+  bool _mistakesLoading = true;
   String? _error;
 
   @override
@@ -31,6 +35,7 @@ class _QuestionWalletScreenState extends State<QuestionWalletScreen> {
   Future<void> _load() async {
     setState(() {
       _isLoading = true;
+      _mistakesLoading = true;
       _error = null;
     });
     try {
@@ -47,35 +52,81 @@ class _QuestionWalletScreenState extends State<QuestionWalletScreen> {
         _isLoading = false;
       });
     }
+    try {
+      final groups = await _repo.mistakeTestsSummary();
+      if (!mounted) return;
+      setState(() {
+        _mistakeGroups = groups;
+        _mistakesLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _mistakesLoading = false);
+    }
   }
 
-  bool _loadingMistakes = false;
-
-  Future<void> _openMistakeVault() async {
-    if (_loadingMistakes) return;
-    setState(() => _loadingMistakes = true);
-    List<ReusableQuestion> questions;
-    try {
-      questions = await _repo.myIncorrectQuestions();
-    } catch (_) {
-      questions = const [];
-    }
-    if (!mounted) return;
-    setState(() => _loadingMistakes = false);
-
-    if (questions.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No past mistakes found yet — great job!')),
-      );
-      return;
-    }
-    await _openPicker(
-      title: 'Mistake Vault',
-      subtitle: 'Questions you got wrong before — all pre-selected.',
-      questions: questions,
-      allSelectedByDefault: true,
-      defaultTitle: 'Mistake Revision',
+  Future<void> _retestMistakeGroup(MistakeTestGroup group) async {
+    await _confirmAndCreateSelfTest(
+      defaultTitle: '${group.testTitle} (Mistakes)',
+      questionIds: group.mistakeQuestionIds,
     );
+  }
+
+  Future<void> _confirmAndCreateSelfTest({
+    required String defaultTitle,
+    required List<String> questionIds,
+  }) async {
+    final titleController = TextEditingController(text: defaultTitle);
+    final minutesController = TextEditingController(
+      text: '${(questionIds.length * 1.2).ceil().clamp(5, 180)}',
+    );
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Re-test Your Mistakes'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: titleController,
+              decoration: const InputDecoration(labelText: 'Test Title'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: minutesController,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: 'Duration (minutes)'),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '${questionIds.length} mistake${questionIds.length == 1 ? '' : 's'} selected',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Start')),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final minutes = int.tryParse(minutesController.text.trim()) ?? 30;
+    try {
+      final newTestId = await _repo.createSelfTestFromMistakes(
+        title: titleController.text.trim().isEmpty ? defaultTitle : titleController.text.trim(),
+        durationSec: (minutes.clamp(1, 360)) * 60,
+        questionIds: questionIds,
+      );
+      if (!mounted) return;
+      context.push('/tests/$newTestId');
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not create the test: $e')),
+      );
+    }
   }
 
   Future<void> _openTestOptions(PastTestSummary test) async {
@@ -225,18 +276,40 @@ class _QuestionWalletScreenState extends State<QuestionWalletScreen> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        Card(
-          color: AppColors.error.withValues(alpha: 0.08),
-          child: ListTile(
-            leading: const Icon(Icons.warning_amber_rounded, color: AppColors.error),
-            title: const Text('Mistake Vault'),
-            subtitle: const Text('Every question you\'ve ever gotten wrong, in one revision test.'),
-            trailing: _loadingMistakes
-                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                : const Icon(Icons.chevron_right),
-            onTap: _openMistakeVault,
+        Row(
+          children: [
+            const Icon(Icons.warning_amber_rounded, color: AppColors.error, size: 20),
+            const SizedBox(width: 8),
+            Text(
+              'Mistake Vault',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+            ),
+          ],
+        ),
+        const Padding(
+          padding: EdgeInsets.only(top: 4, bottom: 10),
+          child: Text(
+            'Mistakes stay here for 30 days — star ⭐ one to keep it forever.',
+            style: TextStyle(fontSize: 12),
           ),
         ),
+        if (_mistakesLoading)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 16),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (_mistakeGroups.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 16),
+            child: Center(child: Text('No mistakes found yet — great job!')),
+          )
+        else
+          for (final group in _mistakeGroups)
+            _MistakeGroupCard(
+              group: group,
+              onRetest: () => _retestMistakeGroup(group),
+              onStarChanged: _load,
+            ),
         const SizedBox(height: 16),
         Text(
           'Your Past Tests',
@@ -260,6 +333,121 @@ class _QuestionWalletScreenState extends State<QuestionWalletScreen> {
               ),
             ),
       ],
+    );
+  }
+}
+
+class _MistakeGroupCard extends StatefulWidget {
+  const _MistakeGroupCard({
+    required this.group,
+    required this.onRetest,
+    required this.onStarChanged,
+  });
+
+  final MistakeTestGroup group;
+  final VoidCallback onRetest;
+  final VoidCallback onStarChanged;
+
+  @override
+  State<_MistakeGroupCard> createState() => _MistakeGroupCardState();
+}
+
+class _MistakeGroupCardState extends State<_MistakeGroupCard> {
+  final _questionRepo = const SupabaseQuestionRepository();
+  final _walletRepo = const SupabaseQuestionWalletRepository();
+  bool _expanded = false;
+  bool _loadingQuestions = false;
+  List<Question>? _questions;
+
+  String _relativeDate(DateTime? dt) {
+    if (dt == null) return '';
+    final days = DateTime.now().difference(dt).inDays;
+    if (days <= 0) return 'Today';
+    if (days == 1) return 'Yesterday';
+    return '$days days ago';
+  }
+
+  Future<void> _toggleExpanded() async {
+    setState(() => _expanded = !_expanded);
+    if (_expanded && _questions == null) {
+      setState(() => _loadingQuestions = true);
+      try {
+        final all = await _questionRepo.reviewQuestionsForAttempt(widget.group.attemptId);
+        final ids = widget.group.mistakeQuestionIds.toSet();
+        if (!mounted) return;
+        setState(() {
+          _questions = all.where((q) => ids.contains(q.id)).toList();
+          _loadingQuestions = false;
+        });
+      } catch (_) {
+        if (!mounted) return;
+        setState(() => _loadingQuestions = false);
+      }
+    }
+  }
+
+  Future<void> _toggleStar(String questionId, bool starred) async {
+    try {
+      await _walletRepo.toggleMistakeStar(
+        attemptId: widget.group.attemptId,
+        questionId: questionId,
+        starred: starred,
+      );
+      widget.onStarChanged();
+    } catch (_) {
+      // Best-effort: star is a convenience, not worth a blocking error.
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final g = widget.group;
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ListTile(
+            title: Text(g.testTitle, maxLines: 1, overflow: TextOverflow.ellipsis),
+            subtitle: Text('${_relativeDate(g.attemptedAt)} · ${g.totalMistakes} mistake${g.totalMistakes == 1 ? '' : 's'}'),
+            trailing: IconButton(
+              icon: Icon(_expanded ? Icons.expand_less : Icons.expand_more),
+              onPressed: _toggleExpanded,
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: OutlinedButton.icon(
+              onPressed: widget.onRetest,
+              icon: const Icon(Icons.bolt_rounded, size: 18),
+              label: Text('Re-test only ${g.totalMistakes} mistake${g.totalMistakes == 1 ? '' : 's'}'),
+            ),
+          ),
+          if (_expanded)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _loadingQuestions
+                  ? const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 16),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  : Column(
+                      children: [
+                        for (final q in _questions ?? const <Question>[])
+                          ListTile(
+                            dense: true,
+                            title: Text(q.question, maxLines: 2, overflow: TextOverflow.ellipsis),
+                            trailing: IconButton(
+                              icon: const Icon(Icons.star_border_rounded),
+                              tooltip: 'Keep this mistake forever',
+                              onPressed: () => _toggleStar(q.id, true),
+                            ),
+                          ),
+                      ],
+                    ),
+            ),
+        ],
+      ),
     );
   }
 }

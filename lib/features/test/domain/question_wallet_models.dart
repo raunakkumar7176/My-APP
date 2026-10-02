@@ -73,3 +73,37 @@ final class ReusableQuestion {
     }).toList();
   }
 }
+
+/// One past test's mistakes, grouped — the accordion card the Mistake
+/// Vault screen shows instead of one long flat list.
+final class MistakeTestGroup {
+  const MistakeTestGroup({
+    required this.testId,
+    required this.attemptId,
+    required this.testTitle,
+    required this.attemptedAt,
+    required this.totalMistakes,
+    required this.mistakeQuestionIds,
+  });
+
+  final String testId;
+  final String attemptId;
+  final String testTitle;
+  final DateTime? attemptedAt;
+  final int totalMistakes;
+  final List<String> mistakeQuestionIds;
+
+  factory MistakeTestGroup.fromJson(Map<String, dynamic> json) {
+    final ids = json['mistake_question_ids'];
+    return MistakeTestGroup(
+      testId: json['test_id'] as String,
+      attemptId: json['attempt_id'] as String,
+      testTitle: json['test_title'] as String? ?? 'Untitled Test',
+      attemptedAt: DateTime.tryParse(json['attempted_at'] as String? ?? ''),
+      totalMistakes: (json['total_mistakes'] as num?)?.toInt() ?? 0,
+      mistakeQuestionIds: ids is List
+          ? ids.map((e) => e.toString()).toList()
+          : const [],
+    );
+  }
+}
