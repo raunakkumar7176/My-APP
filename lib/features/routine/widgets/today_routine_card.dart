@@ -228,18 +228,34 @@ class _TodayRoutineCardState extends State<TodayRoutineCard> {
     );
   }
 
+  /// Dashboard home card is a compact snapshot, not the full day: only the
+  /// slot currently in progress and the next one still to come are shown
+  /// here — a slot that already ended without being completed stays out of
+  /// this card entirely (it's still reachable, and completable for XP,
+  /// from the full Routine screen via "View all"). A slot the user
+  /// positively completed is still shown, as a record of today's work.
   Widget _buildRoutineList() {
     final items = _controller.todayItems;
-    final pending = items.where((i) => !i.isCompleted).toList()
-      ..sort((a, b) => a.routine.startTime.compareTo(b.routine.startTime));
-    final completed = items.where((i) => i.isCompleted).toList();
-    final upNext = _controller.upNext;
     final now = _controller.nowInUserZone;
+    final completed = items.where((i) => i.isCompleted).toList()
+      ..sort((a, b) => a.routine.startTime.compareTo(b.routine.startTime));
+    final ongoing = items
+        .where((i) => !i.isCompleted && i.isOngoingAt(now))
+        .toList();
+    final upcoming = items
+        .where((i) => !i.isCompleted && !i.isOngoingAt(now) && !i.isMissedAt(now))
+        .toList()
+      ..sort((a, b) => a.routine.startTime.compareTo(b.routine.startTime));
+    final next = upcoming.isNotEmpty ? [upcoming.first] : <RoutineWithLog>[];
+    final visible = [...ongoing, ...next];
 
     return Column(
       children: [
-        if (upNext != null && pending.length > 1) _buildUpcomingBanner(upNext),
-        ...pending.map((i) => _buildRoutineTile(i, now)),
+        // Nothing currently ongoing or still to come today — whether
+        // because everything was completed or a slot simply passed by
+        // unmarked, there is nothing actionable left to show right now.
+        if (visible.isEmpty && items.isNotEmpty) _buildAllDoneMessage(),
+        ...visible.map((i) => _buildRoutineTile(i, now)),
         if (completed.isNotEmpty) ...[
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -261,29 +277,31 @@ class _TodayRoutineCardState extends State<TodayRoutineCard> {
     );
   }
 
-  Widget _buildUpcomingBanner(RoutineWithLog item) {
-    return Container(
-      key: const Key('today_routine_up_next'),
-      margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: AppColors.primaryLight.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.play_arrow, size: 18, color: AppColors.primaryLight),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              'Up next: ${item.routine.title} at ${RoutineSchedule.format12h(item.routine.startTime)}',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: AppColors.primaryLight,
-                fontWeight: FontWeight.w500,
+  Widget _buildAllDoneMessage() {
+    return Padding(
+      key: const Key('today_routine_all_done'),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppColors.success.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: [
+            const Text('🎉', style: TextStyle(fontSize: 20)),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'All routine slots completed for today!',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: AppColors.success,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

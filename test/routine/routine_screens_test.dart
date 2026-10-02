@@ -165,14 +165,17 @@ void main() {
       expect(find.byKey(const Key('today_routine_empty')), findsOneWidget);
     });
 
-    testWidgets('progress, complete toggle persists, undo, up-next banner', (tester) async {
+    testWidgets('progress, complete toggle persists, undo; compact view shows only the next slot', (tester) async {
       repo.seed(id: 'a', title: 'Maths · Lecture', startTime: '07:00', endTime: '08:00', targetDurationMinutes: 45);
       repo.seed(id: 'b', title: 'Science · Revision', startTime: '09:00', endTime: '10:00');
       await tester.pumpWidget(host(Scaffold(body: TodayRoutineCard(controller: controller))));
       await tester.pumpAndSettle();
       expect(find.text('0/2'), findsOneWidget);
-      expect(find.byKey(const Key('today_routine_up_next')), findsOneWidget);
-      expect(find.textContaining('Up next: Maths · Lecture at 7:00 AM'), findsOneWidget);
+      // Dashboard home card is a compact snapshot: only the nearest
+      // still-to-come slot ('a', starting first) is shown; a later slot
+      // ('b') stays off this card until 'a' is done or past.
+      expect(find.byKey(const Key('today_routine_a')), findsOneWidget);
+      expect(find.byKey(const Key('today_routine_b')), findsNothing);
 
       await tester.tap(find.byKey(const Key('today_routine_a')));
       await tester.pumpAndSettle();
@@ -186,6 +189,26 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('0/2'), findsOneWidget);
       expect(repo.logs['a:$istToday']!.status, 'PENDING');
+    });
+
+    testWidgets('a missed (not completed, already ended) slot never shows on the dashboard card', (tester) async {
+      // Clock is 2026-09-21 01:30 IST — this slot ended 30 minutes ago and
+      // was never marked complete, matching the real "Ended 21 hrs ago"
+      // staleness bug.
+      repo.seed(id: 'a', title: 'Late Night Revision', startTime: '00:15', endTime: '01:00');
+      await tester.pumpWidget(host(Scaffold(body: TodayRoutineCard(controller: controller))));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('today_routine_a')), findsNothing);
+      expect(find.textContaining('Ended'), findsNothing);
+      expect(find.byKey(const Key('today_routine_all_done')), findsOneWidget);
+    });
+
+    testWidgets('an ongoing slot still shows even though it started before now', (tester) async {
+      repo.seed(id: 'a', title: 'Live Now', startTime: '01:00', endTime: '02:00');
+      await tester.pumpWidget(host(Scaffold(body: TodayRoutineCard(controller: controller))));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('today_routine_a')), findsOneWidget);
+      expect(find.byKey(const Key('today_routine_all_done')), findsNothing);
     });
 
     testWidgets('completion survives a rebuild with a fresh controller (restart)', (tester) async {

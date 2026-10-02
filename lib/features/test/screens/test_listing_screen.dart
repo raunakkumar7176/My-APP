@@ -188,9 +188,14 @@ class _TestListingScreenState extends State<TestListingScreen>
       actions: [
         IconButton(
           key: const Key('join_challenge_button'),
-          tooltip: 'Join a Peer Challenge',
+          tooltip: 'Join with code',
           icon: const Icon(Icons.pin_outlined),
-          onPressed: () => context.push('/tests/join'),
+          // Same destination as the Hero card's "Join with code" button —
+          // this app used to have two different entry points for the same
+          // action (this icon pushed a separate, barren full-page screen;
+          // the Hero card opened this sheet), which looked like two
+          // unrelated features to a student. One sheet, two doors to it.
+          onPressed: () => JoinWithCodeSheet.show(context),
         ),
         IconButton(
           key: const Key('templates_button'),
@@ -199,6 +204,7 @@ class _TestListingScreenState extends State<TestListingScreen>
           onPressed: () => context.push('/tests/templates'),
         ),
         IconButton(
+          key: const Key('listing_filter_button'),
           tooltip: 'Filter',
           icon: const Icon(Icons.tune_rounded),
           onPressed: () => _showFilterSheet(context, isDark),
@@ -474,9 +480,12 @@ class _TestListingScreenState extends State<TestListingScreen>
     );
   }
 
-  /// Search (title / description) + kind chips. Client-side only.
+  /// Search (title / description). Kind filter + sort order live in the
+  /// Filter sheet (AppBar's tune icon) only now — they used to also be
+  /// repeated here as an always-visible chip row, the exact same controls
+  /// in two places at once, which was most of what made this screen feel
+  /// like "half the screen is buttons."
   Widget _filterBar(bool isDark) {
-    final selected = _controller.kindFilter;
     final surfaceColor = isDark ? const Color(0xFF1E293B) : Colors.white;
     final borderColor = isDark
         ? const Color(0xFF334155)
@@ -527,63 +536,6 @@ class _TestListingScreenState extends State<TestListingScreen>
                     },
                   ),
           ),
-        ),
-        const SizedBox(height: 6),
-        Row(
-          children: [
-            Expanded(
-              child: SizedBox(
-                height: 44,
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.only(right: 6),
-                      child: FilterChip(
-                        key: const Key('kind_chip_all'),
-                        label: const Text('All'),
-                        selected: selected == null,
-                        onSelected: (_) => _controller.setKindFilter(null),
-                      ),
-                    ),
-                    for (final k in TestKind.filterable)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 6),
-                        child: FilterChip(
-                          key: Key('kind_chip_${k.name}'),
-                          label: Text(k.label),
-                          selected: selected == k,
-                          onSelected: (on) =>
-                              _controller.setKindFilter(on ? k : null),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-            PopupMenuButton<TestSortOrder>(
-              key: const Key('listing_sort_button'),
-              tooltip: 'Sort',
-              icon: const Icon(Icons.sort_rounded, size: 20),
-              initialValue: _controller.sortOrder,
-              onSelected: _controller.setSortOrder,
-              itemBuilder: (context) => const [
-                PopupMenuItem(
-                  value: TestSortOrder.newestFirst,
-                  child: Text('Newest first'),
-                ),
-                PopupMenuItem(
-                  value: TestSortOrder.oldestFirst,
-                  child: Text('Oldest first'),
-                ),
-                PopupMenuItem(
-                  value: TestSortOrder.titleAZ,
-                  child: Text('Title A–Z'),
-                ),
-              ],
-            ),
-          ],
         ),
       ],
     );
@@ -938,6 +890,7 @@ class _TestListingScreenState extends State<TestListingScreen>
                     runSpacing: 8,
                     children: [
                       FilterChip(
+                        key: const Key('kind_chip_all'),
                         label: const Text('All'),
                         selected: _controller.kindFilter == null,
                         onSelected: (_) {
@@ -947,6 +900,7 @@ class _TestListingScreenState extends State<TestListingScreen>
                       ),
                       for (final k in TestKind.filterable)
                         FilterChip(
+                          key: Key('kind_chip_${k.name}'),
                           label: Text(k.label),
                           selected: _controller.kindFilter == k,
                           onSelected: (on) {
@@ -1244,12 +1198,68 @@ class _TestCard extends StatelessWidget {
                     ),
                 ],
               ),
+              const SizedBox(height: 14),
+
+              // 4. Primary action — the whole card has always been tappable,
+              // but nothing told the student that; an explicit button is
+              // what actually gets tapped.
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: onTap,
+                  icon: Icon(_actionIcon(test.status), size: 16),
+                  label: Text(
+                    _actionLabel(test.status),
+                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                  ),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: _actionColor(test.status),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    elevation: 0,
+                  ),
+                ),
+              ),
             ],
           ),
         ),
       ),
     );
   }
+
+  /// Mirrors TestLifecycle's own status grouping — never invents a new
+  /// status meaning, just picks the verb a student actually needs to see.
+  static String _actionLabel(TestStatus status) => switch (status) {
+    TestStatus.draft => 'Resume Editing',
+    TestStatus.live || TestStatus.ready => 'Start Test',
+    TestStatus.completed ||
+    TestStatus.ended ||
+    TestStatus.evaluated => 'View Results',
+    TestStatus.cancelled || TestStatus.archived || TestStatus.expired =>
+      'View Details',
+    TestStatus.scheduled || TestStatus.published || TestStatus.unknown =>
+      'View Details',
+  };
+
+  static IconData _actionIcon(TestStatus status) => switch (status) {
+    TestStatus.draft => Icons.edit_outlined,
+    TestStatus.live || TestStatus.ready => Icons.play_arrow_rounded,
+    TestStatus.completed ||
+    TestStatus.ended ||
+    TestStatus.evaluated => Icons.bar_chart_rounded,
+    _ => Icons.chevron_right_rounded,
+  };
+
+  static Color _actionColor(TestStatus status) => switch (status) {
+    TestStatus.live || TestStatus.ready => const Color(0xFFEF4444),
+    TestStatus.completed ||
+    TestStatus.ended ||
+    TestStatus.evaluated => const Color(0xFF059669),
+    _ => const Color(0xFF2563EB),
+  };
 
   Widget _provenanceBadge(TestProvenance provenance, bool isDark) {
     final (label, icon, color) = switch (provenance) {

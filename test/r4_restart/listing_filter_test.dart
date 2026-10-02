@@ -218,6 +218,12 @@ void main() {
     testWidgets('typing filters cards; no-match state; Clear restores', (
       tester,
     ) async {
+      // Cards grew a primary action button; a taller viewport keeps both
+      // seeded cards on-screen in this lazy ListView.builder without this
+      // test needing to scroll.
+      tester.view.physicalSize = const Size(800, 2000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
       final c = TestListingController(repository: _repo(), clock: () => _now);
       await tester.pumpWidget(
         MaterialApp(home: TestListingScreen(controller: c)),
@@ -225,7 +231,6 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('listing_search')), findsOneWidget);
-      expect(find.byKey(const Key('kind_chip_all')), findsOneWidget);
       expect(find.text('Algebra basics'), findsOneWidget);
       expect(find.text('Biology quick check'), findsOneWidget);
 
@@ -257,20 +262,35 @@ void main() {
       c.dispose();
     });
 
-    testWidgets('kind chips narrow the tab; All resets', (tester) async {
+    testWidgets('kind chips (in the Filter sheet) narrow the tab; All resets', (tester) async {
+      // The always-visible chip row was removed (it duplicated these same
+      // controls); the Filter sheet is now the one place to change the
+      // kind filter. Taller viewport for the same reason as the test
+      // above (cards grew a primary action button).
+      tester.view.physicalSize = const Size(800, 2000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
       final c = TestListingController(repository: _repo(), clock: () => _now);
       await tester.pumpWidget(
         MaterialApp(home: TestListingScreen(controller: c)),
       );
       await tester.pumpAndSettle();
 
+      await tester.tap(find.byKey(const Key('listing_filter_button')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('kind_chip_quick')));
+      await tester.pumpAndSettle();
+      await tester.tapAt(const Offset(10, 10)); // dismiss the sheet
       await tester.pumpAndSettle();
       expect(c.kindFilter, TestKind.quick);
       expect(find.text('Algebra basics'), findsNothing);
       expect(find.text('Biology quick check'), findsOneWidget);
 
+      await tester.tap(find.byKey(const Key('listing_filter_button')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('kind_chip_all')));
+      await tester.pumpAndSettle();
+      await tester.tapAt(const Offset(10, 10));
       await tester.pumpAndSettle();
       expect(c.kindFilter, isNull);
       expect(find.text('Algebra basics'), findsOneWidget);
