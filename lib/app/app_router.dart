@@ -9,6 +9,7 @@ import '../core/services/auth_service.dart';
 import '../core/services/profile_service.dart';
 import '../features/calendar/screens/calendar_screen.dart';
 import '../features/auth/auth_screen.dart';
+import '../features/auth/reset_password_screen.dart';
 import '../features/auth/splash_screen.dart';
 import '../features/group/screens/group_create_screen.dart';
 import '../features/group/screens/group_chat_screen.dart';
@@ -95,6 +96,7 @@ final class AppRouter {
       const loginPath = '/login';
       const signupPath = '/signup';
       const homePath = '/home';
+      const resetPasswordPath = '/reset-password';
 
       final isAuthRoute = location == loginPath || location == signupPath;
       final isSplash = location == splashPath;
@@ -111,9 +113,17 @@ final class AppRouter {
         case AuthStatus.unauthenticated:
           return isAuthRoute ? null : loginPath;
 
+        case AuthStatus.passwordRecovery:
+          // A password-reset email link authenticates a temporary recovery
+          // session — it must never fall through to the normal authenticated
+          // branch below, which would send the user straight to Home instead
+          // of letting them set a new password.
+          return location == resetPasswordPath ? null : resetPasswordPath;
+
         case AuthStatus.authenticated:
           if (isSplash) return homePath;
           if (isAuthRoute) return homePath;
+          if (location == resetPasswordPath) return homePath;
           return null;
       }
     },
@@ -137,6 +147,11 @@ final class AppRouter {
         path: '/home',
         name: 'home',
         builder: (context, state) => const AppShell(),
+      ),
+      GoRoute(
+        path: '/reset-password',
+        name: 'reset-password',
+        builder: (context, state) => const ResetPasswordScreen(),
       ),
       GoRoute(
         path: '/profile',

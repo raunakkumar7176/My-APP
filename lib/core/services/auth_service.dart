@@ -9,7 +9,22 @@ import 'push_notification_service.dart';
 import 'single_device_enforcer.dart';
 import 'supabase_service.dart';
 
-enum AuthStatus { unknown, authenticated, unauthenticated }
+enum AuthStatus {
+  unknown,
+  authenticated,
+  unauthenticated,
+
+  /// A session exists, but it came from a password-reset email link
+  /// (`AuthChangeEvent.passwordRecovery`), not a real sign-in — the
+  /// previous behavior here only ever checked `session != null`, so this
+  /// temporary recovery session was indistinguishable from a normal login
+  /// and the router sent the user straight to Home instead of letting
+  /// them actually set a new password. Sticky: stays set until
+  /// [AuthService.completePasswordRecovery] succeeds (or the user signs
+  /// out), so a later TOKEN_REFRESHED/USER_UPDATED event on the same
+  /// session can't silently escape the reset screen early.
+  passwordRecovery,
+}
 
 final class AuthService {
   AuthService._();
@@ -45,6 +60,27 @@ final class AuthService {
   static void initialize() {
     _auth.onAuthStateChange.listen((data) async {
       final session = data.session;
+
+      // Must be checked before the normal authenticated/unauthenticated
+      // branch below: this event's session is non-null (GoTrue does
+      // authenticate the user from the reset link) but it must never be
+      // treated as a real login.
+      if (data.event == AuthChangeEvent.passwordRecovery) {
+        if (_currentStatus != AuthStatus.passwordRecovery) {
+          _currentStatus = AuthStatus.passwordRecovery;
+          _authStatusController.add(_currentStatus);
+          AppLogger.info('AUTH_DEBUG: Password recovery session detected');
+        }
+        return;
+      }
+      // Once in recovery mode, ignore every other auth event (a token
+      // refresh on the same recovery session, etc.) until
+      // completePasswordRecovery() explicitly clears it — otherwise a
+      // TOKEN_REFRESHED firing while the reset screen is still open would
+      // flip status back to authenticated and bounce the user to Home
+      // before they ever set a new password.
+      if (_currentStatus == AuthStatus.passwordRecovery) return;
+
       final newStatus =
           session != null ? AuthStatus.authenticated : AuthStatus.unauthenticated;
 
@@ -179,6 +215,37 @@ final class AuthService {
       if (e is AuthError) rethrow;
       AppLogger.error('Sign out unexpected error: $e');
       throw const AuthError(message: 'An unexpected error occurred during sign out.');
+    }
+  }
+
+  /// Completes a password-recovery session started by the reset-password
+  /// email link: sets the new password on the still-authenticated recovery
+  /// session, then explicitly clears the sticky [AuthStatus.passwordRecovery]
+  /// flag so the router lets the user through to Home. Must be called
+  /// instead of relying on the next [onAuthStateChange] event, since a
+  /// successful `updateUser` fires `AuthChangeEvent.userUpdated`, which the
+  /// listener in [initialize] deliberately ignores while recovery is active.
+  static Future<void> completePasswordRecovery({
+    required String newPassword,
+  }) async {
+    try {
+      AppLogger.info('AUTH_DEBUG: Completing password recovery');
+      await _auth.updateUser(UserAttributes(password: newPassword));
+
+      _currentStatus = AuthStatus.authenticated;
+      _authStatusController.add(_currentStatus);
+      AppLogger.info('AUTH_DEBUG: Password recovery completed');
+    } on AuthException catch (e) {
+      AppLogger.error(
+        'Password recovery AuthException: message=${e.message}, statusCode=${e.statusCode}, code=${e.code}',
+      );
+      throw AuthError(message: _mapAuthErrorMessage(e.message, code: e.code));
+    } catch (e) {
+      if (e is AuthError) rethrow;
+      AppLogger.error('Password recovery unexpected error: $e');
+      throw const AuthError(
+        message: 'An unexpected error occurred. Please try again.',
+      );
     }
   }
 
