@@ -119,6 +119,13 @@ class AppDrawer extends StatelessWidget {
                   ),
                   _item(
                     context,
+                    icon: Icons.smart_display_rounded,
+                    label: 'App Kaise Chalayein? (Video Guide)',
+                    subtitle: 'Har feature ka 1-minute video solution',
+                    onTap: () => context.push('/tutorials'),
+                  ),
+                  _item(
+                    context,
                     icon: Icons.support_agent_rounded,
                     label: 'Help & Feedback',
                     subtitle: 'Reach us at ${FeedbackService.supportEmail}',

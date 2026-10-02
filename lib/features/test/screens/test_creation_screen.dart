@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 import '../../../core/constants/theme/app_colors.dart';
 import '../../../core/errors/app_error.dart';
 import '../../../core/models/test_template.dart';
+import '../../tutorials/domain/app_tutorial.dart';
+import '../../tutorials/widgets/tutorial_help_button.dart';
 import '../../../core/responsive/breakpoints.dart';
 import '../domain/attempt_policy.dart';
 import '../domain/creation_settings.dart';
@@ -467,6 +469,9 @@ class _TestCreationScreenState extends State<TestCreationScreen> {
                 icon: const Icon(Icons.close),
                 onPressed: busy ? null : _confirmExit,
               ),
+              actions: const [
+                TutorialHelpButton(category: TutorialCategory.testsChallenges),
+              ],
             ),
             body: Center(
               child: ConstrainedBox(
@@ -482,6 +487,9 @@ class _TestCreationScreenState extends State<TestCreationScreen> {
                 icon: const Icon(Icons.close),
                 onPressed: busy ? null : _confirmExit,
               ),
+              actions: const [
+                TutorialHelpButton(category: TutorialCategory.testsChallenges),
+              ],
             ),
             body: content,
           );

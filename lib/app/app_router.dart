@@ -50,6 +50,8 @@ import '../features/test/screens/question_bank_screen.dart';
 import '../features/test/screens/question_bank_detail_screen.dart';
 import '../features/test/screens/pyq_explorer_screen.dart';
 import '../features/test/screens/question_wallet_screen.dart';
+import '../features/tutorials/domain/app_tutorial.dart';
+import '../features/tutorials/screens/tutorial_list_screen.dart';
 import '../features/test/screens/pyq_practice_screen.dart';
 import '../features/test/screens/pyq_test_screen.dart';
 import '../features/test/screens/question_review_screen.dart';
@@ -71,6 +73,10 @@ import '../../core/models/question_bank_item.dart';
 final class AppRouter {
   AppRouter._();
 
+  /// Tracks whether the initial branded splash screen animation has completed.
+  /// Reset on cold start; once finished, subsequent route redirections do not replay splash.
+  static bool splashCompleted = false;
+
   static final GlobalKey<NavigatorState> _rootNavigatorKey =
       GlobalKey<NavigatorState>(debugLabel: 'root');
 
@@ -90,6 +96,11 @@ final class AppRouter {
 
       final isAuthRoute = location == loginPath || location == signupPath;
       final isSplash = location == splashPath;
+
+      // Allow the branded splash screen to complete its entrance presentation on cold start
+      if (isSplash && !splashCompleted) {
+        return null;
+      }
 
       switch (authStatus) {
         case AuthStatus.unknown:
@@ -754,6 +765,17 @@ final class AppRouter {
         path: '/question-wallet',
         name: 'question-wallet',
         builder: (context, state) => const QuestionWalletScreen(),
+      ),
+      // ── Video tutorials ("App Kaise Chalayein?") ──
+      GoRoute(
+        path: '/tutorials',
+        name: 'tutorials',
+        builder: (context, state) {
+          final categoryParam = state.uri.queryParameters['category'];
+          return TutorialListScreen(
+            initialCategory: TutorialCategory.fromDb(categoryParam),
+          );
+        },
       ),
     ],
     errorBuilder: (context, state) => Scaffold(

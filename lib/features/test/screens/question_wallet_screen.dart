@@ -6,6 +6,8 @@ import '../../../core/theme/app_colors.dart';
 import '../data/question_repository.dart';
 import '../data/question_wallet_repository.dart';
 import '../domain/question_wallet_models.dart';
+import '../../tutorials/domain/app_tutorial.dart';
+import '../../tutorials/widgets/tutorial_help_button.dart';
 
 /// "Question Wallet" — reuse questions from the caller's own past tests
 /// (clone a whole test, hand-pick specific questions, or pull every
@@ -247,7 +249,12 @@ class _QuestionWalletScreenState extends State<QuestionWalletScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Question Wallet')),
+      appBar: AppBar(
+        title: const Text('Question Wallet'),
+        actions: const [
+          TutorialHelpButton(category: TutorialCategory.mistakeVaultRadio),
+        ],
+      ),
       body: RefreshIndicator(onRefresh: _load, child: _buildBody()),
     );
   }
