@@ -580,7 +580,7 @@ void main() {
       c.dispose();
     });
 
-    testWidgets('G8 regression: hub still renders chat and the new tests entry', (tester) async {
+    testWidgets('G8 regression: hub still renders the tests entry (chat moved to its own screen)', (tester) async {
       tester.view.physicalSize = const Size(800, 3400);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
@@ -589,7 +589,6 @@ void main() {
       final c = GroupHubController(groupId: 'g-1', repository: repo, currentUserId: 'u-me');
       await tester.pumpWidget(MaterialApp(home: GroupHubScreen(groupId: 'g-1', controller: c)));
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('group_chat_section')), findsOneWidget);
       expect(find.byKey(const Key('open_group_tests')), findsOneWidget);
       expect(find.byKey(const Key('leave_group_button')), findsOneWidget);
       await tester.pumpWidget(const SizedBox());

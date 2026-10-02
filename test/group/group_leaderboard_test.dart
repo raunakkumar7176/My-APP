@@ -549,6 +549,9 @@ class _Delegating implements ResultRepository {
   @override
   Future<Result?> byAttempt(String attemptId) => inner.byAttempt(attemptId);
   @override
+  Future<Map<String, int>> myAnswerKey(String attemptId) =>
+      inner.myAnswerKey(attemptId);
+  @override
   Future<List<Result>> mineForTest(String testId) => inner.mineForTest(testId);
   @override
   Future<ResultBatch> generateResults(String testId) =>

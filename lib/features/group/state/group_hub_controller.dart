@@ -861,22 +861,14 @@ class GroupHubController extends DisposableNotifier {
     return ok;
   }
 
-  /// True only for a solo group — its owner, with no other member rows.
-  /// Mirrors `rpc_delete_group`'s own check exactly; the server re-verifies
-  /// regardless (this only decides whether to offer the action).
-  bool get canDeleteGroup =>
-      _group != null &&
-      isOwner &&
-      _members.every((m) => m.userId == _currentUserId);
+  /// True when the user is the group owner.
+  bool get canDeleteGroup => _group != null && isOwner;
 
-  /// Deletes a solo group (Phase 7). Hard delete — see
-  /// `migrations/GROUP_HUB_rpc_delete_group.sql` for why `groups` uses hard
-  /// delete rather than the soft-delete pattern `tests` uses.
+  /// Deletes the group. Calls the backend owner delete RPC/repository,
+  /// cascading through child records and removing the group.
   Future<bool> deleteGroup() async {
     if (!canDeleteGroup) {
-      _error =
-          'This group still has other members. Remove them first, or '
-          'transfer ownership, before deleting it.';
+      _error = 'Only the owner can delete this group.';
       notifyListeners();
       return false;
     }

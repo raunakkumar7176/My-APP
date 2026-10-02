@@ -220,20 +220,28 @@ void main() {
       c.dispose();
     });
 
-    testWidgets('owner hub: popup menu leave is disabled', (tester) async {
-      final repo = InMemoryGroupRepository(currentUser: 'u-me')
-        ..seed(id: 'g-1', ownerId: 'u-me', members: {'u-2': 'member'});
-      final c = _hub(repo);
-      await tester.pumpWidget(
-        MaterialApp(home: GroupHubScreen(groupId: 'g-1', controller: c)),
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('group_menu')));
-      await tester.pumpAndSettle();
-      expect(find.text('Leave group'), findsOneWidget);
-      await tester.pumpWidget(const SizedBox());
-      c.dispose();
-    });
+    testWidgets(
+      'owner hub: popup menu offers Delete, not Leave (owner can always delete)',
+      (tester) async {
+        // Product decision: the owner can delete a group at any time,
+        // regardless of other members (0102) -- canDeleteGroup is
+        // unconditionally true for an owner now, so the hub's menu never
+        // falls through to the "Leave group" branch for them.
+        final repo = InMemoryGroupRepository(currentUser: 'u-me')
+          ..seed(id: 'g-1', ownerId: 'u-me', members: {'u-2': 'member'});
+        final c = _hub(repo);
+        await tester.pumpWidget(
+          MaterialApp(home: GroupHubScreen(groupId: 'g-1', controller: c)),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('group_menu')));
+        await tester.pumpAndSettle();
+        expect(find.text('Delete group'), findsOneWidget);
+        expect(find.text('Leave group'), findsNothing);
+        await tester.pumpWidget(const SizedBox());
+        c.dispose();
+      },
+    );
   });
 
   group('E. Remove member', () {

@@ -1219,10 +1219,7 @@ class InMemoryGroupRepository implements GroupRepository {
     if (g == null || g.ownerId != currentUser) {
       throw _notAuthorized(GroupErrorContext.update);
     }
-    final others = g.roles.entries.where((e) => e.key != currentUser).length;
-    if (others > 0) {
-      throw const DataError(message: 'GROUP_HAS_OTHER_MEMBERS');
-    }
+    // rpc_delete_group_by_owner deletes child records and the group
     groups.remove(groupId);
   }
 

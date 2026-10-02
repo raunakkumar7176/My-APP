@@ -1148,7 +1148,21 @@ class SupabaseGroupRepository implements GroupRepository {
   @override
   Future<void> deleteGroup(String groupId) =>
       _guard(GroupErrorContext.update, () async {
-        await _client.rpc('rpc_delete_group', params: {'p_group': groupId});
+        try {
+          await _client.rpc(
+            'rpc_delete_group_by_owner',
+            params: {'p_group_id': groupId},
+          );
+        } catch (_) {
+          try {
+            await _client.rpc(
+              'rpc_delete_group',
+              params: {'p_group': groupId},
+            );
+          } catch (_) {
+            await _client.from('groups').delete().eq('id', groupId);
+          }
+        }
       });
 
   @override

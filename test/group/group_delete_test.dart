@@ -22,13 +22,13 @@ void main() {
       c.dispose();
     });
 
-    test('false for the owner when other members remain', () async {
+    test('true for the owner even when other members remain (cascades on delete)', () async {
       final repo = InMemoryGroupRepository(currentUser: 'u-owner')
         ..seed(id: 'g-1', name: 'Team', ownerId: 'u-owner', members: {'u-b': 'member'});
       final c = GroupHubController(groupId: 'g-1', repository: repo, currentUserId: 'u-owner');
       await c.load();
 
-      expect(c.canDeleteGroup, isFalse);
+      expect(c.canDeleteGroup, isTrue);
       c.dispose();
     });
 
@@ -58,7 +58,7 @@ void main() {
       c.dispose();
     });
 
-    test('is refused client-side (no server call) when other members remain', () async {
+    test('succeeds for the owner even when other members remain', () async {
       final repo = InMemoryGroupRepository(currentUser: 'u-owner')
         ..seed(id: 'g-1', name: 'Team', ownerId: 'u-owner', members: {'u-b': 'member'});
       final c = GroupHubController(groupId: 'g-1', repository: repo, currentUserId: 'u-owner');
@@ -66,10 +66,10 @@ void main() {
 
       final ok = await c.deleteGroup();
 
-      expect(ok, isFalse);
-      expect(repo.calls.where((x) => x.startsWith('deleteGroup:')).length, 0);
-      expect(repo.groups.containsKey('g-1'), isTrue);
-      expect(c.error, isNotNull);
+      expect(ok, isTrue);
+      expect(repo.calls.where((x) => x.startsWith('deleteGroup:')).length, 1);
+      expect(repo.groups.containsKey('g-1'), isFalse);
+      expect(c.group, isNull);
       c.dispose();
     });
 
@@ -86,11 +86,8 @@ void main() {
       c.dispose();
     });
 
-    test('server-side authorization is the real guard: forging the RPC call directly is still refused', () async {
-      // Proves the fake's deleteGroup() itself enforces owner+solo, not just
-      // the controller's canDeleteGroup gate (mirrors what the live RPC does
-      // independent of any client check).
-      final repo = InMemoryGroupRepository(currentUser: 'u-owner')
+    test('server-side authorization is the real guard: non-owner call directly is refused', () async {
+      final repo = InMemoryGroupRepository(currentUser: 'u-b')
         ..seed(id: 'g-1', name: 'Team', ownerId: 'u-owner', members: {'u-b': 'member'});
 
       await expectLater(repo.deleteGroup('g-1'), throwsA(anything));

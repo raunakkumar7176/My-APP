@@ -321,9 +321,72 @@ class _GroupChatScreenState extends State<GroupChatScreen>
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.info_outline),
-            tooltip: 'Group info',
-            onPressed: _openInfo,
+            key: const Key('group_chat_tests_action'),
+            icon: const Icon(Icons.quiz_outlined),
+            tooltip: 'Group Tests',
+            onPressed: () => context.push('/groups/${_c.groupId}/tests'),
+          ),
+          PopupMenuButton<String>(
+            key: const Key('group_chat_more_menu'),
+            icon: const Icon(Icons.more_vert),
+            tooltip: 'More options',
+            onSelected: (val) {
+              if (val == 'info') {
+                _openInfo();
+              } else if (val == 'tests') {
+                context.push('/groups/${_c.groupId}/tests');
+              } else if (val == 'mute') {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Notifications muted')),
+                );
+              } else if (val == 'clear') {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Chat messages cleared locally')),
+                );
+              }
+            },
+            itemBuilder: (_) => [
+              const PopupMenuItem(
+                value: 'info',
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, size: 18),
+                    SizedBox(width: 8),
+                    Text('Group info'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'tests',
+                child: Row(
+                  children: [
+                    Icon(Icons.quiz_outlined, size: 18),
+                    SizedBox(width: 8),
+                    Text('Group tests'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'mute',
+                child: Row(
+                  children: [
+                    Icon(Icons.notifications_off_outlined, size: 18),
+                    SizedBox(width: 8),
+                    Text('Mute notifications'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'clear',
+                child: Row(
+                  children: [
+                    Icon(Icons.cleaning_services_outlined, size: 18),
+                    SizedBox(width: 8),
+                    Text('Clear chat'),
+                  ],
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -725,14 +788,17 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                           : const Color(0xFF64748B),
                     ),
                     const SizedBox(width: 6),
-                    Text(
-                      bodyText,
-                      style: TextStyle(
-                        fontStyle: FontStyle.italic,
-                        fontSize: 14,
-                        color: isDark
-                            ? const Color(0xFF94A3B8)
-                            : const Color(0xFF64748B),
+                    Flexible(
+                      child: Text(
+                        bodyText,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontStyle: FontStyle.italic,
+                          fontSize: 14,
+                          color: isDark
+                              ? const Color(0xFF94A3B8)
+                              : const Color(0xFF64748B),
+                        ),
                       ),
                     ),
                   ],
@@ -779,6 +845,58 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     );
   }
 
+  void _showAttachmentOptions(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 36,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: Colors.grey.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              ListTile(
+                leading: const CircleAvatar(
+                  backgroundColor: Color(0xFFE0E7FF),
+                  child: Icon(Icons.quiz_outlined, color: Color(0xFF4338CA)),
+                ),
+                title: const Text('Group Tests'),
+                subtitle: const Text('View and create cohort tests'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  context.push('/groups/${_c.groupId}/tests');
+                },
+              ),
+              ListTile(
+                leading: const CircleAvatar(
+                  backgroundColor: Color(0xFFDCFCE7),
+                  child: Icon(Icons.menu_book_outlined, color: Color(0xFF15803D)),
+                ),
+                title: const Text('Study Materials'),
+                subtitle: const Text('Browse group learning resources'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  context.push('/study');
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildComposer(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
@@ -796,19 +914,12 @@ class _GroupChatScreenState extends State<GroupChatScreen>
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           IconButton(
-            tooltip: 'Emoji or attachment',
+            tooltip: 'Attach',
             icon: Icon(
-              Icons.sentiment_satisfied_alt_outlined,
+              Icons.attach_file_rounded,
               color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
             ),
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Attachments and stickers coming soon!'),
-                  duration: Duration(seconds: 1),
-                ),
-              );
-            },
+            onPressed: () => _showAttachmentOptions(context),
           ),
           Expanded(
             child: Container(

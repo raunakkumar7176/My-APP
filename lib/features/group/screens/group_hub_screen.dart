@@ -14,7 +14,6 @@ import '../data/notification_repository.dart';
 import '../state/group_hub_controller.dart';
 import '../widgets/group_announcements_section.dart';
 import '../widgets/group_avatar.dart';
-import '../widgets/group_chat_section.dart';
 import '../widgets/group_management_section.dart';
 import '../widgets/group_rules_section.dart';
 import '../widgets/invite_member_sheet.dart';
@@ -23,8 +22,7 @@ import '../widgets/member_tile.dart';
 import '../widgets/outgoing_invitations_section.dart';
 import '../widgets/role_permissions_sheet.dart';
 
-/// Group Info & Cohort Hub Screen
-typedef GroupInfoScreen = GroupHubScreen;
+export 'group_info_screen.dart';
 
 /// One group's hub: profile header, roster, and the G1 membership actions.
 /// Later phases (leaderboard) attach here; nothing is stubbed for them yet.
@@ -103,12 +101,6 @@ class _GroupHubScreenState extends State<GroupHubScreen> {
     await context.push('/groups/${widget.groupId}/members');
     // Roles / roster / count may have changed there.
     if (mounted) await _c.refresh();
-  }
-
-  /// Opens the dedicated Discussion screen sharing THIS hub's controller —
-  /// same loaded messages, same realtime subscription, not a second one.
-  Future<void> _openDiscussion() async {
-    await context.push('/groups/${widget.groupId}/discussion', extra: _c);
   }
 
   Future<void> _openNotifications() async {
@@ -400,10 +392,6 @@ class _GroupHubScreenState extends State<GroupHubScreen> {
           padding: const EdgeInsets.all(16),
           children: [
             _headerCard(context, group),
-            if (_c.hasMessages && !_c.isRealtimeConnected) ...[
-              const SizedBox(height: 8),
-              _reconnectingBanner(context),
-            ],
             const SizedBox(height: 24),
             // Overview: "what's happening in my study group" — study-test
             // counts, the next upcoming test, and the caller's own recent
@@ -428,9 +416,6 @@ class _GroupHubScreenState extends State<GroupHubScreen> {
             GroupAnnouncementsSection(controller: _c),
             const SizedBox(height: 24),
             GroupRulesSection(controller: _c),
-            const SizedBox(height: 24),
-            // Chat: every member reads and sends; server-backed, no realtime.
-            GroupChatSection(controller: _c, onOpenFullScreen: _openDiscussion),
             const SizedBox(height: 24),
             // G10: every member may view the group's tests; managers act there.
             OutlinedButton.icon(
@@ -823,41 +808,6 @@ class _GroupHubScreenState extends State<GroupHubScreen> {
             ],
           ],
         ),
-      ),
-    );
-  }
-
-  /// Shown only when messages have already loaded but the realtime channel
-  /// isn't currently joined — new messages may be delayed until it
-  /// reconnects; never implies existing messages are wrong or missing.
-  Widget _reconnectingBanner(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      key: const Key('realtime_reconnecting_banner'),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SizedBox(
-            width: 14,
-            height: 14,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            'Reconnecting…',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
       ),
     );
   }

@@ -5,6 +5,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:my_praperation/core/errors/app_error.dart';
 import 'package:my_praperation/core/models/group.dart';
 import 'package:my_praperation/core/models/group_announcement.dart';
@@ -29,6 +30,15 @@ import 'package:my_praperation/features/group/state/group_list_controller.dart';
 import 'fakes.dart';
 
 void main() {
+  // GroupListController.load() persists/reads a "hidden groups" set via
+  // shared_preferences; without a mocked channel the platform call never
+  // resolves in a widget test, hanging pumpAndSettle rather than failing
+  // fast (the controller's own try/catch only protects against a thrown
+  // error, not a channel that simply never replies).
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+  });
+
   group('Group model', () {
     test('parses the 7-column list RPC row and never carries invite_code', () {
       final g = Group.fromJson({

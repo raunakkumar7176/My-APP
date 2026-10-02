@@ -345,83 +345,179 @@ class _GroupCard extends StatelessWidget {
   /// subtitle (no messages yet, or the batched preview hasn't resolved).
   final GroupLatestMessage? latestMessage;
 
-  @override
-  Widget build(BuildContext context) {
-    final role = GroupRole.fromDb(group.userRole);
-    final preview = latestMessage;
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: ListTile(
-        key: Key('group_card_${group.id}'),
-        onTap: onOpen,
-        leading: GroupAvatar(name: group.name, logoUrl: group.logoUrl),
-        title: Text(group.name, maxLines: 2, overflow: TextOverflow.ellipsis),
-        subtitle: preview == null
-            ? Text(
-                '${group.memberCount} ${group.memberCount == 1 ? 'member' : 'members'} · ${role.label}',
-              )
-            : Text(
-                '${preview.senderName}: ${preview.preview}',
-                key: Key('group_card_preview_${group.id}'),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: preview.isDeleted
-                    ? const TextStyle(fontStyle: FontStyle.italic)
-                    : null,
-              ),
-        trailing: Row(
+  static String _formatTime(DateTime? date) {
+    if (date == null) return '';
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final msgDate = DateTime(date.year, date.month, date.day);
+    final diff = today.difference(msgDate).inDays;
+    if (diff == 0) {
+      final hour = date.hour % 12 == 0 ? 12 : date.hour % 12;
+      final minute = date.minute.toString().padLeft(2, '0');
+      final ampm = date.hour >= 12 ? 'PM' : 'AM';
+      return '$hour:$minute $ampm';
+    } else if (diff == 1) {
+      return 'Yesterday';
+    } else if (diff < 7) {
+      const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+      return days[date.weekday - 1];
+    } else {
+      return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year.toString().substring(2)}';
+    }
+  }
+
+  void _showContextMenu(BuildContext context) {
+    if (onToggleHide == null) return;
+    showModalBottomSheet<void>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (unreadCount > 0)
-              Container(
-                key: Key('group_card_unread_${group.id}'),
-                margin: const EdgeInsets.only(right: 8),
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primary,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  unreadCount > 99 ? '99+' : '$unreadCount',
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onPrimary,
-                    fontSize: 12,
-                  ),
-                ),
+            Container(
+              width: 36,
+              height: 4,
+              margin: const EdgeInsets.symmetric(vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.grey.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(2),
               ),
-            const Icon(Icons.chevron_right),
-            if (onToggleHide != null)
-              PopupMenuButton<String>(
-                icon: const Icon(Icons.more_vert, size: 20),
-                tooltip: 'More options',
-                onSelected: (value) {
-                  if (value == 'toggle_hide') {
-                    onToggleHide?.call();
-                  }
-                },
-                itemBuilder: (context) => [
-                  PopupMenuItem(
-                    value: 'toggle_hide',
-                    child: Row(
-                      children: [
-                        Icon(
-                          isHidden
-                              ? Icons.unarchive_outlined
-                              : Icons.archive_outlined,
-                          size: 18,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          isHidden ? 'Restore group' : 'Archive / Hide group',
-                        ),
-                      ],
+            ),
+            ListTile(
+              leading: Icon(
+                isHidden ? Icons.unarchive_outlined : Icons.archive_outlined,
+              ),
+              title: Text(isHidden ? 'Restore group' : 'Archive / Hide group'),
+              onTap: () {
+                Navigator.pop(ctx);
+                onToggleHide?.call();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final role = GroupRole.fromDb(group.userRole);
+    final preview = latestMessage;
+    final timeStr = _formatTime(preview?.createdAt);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 4),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9),
+        ),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Material(
+        // ListTile paints its background/ink splashes on the nearest
+        // Material ancestor — a plain DecoratedBox above it would make
+        // both invisible, so the fill colour lives here instead.
+        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+        child: ListTile(
+          key: Key('group_card_${group.id}'),
+          onTap: onOpen,
+          onLongPress: () => _showContextMenu(context),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 14,
+            vertical: 4,
+          ),
+          leading: GroupAvatar(
+            name: group.name,
+            logoUrl: group.logoUrl,
+            radius: 24,
+          ),
+          title: Text(
+            group.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+              letterSpacing: -0.1,
+            ),
+          ),
+          subtitle: Padding(
+            padding: const EdgeInsets.only(top: 3),
+            child: preview == null
+                ? Text(
+                    '${group.memberCount} ${group.memberCount == 1 ? 'member' : 'members'} · ${role.label}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: isDark
+                          ? const Color(0xFF94A3B8)
+                          : const Color(0xFF64748B),
+                    ),
+                  )
+                : Text(
+                    '${preview.senderName}: ${preview.preview}',
+                    key: Key('group_card_preview_${group.id}'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontStyle: preview.isDeleted ? FontStyle.italic : null,
+                      color: isDark
+                          ? const Color(0xFF94A3B8)
+                          : const Color(0xFF64748B),
                     ),
                   ),
-                ],
-              )
-            else
-              const Icon(Icons.chevron_right),
-          ],
+          ),
+          trailing: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              if (timeStr.isNotEmpty)
+                Text(
+                  timeStr,
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: unreadCount > 0
+                        ? FontWeight.w600
+                        : FontWeight.normal,
+                    color: unreadCount > 0
+                        ? theme.colorScheme.primary
+                        : (isDark
+                              ? const Color(0xFF94A3B8)
+                              : const Color(0xFF64748B)),
+                  ),
+                ),
+              const SizedBox(height: 4),
+              if (unreadCount > 0)
+                Container(
+                  key: Key('group_card_unread_${group.id}'),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 7,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primary,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    unreadCount > 99 ? '99+' : '$unreadCount',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                )
+              else
+                const SizedBox(height: 16),
+            ],
+          ),
         ),
       ),
     );

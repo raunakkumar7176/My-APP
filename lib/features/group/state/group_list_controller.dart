@@ -126,10 +126,14 @@ class GroupListController extends DisposableNotifier {
     notifyListeners();
     try {
       try {
-        final prefs = await SharedPreferences.getInstance();
+        final prefs = await SharedPreferences.getInstance().timeout(
+          const Duration(seconds: 3),
+        );
         final hiddenList = prefs.getStringList('hidden_group_ids') ?? [];
         _hiddenGroupIds = hiddenList.toSet();
       } catch (e) {
+        // A timeout here must never block the groups list itself from
+        // loading — worst case, a previously-hidden group briefly reappears.
         AppLogger.warning('Failed to load hidden_group_ids: $e');
       }
       _groups = await _repo.myGroups();

@@ -10,9 +10,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:my_praperation/core/errors/app_error.dart';
 import 'package:my_praperation/core/models/group_message.dart';
 import 'package:my_praperation/features/group/data/group_repository.dart';
-import 'package:my_praperation/features/group/screens/group_hub_screen.dart';
+import 'package:my_praperation/features/group/screens/group_chat_screen.dart';
 import 'package:my_praperation/features/group/state/group_hub_controller.dart';
-import 'package:my_praperation/features/group/widgets/group_chat_section.dart';
 
 import 'fakes.dart';
 
@@ -386,150 +385,147 @@ void main() {
     });
   });
 
-  group('TEST 14 — hub widget', () {
+  group('TEST 14 — dedicated chat screen', () {
+    // Chat now lives on its own primary screen (GroupChatScreen), reached
+    // directly from the group list; GroupHubScreen ("Info") no longer
+    // embeds a chat preview — these cases moved from pumping the hub to
+    // pumping the dedicated screen, with its own key names
+    // (discussion_*) and assertions.
     Future<GroupHubController> pump(
       WidgetTester tester,
       InMemoryGroupRepository repo, {
       String user = 'u-me',
     }) async {
-      tester.view.physicalSize = const Size(800, 3200);
+      tester.view.physicalSize = const Size(800, 1600);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       final c = _hub(repo, user: user);
+      // GroupChatScreen only auto-loads a controller it constructed itself
+      // (the real app always hands it an already-loaded one — either the
+      // screen's own load on primary entry, or the Info screen's loaded
+      // controller when navigating there — so an injected controller here
+      // must be loaded the same way before pumping).
+      await c.load();
       await tester.pumpWidget(
-        MaterialApp(home: GroupHubScreen(groupId: 'g-1', controller: c)),
+        MaterialApp(home: GroupChatScreen(groupId: 'g-1', controller: c)),
       );
       await tester.pumpAndSettle();
       return c;
     }
 
-    testWidgets('member: list, senders, field and send button; hub intact', (
+    testWidgets('member: list, senders, field and send button', (
       tester,
     ) async {
-      final c = await pump(tester, _repo());
-      expect(find.byKey(const Key('group_chat_section')), findsOneWidget);
+      await pump(tester, _repo());
       expect(find.text('Welcome all'), findsOneWidget);
       expect(find.text('Hello'), findsOneWidget);
       expect(find.text('Group "Physics" created'), findsOneWidget);
-      expect(find.byKey(const Key('message_sender_m-3')), findsOneWidget);
-      expect(
-        tester.widget<Text>(find.byKey(const Key('message_sender_m-3'))).data,
-        'Bea',
-      );
-      expect(find.byKey(const Key('message_field')), findsOneWidget);
-      expect(find.byKey(const Key('send_message_button')), findsOneWidget);
-      expect(find.byKey(const Key('messages_load_older')), findsNothing);
-      // Hub regression: the other sections still render around the chat.
-      expect(find.byKey(const Key('group_announcements_section')), findsOneWidget);
-      expect(find.byKey(const Key('group_rules_section')), findsOneWidget);
-      expect(find.byKey(const Key('hub_members_heading')), findsOneWidget);
-      expect(find.byKey(const Key('leave_group_button')), findsOneWidget);
-      await tester.pumpWidget(const SizedBox());
-      c.dispose();
+      expect(find.text('Bea'), findsOneWidget);
+      expect(find.byKey(const Key('discussion_message_field')), findsOneWidget);
+      expect(find.byKey(const Key('discussion_send_button')), findsOneWidget);
+      expect(find.byKey(const Key('discussion_load_older')), findsNothing);
     });
 
     testWidgets('empty state', (tester) async {
       final repo = _repo();
       repo.groups['g-1']!.messages.clear();
-      final c = await pump(tester, repo);
-      expect(find.byKey(const Key('messages_empty')), findsOneWidget);
-      await tester.pumpWidget(const SizedBox());
-      c.dispose();
+      await pump(tester, repo);
+      expect(find.byKey(const Key('discussion_empty')), findsOneWidget);
     });
 
     testWidgets('error + retry', (tester) async {
       final repo = _FailingChatRepository();
       repo.seed(id: 'g-1', ownerId: 'u-owner', members: {'u-me': 'member'});
       repo.seedMessage(groupId: 'g-1', senderId: 'u-owner', body: 'Recovered');
-      final c = await pump(tester, repo);
-      expect(find.byKey(const Key('messages_error')), findsOneWidget);
+      await pump(tester, repo);
+      expect(find.byKey(const Key('discussion_error')), findsOneWidget);
       repo.failReads = false;
-      await tester.tap(find.byKey(const Key('messages_retry')));
+      await tester.tap(find.byKey(const Key('discussion_retry')));
       await tester.pumpAndSettle();
       expect(find.text('Recovered'), findsOneWidget);
-      await tester.pumpWidget(const SizedBox());
-      c.dispose();
     });
 
-    testWidgets('soft-deleted message shows "Message deleted" placeholder', (
-      tester,
-    ) async {
-      final repo = _repo();
-      final deleted = GroupMessage(
-        id: 'm-del',
-        groupId: 'g-1',
-        senderId: 'u-owner',
-        body: 'This should not be visible',
-        createdAt: DateTime(2026, 9, 10, 9, 8),
-        deletedAt: DateTime(2026, 9, 10, 10, 0),
-      );
-      repo.groups['g-1']!.messages.add(deleted);
-      final c = await pump(tester, repo);
-      expect(find.byKey(const Key('message_m-del')), findsOneWidget);
-      expect(
-        find.text('Message deleted'),
-        findsOneWidget,
-        reason: 'deleted body is replaced by placeholder',
-      );
-      expect(
-        find.text('This should not be visible'),
-        findsNothing,
-        reason: 'original body is never rendered',
-      );
-      expect(find.byKey(const Key('deleted_m-del')), findsOneWidget);
-      await tester.pumpWidget(const SizedBox());
-      c.dispose();
-    });
+    testWidgets(
+      'soft-deleted message shows "This message was deleted" placeholder',
+      (tester) async {
+        final repo = _repo();
+        final deleted = GroupMessage(
+          id: 'm-del',
+          groupId: 'g-1',
+          senderId: 'u-owner',
+          body: 'This should not be visible',
+          createdAt: DateTime(2026, 9, 10, 9, 8),
+          deletedAt: DateTime(2026, 9, 10, 10, 0),
+        );
+        repo.groups['g-1']!.messages.add(deleted);
+        await pump(tester, repo);
+        expect(find.byKey(const Key('discussion_message_m-del')), findsOneWidget);
+        expect(
+          find.text('This message was deleted'),
+          findsOneWidget,
+          reason: 'deleted body is replaced by placeholder',
+        );
+        expect(
+          find.text('This should not be visible'),
+          findsNothing,
+          reason: 'original body is never rendered',
+        );
+      },
+    );
 
     testWidgets('normal messages are not affected by deleted_at logic', (
       tester,
     ) async {
-      final c = await pump(tester, _repo());
+      await pump(tester, _repo());
       expect(find.text('Welcome all'), findsOneWidget);
       expect(find.text('Hello'), findsOneWidget);
-      expect(find.text('Message deleted'), findsNothing);
-      await tester.pumpWidget(const SizedBox());
-      c.dispose();
+      expect(find.text('This message was deleted'), findsNothing);
     });
 
     testWidgets('type → send → field cleared → message appears', (tester) async {
       final repo = _repo();
       final c = await pump(tester, repo);
-      await tester.enterText(find.byKey(const Key('message_field')), ' Ping ');
-      await tester.tap(find.byKey(const Key('send_message_button')));
+      await tester.enterText(
+        find.byKey(const Key('discussion_message_field')),
+        ' Ping ',
+      );
+      await tester.tap(find.byKey(const Key('discussion_send_button')));
       await tester.pumpAndSettle();
       expect(c.messages.last.body, 'Ping');
       expect(find.text('Ping'), findsOneWidget);
       expect(
-        tester.widget<TextField>(find.byKey(const Key('message_field'))).controller!.text,
+        tester
+            .widget<TextField>(find.byKey(const Key('discussion_message_field')))
+            .controller!
+            .text,
         isEmpty,
       );
-      await tester.pumpWidget(const SizedBox());
-      c.dispose();
     });
 
     testWidgets('empty send is rejected without a server call', (tester) async {
       final repo = _repo();
       final c = await pump(tester, repo);
-      await tester.enterText(find.byKey(const Key('message_field')), '   ');
-      await tester.tap(find.byKey(const Key('send_message_button')));
+      await tester.enterText(
+        find.byKey(const Key('discussion_message_field')),
+        '   ',
+      );
+      await tester.tap(find.byKey(const Key('discussion_send_button')));
       await tester.pumpAndSettle();
       expect(repo.calls.any((x) => x.startsWith('sendMessage')), isFalse);
       expect(c.messages.length, 4);
-      await tester.pumpWidget(const SizedBox());
-      c.dispose();
     });
 
-    testWidgets('section uses the hub controller, not a second source', (
+    testWidgets('screen uses the injected controller, not a second source', (
       tester,
     ) async {
       final c = await pump(tester, _repo());
-      final section = tester.widget<GroupChatSection>(
-        find.byType(GroupChatSection),
+      await tester.enterText(
+        find.byKey(const Key('discussion_message_field')),
+        'Shared controller check',
       );
-      expect(identical(section.controller, c), isTrue);
-      await tester.pumpWidget(const SizedBox());
-      c.dispose();
+      await tester.tap(find.byKey(const Key('discussion_send_button')));
+      await tester.pumpAndSettle();
+      expect(c.messages.last.body, 'Shared controller check');
     });
   });
 }
