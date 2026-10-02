@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Tells the Android Gradle Plugin's resource shrinker (isShrinkResources =
+  true, enabled when R8/minification was turned on for release builds) not
+  to strip these 5 custom notification-tone MP3s. They're only referenced
+  from Dart via RawResourceAndroidNotificationSound('test_start') etc — a
+  resource-name STRING passed to flutter_local_notifications, which resolves
+  it at runtime via Resources.getIdentifier(). The shrinker's static
+  analysis can't see that dynamic reference, so without this file it
+  silently drops every file in res/raw/ from the release APK: channels still
+  get created, but every custom tone plays nothing.
+-->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@raw/test_start,@raw/test_scheduled,@raw/routine_start,@raw/chat_message,@raw/announcement" />
