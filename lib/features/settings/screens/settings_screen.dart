@@ -16,9 +16,11 @@ import '../../../core/services/auth_service.dart';
 import '../../../core/services/profile_service.dart';
 import '../../../core/services/locale_service.dart';
 import '../../../core/services/push_notification_service.dart';
+import '../../../core/services/settings/library_mode_controller.dart';
 import '../../../core/services/supabase_service.dart';
 import '../../../core/services/theme_service.dart';
 import '../../../l10n/app_localizations.dart';
+import '../../dashboard/widgets/library_mode_banner.dart';
 import '../../feedback/presentation/feedback_dialog.dart';
 
 /// Unified Settings Section Card wrapper with rounded corners (16.0),
@@ -782,6 +784,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         setState(() => _soundEffects = val);
                         _saveBool('settings_sound_effects', val);
                         _triggerHapticIfEnabled();
+                      },
+                    ),
+                    const Divider(height: 1),
+                    ListenableBuilder(
+                      listenable: LibraryModeController.instance,
+                      builder: (context, _) {
+                        final controller = LibraryModeController.instance;
+                        final remaining = controller.formattedRemainingTime;
+                        final subtitle = controller.isLibraryMode
+                            ? (remaining != null
+                                ? 'Active • $remaining left'
+                                : 'Active • all loud chimes muted')
+                            : 'Silence notification sounds while you study';
+                        return ListTile(
+                          leading: Icon(
+                            Icons.nightlight_round,
+                            color: controller.isLibraryMode
+                                ? const Color(0xFF2E7D32)
+                                : const Color(0xFF64748B),
+                          ),
+                          title: const Text('Library Mode (Silent Shield)'),
+                          subtitle: Text(
+                            subtitle,
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                          trailing: Switch(
+                            value: controller.isLibraryMode,
+                            activeThumbColor: const Color(0xFF2E7D32),
+                            onChanged: (val) =>
+                                controller.setLibraryMode(val),
+                          ),
+                          onTap: () =>
+                              LibraryModeBanner.showFocusSessionSheet(context),
+                        );
                       },
                     ),
                   ],
