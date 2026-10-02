@@ -6,6 +6,7 @@ import '../../core/models/profile.dart';
 import '../../core/services/app_share_service.dart';
 import '../../core/services/auth_service.dart';
 import '../../core/services/profile_service.dart';
+import '../../core/services/settings/library_mode_controller.dart';
 import '../../features/feedback/presentation/feedback_dialog.dart';
 import '../../features/feedback/services/feedback_service.dart';
 
@@ -40,6 +41,7 @@ class AppDrawer extends StatelessWidget {
                     label: 'Profile',
                     onTap: () => context.push('/profile'),
                   ),
+                  const _LibraryModeDrawerTile(),
                   const _ShareAndEarnTile(),
                   const Divider(height: 1),
                   _item(
@@ -319,6 +321,73 @@ class _Header extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+class _LibraryModeDrawerTile extends StatelessWidget {
+  const _LibraryModeDrawerTile();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: LibraryModeController.instance,
+      builder: (context, _) {
+        final controller = LibraryModeController.instance;
+        final isActive = controller.isLibraryMode;
+        final theme = Theme.of(context);
+        final isDark = theme.brightness == Brightness.dark;
+
+        return Container(
+          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          decoration: BoxDecoration(
+            color: isActive
+                ? (isDark ? const Color(0xFF142B20) : const Color(0xFFE8F5E9))
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+            border: isActive
+                ? Border.all(
+                    color: isDark ? const Color(0xFF2E7D32) : const Color(0xFFA5D6A7),
+                  )
+                : null,
+          ),
+          child: ListTile(
+            leading: Icon(
+              Icons.local_library_rounded,
+              color: isActive
+                  ? const Color(0xFF2E7D32)
+                  : theme.iconTheme.color,
+            ),
+            title: Text(
+              'Library Mode (Pin-drop Silent)',
+              style: TextStyle(
+                fontWeight: isActive ? FontWeight.bold : FontWeight.w500,
+                fontSize: 14,
+                color: isActive
+                    ? (isDark ? const Color(0xFF81C784) : const Color(0xFF1B5E20))
+                    : null,
+              ),
+            ),
+            subtitle: Text(
+              isActive
+                  ? (controller.formattedRemainingTime != null
+                      ? 'Focus Session: ${controller.formattedRemainingTime} left'
+                      : 'Silent shield active • Distraction free')
+                  : 'Study bina aawaz ke shanti se karein',
+              style: TextStyle(
+                fontSize: 12,
+                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+              ),
+            ),
+            trailing: Switch(
+              value: isActive,
+              activeThumbColor: const Color(0xFF2E7D32),
+              onChanged: (_) => controller.toggleLibraryMode(),
+            ),
+            onTap: () => controller.toggleLibraryMode(),
+          ),
+        );
+      },
     );
   }
 }

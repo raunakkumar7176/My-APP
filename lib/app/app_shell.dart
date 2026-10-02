@@ -9,10 +9,13 @@ import '../core/models/referral_status.dart';
 import '../core/services/academic_alarm_service.dart';
 import '../core/services/profile_service.dart';
 import '../core/services/push_notification_service.dart';
+import '../core/services/settings/library_mode_controller.dart';
 import '../core/services/single_device_enforcer.dart';
 import '../features/notifications/data/notification_feed_repository.dart';
 import '../features/routine/data/routine_repository.dart';
+import '../features/routine/state/routine_controller.dart';
 import '../features/dashboard/dashboard_screen.dart';
+import '../features/dashboard/widgets/library_mode_banner.dart';
 import '../features/dashboard/profile_tab_screen.dart';
 import '../features/dashboard/study_tab_screen.dart';
 import '../features/dashboard/tests_tab_screen.dart';
@@ -36,6 +39,13 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   StreamSubscription<ReferralApplyResult>? _referralSub;
   StreamSubscription<ProfileStatus>? _profileSub;
   DateTime? _lastBackPressAt;
+
+  // Library Mode's "auto-activate during routine slots" (Dashboard's
+  // Library Mode banner promises this, but nothing ever called the
+  // controller's handleRoutineSlotChange) — owned here, not by any one
+  // tab, so it keeps working no matter which tab is on screen.
+  final RoutineController _libraryModeRoutineController = RoutineController();
+  Timer? _libraryModeTicker;
 
   static const _titles = ['Dashboard', 'Study', 'Tests', 'Performance & Insights', 'Profile'];
 
@@ -72,6 +82,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     // routine) or reboots their phone would have alarms silently stop
     // firing. Every app open re-covers the rolling 14-day window.
     unawaited(_resyncRoutineAlarms());
+    unawaited(_initLibraryModeAutoTrigger());
     _referralSub = ProfileService.referralAppliedStream.listen(_onReferralApplied);
     // Redraws the AppBar XP pill the instant a points award updates
     // ProfileService.currentProfile (e.g. XpCelebrationOverlay.show).
@@ -117,6 +128,9 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _referralSub?.cancel();
     _profileSub?.cancel();
+    _libraryModeTicker?.cancel();
+    RoutineController.revision.removeListener(_onLibraryModeRevisionChanged);
+    _libraryModeRoutineController.dispose();
     super.dispose();
   }
 
@@ -130,7 +144,52 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       // start) is also a good, frequent point to make sure alarms weren't
       // silently dropped by a reboot that happened while backgrounded.
       unawaited(_resyncRoutineAlarms());
+      // Re-read today's routines on resume too — a slot's state (what's
+      // "ongoing") depends on wall-clock time, so this must stay fresh
+      // whenever the app comes back to the foreground, not just on
+      // routine edits (RoutineController.revision covers those already).
+      unawaited(_libraryModeRoutineController.loadToday());
     }
+  }
+
+  /// Wires Library Mode's "auto-activate during routine slots" to the
+  /// app's actual live routine state. `handleRoutineSlotChange` already
+  /// existed on `LibraryModeController` but nothing ever called it — this
+  /// loads today's routines once, then re-evaluates "is a slot ongoing
+  /// right now" on a short timer and whenever a routine mutates, for as
+  /// long as the shell (i.e. the whole logged-in app) is alive.
+  Future<void> _initLibraryModeAutoTrigger() async {
+    try {
+      await _libraryModeRoutineController.loadToday();
+    } catch (e) {
+      AppLogger.warning('AppShell: initial routine load for Library Mode failed: $e');
+    }
+    _evaluateLibraryModeAutoTrigger();
+    RoutineController.revision.addListener(_onLibraryModeRevisionChanged);
+    _libraryModeTicker = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => _evaluateLibraryModeAutoTrigger(),
+    );
+  }
+
+  int _seenLibraryModeRevision = RoutineController.revision.value;
+  void _onLibraryModeRevisionChanged() {
+    if (RoutineController.revision.value == _seenLibraryModeRevision) return;
+    _seenLibraryModeRevision = RoutineController.revision.value;
+    unawaited(
+      _libraryModeRoutineController
+          .loadToday()
+          .then((_) => _evaluateLibraryModeAutoTrigger()),
+    );
+  }
+
+  void _evaluateLibraryModeAutoTrigger() {
+    final isOngoing = _libraryModeRoutineController.currentTodayItem != null;
+    unawaited(
+      LibraryModeController.instance.handleRoutineSlotChange(
+        isStudySlotActive: isOngoing,
+      ),
+    );
   }
 
   Future<void> _resyncRoutineAlarms() async {
@@ -194,6 +253,26 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         title: Text(_titles[_index]),
         actions: [
           _XpPill(totalPoints: ProfileService.currentProfile?.totalPoints ?? 0),
+          // Library Mode's only other entry points were the Dashboard
+          // banner (shown ONLY once already active — no way to turn it ON
+          // from there) and the Drawer. This icon is reachable from every
+          // tab and is how a student actually turns it on in the first
+          // place.
+          ListenableBuilder(
+            listenable: LibraryModeController.instance,
+            builder: (context, _) {
+              final active = LibraryModeController.instance.isLibraryMode;
+              return IconButton(
+                key: const Key('shell_library_mode_button'),
+                tooltip: active ? 'Library Mode is on' : 'Library Mode',
+                onPressed: () => LibraryModeBanner.showFocusSessionSheet(context),
+                icon: Icon(
+                  active ? Icons.volume_off_rounded : Icons.volume_off_outlined,
+                  color: active ? const Color(0xFF2E7D32) : null,
+                ),
+              );
+            },
+          ),
           IconButton(
             key: const Key('shell_notifications_button'),
             tooltip: 'Notifications',

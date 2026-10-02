@@ -24,6 +24,7 @@ import 'domain/greeting.dart';
 import 'widgets/continue_studying_card.dart';
 import 'widgets/dashboard_quick_actions.dart';
 import 'widgets/groups_preview_card.dart';
+import 'widgets/library_mode_banner.dart';
 import 'widgets/today_progress_card.dart';
 
 /// Home / Dashboard screen redesigned as a focused, high-performance
@@ -134,7 +135,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final upcoming =
           [
             for (final t in accessible)
-              if (TestLifecycle.categorize(
+              // startsAt != null excludes an always-available Self/Practice
+              // test (no schedule window, so TestLifecycle never expires it
+              // out of "upcoming") -- this card is "what's coming up next",
+              // not a reminder a day-old never-attempted practice test
+              // still exists; that stays reachable from the Tests tab.
+              if (t.startsAt != null &&
+                  TestLifecycle.categorize(
                     status: t.status,
                     testMode: t.testMode,
                     startsAt: t.startsAt,
@@ -191,6 +198,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  const LibraryModeBanner(),
                   _GreetingHeader(profile: _profile),
                   const SizedBox(height: 14),
                   if (_profile != null && _profile!.examTargets.isNotEmpty) ...[
