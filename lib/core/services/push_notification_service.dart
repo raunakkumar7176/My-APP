@@ -34,7 +34,17 @@ enum PushChannel {
   routineReminder('routine_reminder', 'Study Reminders', 'Routine and streak reminders', Importance.defaultImportance),
   routineAlarm('routine_alarm', 'Study Session Alarms', 'Exact-time alarms for routine sessions', Importance.max),
   general('general', 'General', 'Other notifications', Importance.defaultImportance),
-  importantSystem('important_system', 'Important', 'Critical account and system alerts', Importance.max);
+  importantSystem('important_system', 'Important', 'Critical account and system alerts', Importance.max),
+  // Distinct-tone channels (carved out of the broader channels above so
+  // each of these specific moments gets its own custom sound — Android
+  // ties a sound to the CHANNEL, not the individual notification, so a
+  // shared sound for all of "test_exam" would mean every one of those
+  // categories rings the same way).
+  testStart('test_start', 'Live Test & Challenge Alerts', 'A live test or challenge is starting now', Importance.max),
+  testScheduled('test_scheduled', 'Test Scheduled', 'A new test has been scheduled', Importance.high),
+  routineStart('routine_start', 'Study Slot Starting', 'A routine study slot is starting now', Importance.high),
+  groupChat('group_chat', 'Group Chat Messages', 'New messages in your study groups', Importance.defaultImportance),
+  groupAnnouncement('group_announcement', 'Group Announcements', 'Owner/manager notices in your study groups', Importance.high);
 
   const PushChannel(this.id, this.title, this.description, this.importance);
   final String id;
@@ -48,8 +58,8 @@ enum PushChannel {
 /// see the matching comment in `fcm.ts` for why.
 PushChannel channelForCategory(String category) {
   const map = <String, PushChannel>{
-    'GROUP_MESSAGE': PushChannel.group,
-    'GROUP_ANNOUNCEMENT': PushChannel.group,
+    'GROUP_MESSAGE': PushChannel.groupChat,
+    'GROUP_ANNOUNCEMENT': PushChannel.groupAnnouncement,
     'GROUP_JOIN': PushChannel.group,
     'GROUP_TEST_ASSIGNED': PushChannel.group,
     'GROUP_TEST_REMINDER': PushChannel.group,
@@ -59,23 +69,26 @@ PushChannel channelForCategory(String category) {
     'ROLE_CHANGED': PushChannel.group,
     'MEMBER_REMOVED': PushChannel.group,
     'TEST_REMINDER': PushChannel.testExam,
-    'TEST_LIVE': PushChannel.testExam,
-    'TEST_INVITATION': PushChannel.testExam,
-    'TEST_SCHEDULED': PushChannel.testExam,
-    'TEST_STARTING_SOON': PushChannel.testExam,
-    'TEST_STARTED': PushChannel.testExam,
+    'TEST_LIVE': PushChannel.testStart,
+    'TEST_INVITATION': PushChannel.testStart,
+    'TEST_SCHEDULED': PushChannel.testScheduled,
+    'TEST_STARTING_SOON': PushChannel.testStart,
+    'TEST_STARTED': PushChannel.testStart,
     'TEST_ENDED': PushChannel.testExam,
     'TEST_COMPLETED': PushChannel.testResult,
     'RESULTS_AVAILABLE': PushChannel.testResult,
     'LEADERBOARD_UPDATED': PushChannel.testResult,
     'REPORT_READY': PushChannel.testResult,
     'ROUTINE_REMINDER': PushChannel.routineReminder,
-    'ROUTINE_DUE': PushChannel.routineReminder,
+    'ROUTINE_DUE': PushChannel.routineStart,
     'ROUTINE_MISSED': PushChannel.routineReminder,
     'ROUTINE_COMPLETED': PushChannel.routineReminder,
     'STREAK_MILESTONE': PushChannel.routineReminder,
     'SYSTEM_NOTIFICATION': PushChannel.importantSystem,
     'CONTENT_REVIEW_RESULT': PushChannel.general,
+    'STREAK_AT_RISK': PushChannel.routineReminder,
+    'LEVEL_UP': PushChannel.general,
+    'NEW_FOLLOWER': PushChannel.general,
   };
   return map[category.toUpperCase()] ?? PushChannel.general;
 }
@@ -227,10 +240,69 @@ class PushNotificationService implements PushPermissionGateway {
   /// configurations) rather than a one-shot notification chime.
   static const _alarmSound = UriAndroidNotificationSound('content://settings/system/alarm_alert');
 
+  /// Custom tones bundled at `android/app/src/main/res/raw/<name>.mp3`
+  /// (resource name passed WITHOUT the extension). Any channel not listed
+  /// here keeps the platform default sound for its importance level,
+  /// exactly as before this map existed.
+  static const Map<PushChannel, String> _customSounds = {
+    PushChannel.testStart: 'test_start',
+    PushChannel.testScheduled: 'test_scheduled',
+    PushChannel.routineStart: 'routine_start',
+    PushChannel.groupChat: 'chat_message',
+    PushChannel.groupAnnouncement: 'announcement',
+  };
+
+  static const _prefsLibraryModeKey = 'push_library_mode';
+
+  /// "Library Mode" — one toggle that silences every tone-carrying channel
+  /// (vibrate only), for a student who doesn't want a loud chime going off
+  /// in a quiet room. Deliberately does NOT touch [PushChannel.routineAlarm]:
+  /// that channel exists specifically to ring through silent/DND (the
+  /// device's own alarm sound, [AudioAttributesUsage.alarm]) so a study
+  /// session alarm is never silently missed — muting it here would defeat
+  /// the entire reason it's wired differently from every other channel.
+  Future<bool> get libraryModeEnabled async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_prefsLibraryModeKey) ?? false;
+  }
+
+  Future<void> setLibraryMode(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_prefsLibraryModeKey, enabled);
+    // Android only applies sound/vibration changes to a channel that is
+    // (re)created with them — so every affected channel must be deleted
+    // and recreated, not merely re-registered with new settings.
+    final androidPlugin =
+        _local.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    if (androidPlugin == null) return;
+    for (final ch in PushChannel.values) {
+      if (ch == PushChannel.routineAlarm) continue;
+      await androidPlugin.deleteNotificationChannel(ch.id);
+    }
+    await _createChannels();
+  }
+
+  static const silentLibraryChannelId = 'channel_library_silent';
+
   Future<void> _createChannels() async {
     final androidPlugin =
         _local.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
     if (androidPlugin == null) return;
+    final libraryMode = await libraryModeEnabled;
+
+    // Register dedicated silent library channel:
+    await androidPlugin.createNotificationChannel(
+      AndroidNotificationChannel(
+        silentLibraryChannelId,
+        'Library Mode Alerts',
+        description: 'Gentle vibration alerts while in Library Mode',
+        importance: Importance.high,
+        playSound: false,
+        enableVibration: true,
+        vibrationPattern: Int64List.fromList(const [0, 150, 100, 150]),
+      ),
+    );
+
     await Future.wait([
       for (final ch in PushChannel.values)
         androidPlugin.createNotificationChannel(
@@ -246,8 +318,12 @@ class PushNotificationService implements PushPermissionGateway {
             // per-channel from Android Settings at any time. The one
             // exception is `routineAlarm`: it must actually ring like an
             // alarm, not chime like a notification.
-            playSound: true,
-            sound: ch == PushChannel.routineAlarm ? _alarmSound : null,
+            playSound: ch == PushChannel.routineAlarm || !libraryMode,
+            sound: ch == PushChannel.routineAlarm
+                ? _alarmSound
+                : (_customSounds[ch] != null
+                      ? RawResourceAndroidNotificationSound(_customSounds[ch]!)
+                      : null),
             audioAttributesUsage: ch == PushChannel.routineAlarm
                 ? AudioAttributesUsage.alarm
                 : AudioAttributesUsage.notification,
@@ -262,7 +338,7 @@ class PushNotificationService implements PushPermissionGateway {
 
   // ── Foreground display (Phase 7) ──
 
-  void _handleForegroundMessage(RemoteMessage message) {
+  void _handleForegroundMessage(RemoteMessage message) async {
     final category = message.data['category'] as String? ?? '';
     if (category == 'FORCE_LOGOUT') {
       unawaited(SingleDeviceEnforcer.handleForceLogoutPush(message.data));
@@ -277,22 +353,74 @@ class PushNotificationService implements PushPermissionGateway {
       // rendered the message there; a toast on top would just be noise.
       return;
     }
+    final isLibrary = await libraryModeEnabled;
     final channel = channelForCategory(category);
+
+    final androidDetails = isLibrary
+        ? AndroidNotificationDetails(
+            silentLibraryChannelId,
+            'Library Mode Alerts',
+            channelDescription: 'Gentle vibration alerts while in Library Mode',
+            importance: Importance.high,
+            priority: Priority.high,
+            playSound: false,
+            enableVibration: true,
+            vibrationPattern: Int64List.fromList(const [0, 150, 100, 150]),
+          )
+        : AndroidNotificationDetails(
+            channel.id,
+            channel.title,
+            channelDescription: channel.description,
+            importance: channel.importance,
+            priority: Priority.high,
+          );
 
     _local.show(
       message.hashCode,
       notification.title,
       notification.body,
-      NotificationDetails(
-        android: AndroidNotificationDetails(
-          channel.id,
-          channel.title,
-          channelDescription: channel.description,
-          importance: channel.importance,
-          priority: Priority.high,
-        ),
-      ),
+      NotificationDetails(android: androidDetails),
       payload: _resolvePathFromData(message.data),
+    );
+  }
+
+  /// Dispatches a local notification, automatically routing through the silent
+  /// library channel with gentle vibration if Library Mode is currently active.
+  Future<void> showNotification({
+    required int id,
+    required String title,
+    required String body,
+    String category = '',
+    String? payload,
+  }) async {
+    final isLibrary = await libraryModeEnabled;
+    final channel = channelForCategory(category);
+
+    final androidDetails = isLibrary
+        ? AndroidNotificationDetails(
+            silentLibraryChannelId,
+            'Library Mode Alerts',
+            channelDescription: 'Gentle vibration alerts while in Library Mode',
+            importance: Importance.high,
+            priority: Priority.high,
+            playSound: false,
+            enableVibration: true,
+            vibrationPattern: Int64List.fromList(const [0, 150, 100, 150]),
+          )
+        : AndroidNotificationDetails(
+            channel.id,
+            channel.title,
+            channelDescription: channel.description,
+            importance: channel.importance,
+            priority: Priority.high,
+          );
+
+    await _local.show(
+      id,
+      title,
+      body,
+      NotificationDetails(android: androidDetails),
+      payload: payload,
     );
   }
 
