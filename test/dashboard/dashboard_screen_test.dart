@@ -60,6 +60,7 @@ void main() {
         contains('Good Morning'),
         contains('Good Afternoon'),
         contains('Good Evening'),
+        contains('Good Night'),
       ),
     );
   });

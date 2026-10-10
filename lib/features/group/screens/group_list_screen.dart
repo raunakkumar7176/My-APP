@@ -142,6 +142,7 @@ class _GroupListScreenState extends State<GroupListScreen> {
       onRefresh: _c.refresh,
       child: _c.groups.isEmpty
           ? ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
               children: [
                 _invitations(),
                 _pendingBanner(),
@@ -171,6 +172,7 @@ class _GroupListScreenState extends State<GroupListScreen> {
               ],
             )
           : ListView.builder(
+              physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.all(16),
               itemCount: _c.groups.length + 2,
               itemBuilder: (_, i) {
@@ -221,6 +223,9 @@ class _GroupListScreenState extends State<GroupListScreen> {
   /// accept the hub is opened by the group id that now appears in the
   /// refreshed membership list — never by the invitation alone.
   Widget _invitations() {
+    if (!_c.hasInvitations && !_c.invitationsLoading && _c.invitationsError == null) {
+      return const SizedBox.shrink();
+    }
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
       child: IncomingInvitationsSection(
@@ -450,11 +455,13 @@ class _GroupCard extends StatelessWidget {
             padding: const EdgeInsets.only(top: 3),
             child: preview == null
                 ? Text(
-                    '${group.memberCount} ${group.memberCount == 1 ? 'member' : 'members'} · ${role.label}',
+                    'No messages yet',
+                    key: Key('group_card_preview_${group.id}'),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 13,
+                      fontStyle: FontStyle.italic,
                       color: isDark
                           ? const Color(0xFF94A3B8)
                           : const Color(0xFF64748B),

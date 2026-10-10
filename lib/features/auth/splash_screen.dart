@@ -229,7 +229,7 @@ class _SplashScreenState extends State<SplashScreen>
                       position: _titleSlide,
                       child: const Text(
                         'My Preparation',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 28,
                           fontWeight: FontWeight.w800,
                           letterSpacing: -0.5,
@@ -248,7 +248,7 @@ class _SplashScreenState extends State<SplashScreen>
                       position: _taglineSlide,
                       child: const Text(
                         'PREPARE  •  PRACTICE  •  PERFORM',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
                           letterSpacing: 2.4,
@@ -292,9 +292,9 @@ class _SplashScreenState extends State<SplashScreen>
                   child: const Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Text(
+                      Text(
                         'FROM',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.w600,
                           letterSpacing: 3.2,
@@ -311,9 +311,9 @@ class _SplashScreenState extends State<SplashScreen>
                             color: Color(0xFF2457D6),
                           ),
                           SizedBox(width: 8),
-                          const Text(
+                          Text(
                             'SHARDA GROUP',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 15,
                               fontWeight: FontWeight.w800,
                               letterSpacing: 2.8,

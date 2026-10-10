@@ -171,6 +171,21 @@ class SupabaseResultRepository implements ResultRepository {
   @override
   Future<List<Map<String, dynamic>>> leaderboard(String testId) =>
       _guard(() async {
+        try {
+          final rows = await _client.rpc(
+            'rpc_get_test_leaderboard',
+            params: {'p_test_id': testId},
+          );
+          AppLogger.rpcShape('rpc_get_test_leaderboard', rows);
+          if (rows is List) {
+            return [
+              for (final r in rows) Map<String, dynamic>.from(r as Map),
+            ];
+          }
+        } catch (e) {
+          AppLogger.warning('rpc_get_test_leaderboard fallback to rpc_get_leaderboard: $e');
+        }
+
         final rows = await _client.rpc(
           'rpc_get_leaderboard',
           params: {'p_test': testId},

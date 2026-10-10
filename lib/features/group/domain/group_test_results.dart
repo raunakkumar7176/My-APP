@@ -305,6 +305,8 @@ final class LeaderboardEntry {
     this.wrongCount,
     this.unansweredCount,
     this.isCurrentUser = false,
+    this.avatarUrl,
+    this.timeTakenSeconds,
   });
 
   /// Display rank (1-based). Tied participants share the same rank.
@@ -327,6 +329,12 @@ final class LeaderboardEntry {
 
   /// Whether this entry belongs to the signed-in user.
   final bool isCurrentUser;
+
+  /// Profile avatar URL if available.
+  final String? avatarUrl;
+
+  /// Time taken in seconds.
+  final int? timeTakenSeconds;
 
   /// Build a deterministic leaderboard from stored results.
   ///
@@ -358,17 +366,19 @@ final class LeaderboardEntry {
       for (final r in rows)
         LeaderboardEntry(
           rank: (r['rank'] as num).toInt(),
-          userId: r['user_id'] as String,
+          userId: (r['user_id'] ?? '') as String,
           label: r['user_id'] == currentUserId
               ? 'You'
-              : ((r['full_name'] as String?)?.trim().isNotEmpty ?? false)
-              ? (r['full_name'] as String).trim()
-              : labelFor(r['user_id'] as String),
+              : (((r['user_name'] ?? r['full_name']) as String?)?.trim().isNotEmpty ?? false)
+              ? ((r['user_name'] ?? r['full_name']) as String).trim()
+              : labelFor((r['user_id'] ?? '') as String),
           score: num_(r['score']),
-          maxScore: num_(r['max_score']),
+          maxScore: num_(r['max_score'] ?? r['total_marks']),
           percentage: num_(r['percentage']),
           accuracy: num_(r['accuracy']),
           isCurrentUser: r['user_id'] == currentUserId,
+          avatarUrl: r['avatar_url'] as String?,
+          timeTakenSeconds: (r['time_taken_seconds'] as num?)?.toInt(),
         ),
     ];
   }

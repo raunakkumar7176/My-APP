@@ -633,13 +633,24 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              if (canManage)
-                TextButton.icon(
-                  key: const Key('invite_member_action'),
-                  onPressed: _inviteMember,
-                  icon: const Icon(Icons.person_add_alt, size: 16),
-                  label: const Text('Invite'),
-                ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_c.canManageRoles)
+                    IconButton(
+                      tooltip: 'Role permissions',
+                      icon: const Icon(Icons.admin_panel_settings_outlined, size: 20),
+                      onPressed: _openRolePermissions,
+                    ),
+                  if (canManage)
+                    TextButton.icon(
+                      key: const Key('invite_member_action'),
+                      onPressed: _inviteMember,
+                      icon: const Icon(Icons.person_add_alt, size: 16),
+                      label: const Text('Invite'),
+                    ),
+                ],
+              ),
             ],
           ),
           const SizedBox(height: 8),

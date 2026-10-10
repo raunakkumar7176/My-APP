@@ -81,6 +81,18 @@ android {
                 // signing rather than failing the build.
                 signingConfigs.getByName("debug")
             }
+            // R8 code + resource shrinking — strips unused code/resources
+            // from every dependency (Firebase, Supabase, pdf/printing,
+            // etc.), which is most of what was making the release APK
+            // bigger than it needed to be. proguard-rules.pro adds the
+            // handful of keep rules this project's plugins actually need
+            // on top of Flutter's own bundled defaults.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
     }
 }

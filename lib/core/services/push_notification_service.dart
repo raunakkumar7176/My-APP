@@ -165,6 +165,22 @@ class PushNotificationService implements PushPermissionGateway {
     return _initFuture ??= _initialize();
   }
 
+  /// Whether it is safe to schedule a local notification right now: completes
+  /// with `true` once Firebase, the notification channels, the plugin and the
+  /// timezone database are all up.
+  ///
+  /// Returns `false` when [initialize] was never called (unit tests, a build
+  /// where push setup is deliberately skipped) or when it failed part-way (no
+  /// `google-services.json` yet) — in both cases there is no plugin to
+  /// schedule against, and callers should quietly skip rather than throw or
+  /// log a scary "not initialized" warning on every screen load.
+  Future<bool> get localNotificationsReady async {
+    if (_initialized) return true;
+    if (_initFuture == null) return false;
+    await _initFuture;
+    return _initialized;
+  }
+
   Future<void> _initialize() async {
     try {
       await Firebase.initializeApp();
@@ -434,10 +450,17 @@ class PushNotificationService implements PushPermissionGateway {
   // `AcademicAlarmService` calls these; it owns the "which routines need an
   // alarm in the next N days" logic, this owns "how to actually alarm".
 
-  /// Schedules one exact-time local notification with a full-screen intent
-  /// (Android) and a "Start Session" / "Snooze 5m" action pair. [payload] is
-  /// the deep-link path opened on tap (or after a snooze), exactly like a
-  /// push notification's payload.
+  /// Schedules one exact-time local notification. [payload] is the deep-link
+  /// path opened on tap (or after a snooze), exactly like a push
+  /// notification's payload.
+  ///
+  /// [channel] selects what the student actually hears: the default
+  /// [PushChannel.routineAlarm] keeps the old full-screen "Start Session" /
+  /// "Snooze 5m" alarm behaviour, while any other channel produces an
+  /// ordinary notification that rings with that channel's own bundled tone
+  /// (e.g. [PushChannel.testStart] → `test_start.mp3`) — the sound lives on
+  /// the Android *channel*, which is why schedule-time and live-time alerts
+  /// can sound different at all.
   /// Returns true once the OS has actually accepted the schedule, false on
   /// any failure (not initialized, permission missing, plugin error) — a
   /// caller that wants to tell the user "reminder set" must check this
@@ -451,6 +474,7 @@ class PushNotificationService implements PushPermissionGateway {
     /// e.g. `DateTimeComponents.time` to repeat daily at the same
     /// hour/minute instead of firing once. Null = one-shot (default).
     DateTimeComponents? matchDateTimeComponents,
+    PushChannel channel = PushChannel.routineAlarm,
   }) async {
     if (!_initialized && _initFuture == null) {
       // Local notifications are set up as part of full initialize(); a
@@ -459,6 +483,7 @@ class PushNotificationService implements PushPermissionGateway {
       AppLogger.warning('scheduleExactNotification called before PushNotificationService.initialize()');
       return false;
     }
+    final isAlarm = channel == PushChannel.routineAlarm;
     try {
       await _local.zonedSchedule(
         id,
@@ -466,32 +491,47 @@ class PushNotificationService implements PushPermissionGateway {
         body,
         scheduledDate,
         NotificationDetails(
-          android: AndroidNotificationDetails(
-            PushChannel.routineAlarm.id,
-            PushChannel.routineAlarm.title,
-            channelDescription: PushChannel.routineAlarm.description,
-            importance: Importance.max,
-            priority: Priority.max,
-            fullScreenIntent: true,
-            category: AndroidNotificationCategory.alarm,
-            // Rings like a real alarm (device's own alarm tone, Alarm
-            // volume stream) rather than chiming once like a notification
-            // — see `_alarmSound`/_createChannels. Stays on screen and
-            // keeps vibrating until the student taps Start Session or
-            // Snooze, instead of being swipe-dismissible like an ordinary
-            // notification.
-            playSound: true,
-            sound: _alarmSound,
-            audioAttributesUsage: AudioAttributesUsage.alarm,
-            enableVibration: true,
-            vibrationPattern: Int64List.fromList(const [0, 1000, 500, 1000, 500, 1000, 500, 1000]),
-            ongoing: true,
-            autoCancel: false,
-            actions: const [
-              AndroidNotificationAction('start_session', 'Start Session', showsUserInterface: true),
-              AndroidNotificationAction(_snoozeActionId, 'Snooze 5m'),
-            ],
-          ),
+          android: isAlarm
+              ? AndroidNotificationDetails(
+                  PushChannel.routineAlarm.id,
+                  PushChannel.routineAlarm.title,
+                  channelDescription: PushChannel.routineAlarm.description,
+                  importance: Importance.max,
+                  priority: Priority.max,
+                  fullScreenIntent: true,
+                  category: AndroidNotificationCategory.alarm,
+                  // Rings like a real alarm (device's own alarm tone, Alarm
+                  // volume stream) rather than chiming once like a notification
+                  // — see `_alarmSound`/_createChannels. Stays on screen and
+                  // keeps vibrating until the student taps Start Session or
+                  // Snooze, instead of being swipe-dismissible like an ordinary
+                  // notification.
+                  playSound: true,
+                  sound: _alarmSound,
+                  audioAttributesUsage: AudioAttributesUsage.alarm,
+                  enableVibration: true,
+                  vibrationPattern: Int64List.fromList(const [0, 1000, 500, 1000, 500, 1000, 500, 1000]),
+                  ongoing: true,
+                  autoCancel: false,
+                  actions: const [
+                    AndroidNotificationAction('start_session', 'Start Session', showsUserInterface: true),
+                    AndroidNotificationAction(_snoozeActionId, 'Snooze 5m'),
+                  ],
+                )
+              : AndroidNotificationDetails(
+                  channel.id,
+                  channel.title,
+                  channelDescription: channel.description,
+                  importance: channel.importance,
+                  priority: Priority.high,
+                  category: AndroidNotificationCategory.reminder,
+                  autoCancel: true,
+                  // No `sound`/`playSound` override on purpose: on Android 8+
+                  // the CHANNEL owns the tone, and `_createChannels` already
+                  // bound this one to its bundled mp3. Overriding it here
+                  // would flatten schedule-time and live-time alerts back
+                  // onto the same default chime.
+                ),
         ),
         androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
         uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,

@@ -2,7 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:image_picker/image_picker.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../../../core/constants/theme/app_colors.dart';
+import '../../../core/services/supabase_service.dart';
 import '../domain/group_errors.dart';
 import '../domain/group_privacy.dart';
 import '../state/group_hub_controller.dart';
@@ -494,6 +498,116 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
     );
   }
 
+  Future<void> _pickAndUploadAvatar(ImageSource source) async {
+    Navigator.of(context).pop();
+    try {
+      final picker = ImagePicker();
+      final file = await picker.pickImage(source: source, imageQuality: 85);
+      if (file == null) return;
+      final bytes = await file.readAsBytes();
+      final client = SupabaseService.client;
+      final path =
+          '${widget.groupId}/avatar_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      String? publicUrl;
+      try {
+        await client.storage.from('group-avatars').uploadBinary(
+              path,
+              bytes,
+              fileOptions: const FileOptions(
+                contentType: 'image/jpeg',
+                upsert: true,
+              ),
+            );
+        publicUrl = client.storage.from('group-avatars').getPublicUrl(path);
+      } catch (_) {
+        final fallbackPath = 'groups/${widget.groupId}/avatar.jpg';
+        await client.storage.from('avatars').uploadBinary(
+              fallbackPath,
+              bytes,
+              fileOptions: const FileOptions(
+                contentType: 'image/jpeg',
+                upsert: true,
+              ),
+            );
+        publicUrl = client.storage.from('avatars').getPublicUrl(fallbackPath);
+      }
+      final ok = await _c.updateLogoUrl(publicUrl);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            ok ? 'Group logo updated.' : (_c.error ?? 'Failed to update logo.'),
+          ),
+          backgroundColor: ok ? null : AppColors.error,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not upload group logo: $e'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+  }
+
+  void _showAvatarOptions() {
+    showModalBottomSheet<void>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 12),
+            Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade400,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Change Group Logo',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            const SizedBox(height: 8),
+            ListTile(
+              leading: const Icon(Icons.camera_alt_outlined),
+              title: const Text('Take Photo'),
+              onTap: () => _pickAndUploadAvatar(ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Choose from Gallery'),
+              onTap: () => _pickAndUploadAvatar(ImageSource.gallery),
+            ),
+            if ((_c.group?.logoUrl ?? '').trim().isNotEmpty)
+              ListTile(
+                leading: const Icon(
+                  Icons.delete_outline,
+                  color: AppColors.error,
+                ),
+                title: const Text(
+                  'Remove Logo',
+                  style: TextStyle(color: AppColors.error),
+                ),
+                onTap: () async {
+                  Navigator.of(ctx).pop();
+                  await _removeLogo();
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!_c.hasLoaded && _c.isLoading) {
@@ -543,7 +657,27 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
         children: [
           Row(
             children: [
-              GroupAvatar(name: group.name, logoUrl: group.logoUrl, radius: 32),
+              InkWell(
+                onTap: _showAvatarOptions,
+                borderRadius: BorderRadius.circular(32),
+                child: Stack(
+                  children: [
+                    GroupAvatar(name: group.name, logoUrl: group.logoUrl, radius: 32),
+                    Positioned(
+                      bottom: 0,
+                      right: 0,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).primaryColor,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.camera_alt, size: 14, color: Colors.white),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
               const SizedBox(width: 16),
               Expanded(
                 child: Column(
@@ -553,9 +687,8 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
                     const SizedBox(height: 4),
                     Text(
                       hasLogo
-                          ? 'A logo is set for this group.'
-                          : 'No logo yet. Uploading a logo needs a group-scoped '
-                                'storage policy that is not available yet.',
+                          ? 'Tap to change group logo.'
+                          : 'Tap to set group logo.',
                       key: const Key('logo_status'),
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
@@ -571,7 +704,6 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 24),
           const SizedBox(height: 24),
           _inviteSection(context),
           TextField(

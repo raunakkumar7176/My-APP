@@ -4,10 +4,15 @@
 /// widget tree.
 abstract final class Greeting {
   /// hour is 0-23 in the user's wall-clock time (see CalendarClock).
+  /// Evening previously had no upper bound, so it also covered 10 PM,
+  /// 11 PM, and midnight — now closes at 9 PM, with Night covering the
+  /// rest (9 PM–5 AM) instead of Morning claiming the small hours too.
   static String forHour(int hour) {
+    if (hour < 5) return 'Good Night';
     if (hour < 12) return 'Good Morning';
     if (hour < 17) return 'Good Afternoon';
-    return 'Good Evening';
+    if (hour < 21) return 'Good Evening';
+    return 'Good Night';
   }
 
   static String time12h(int hour, int minute) {

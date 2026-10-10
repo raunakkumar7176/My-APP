@@ -3,8 +3,16 @@ import 'package:my_praperation/features/dashboard/domain/greeting.dart';
 
 void main() {
   group('Greeting.forHour', () {
-    test('midnight is morning', () {
-      expect(Greeting.forHour(0), 'Good Morning');
+    test('midnight is night', () {
+      expect(Greeting.forHour(0), 'Good Night');
+    });
+
+    test('4:59 is still night', () {
+      expect(Greeting.forHour(4), 'Good Night');
+    });
+
+    test('5:00 is morning', () {
+      expect(Greeting.forHour(5), 'Good Morning');
     });
 
     test('11:59 is still morning', () {
@@ -23,8 +31,16 @@ void main() {
       expect(Greeting.forHour(17), 'Good Evening');
     });
 
-    test('23:59 is still evening', () {
-      expect(Greeting.forHour(23), 'Good Evening');
+    test('20:59 is still evening', () {
+      expect(Greeting.forHour(20), 'Good Evening');
+    });
+
+    test('21:00 is night', () {
+      expect(Greeting.forHour(21), 'Good Night');
+    });
+
+    test('23:59 is still night', () {
+      expect(Greeting.forHour(23), 'Good Night');
     });
   });
 

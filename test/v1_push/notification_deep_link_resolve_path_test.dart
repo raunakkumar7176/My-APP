@@ -64,6 +64,11 @@ void main() {
       expect(NotificationDeepLinkHandler.resolvePath(n), '/routine/r1');
     });
 
+    test('TEST_SCHEDULED with a test_id -> that test, not the notification center', () {
+      final n = _notif(category: 'TEST_SCHEDULED', data: {'test_id': 't1'});
+      expect(NotificationDeepLinkHandler.resolvePath(n), '/tests/t1');
+    });
+
     test('a group_id with type group_message -> the group screen', () {
       final n = _notif(data: {'group_id': 'g1', 'type': 'group_message'});
       expect(NotificationDeepLinkHandler.resolvePath(n), '/groups/g1');
@@ -73,6 +78,12 @@ void main() {
   group('resolvePath — category-only fallback (no ids at all)', () {
     test('TEST_REMINDER -> /tests', () {
       expect(NotificationDeepLinkHandler.resolvePath(_notif(category: 'TEST_REMINDER')), '/tests');
+    });
+
+    // Used to fall through to `default: null` and land on the notification
+    // center, even though the whole point of a schedule notice is the test.
+    test('TEST_SCHEDULED -> /tests', () {
+      expect(NotificationDeepLinkHandler.resolvePath(_notif(category: 'TEST_SCHEDULED')), '/tests');
     });
 
     test('ROUTINE_DUE -> /routine', () {

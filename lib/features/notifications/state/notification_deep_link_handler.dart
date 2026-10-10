@@ -128,6 +128,13 @@ class NotificationDeepLinkHandler {
       case NotificationCategory.testReminder:
       case NotificationCategory.testLive:
       case NotificationCategory.testInvitation:
+      // A schedule notice carries no start time to wait for — its whole job
+      // is to send the student to the test itself, exactly like the live
+      // alert does once the window is open.
+      case NotificationCategory.testScheduled:
+      case NotificationCategory.testStartingSoon:
+      case NotificationCategory.testStarted:
+      case NotificationCategory.testEnded:
         return '/tests';
       case NotificationCategory.routineReminder:
       case NotificationCategory.routineDue:

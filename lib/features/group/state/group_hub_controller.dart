@@ -564,7 +564,8 @@ class GroupHubController extends DisposableNotifier {
   GroupRole get myRole => GroupRole.fromDb(_group?.userRole);
   GroupPrivacy get privacy => GroupPrivacy.fromDb(_group?.privacy);
   bool get isOwner => myRole.isOwner;
-  int get memberCount => _group?.memberCount ?? _members.length;
+  int get memberCount =>
+      _members.isNotEmpty ? _members.length : (_group?.memberCount ?? 0);
 
   /// The caller's server-reported permissions in this group (one
   /// `fn_has_permission` probe per value; owner is true for all of them by the

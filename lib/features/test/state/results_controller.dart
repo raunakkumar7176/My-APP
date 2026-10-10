@@ -23,6 +23,8 @@ import '../domain/test_kind.dart';
 import '../domain/test_pdf.dart';
 import '../../../core/services/pdf/exam_report_pdf_generator.dart';
 import '../../../core/services/profile_service.dart';
+import '../../../core/services/supabase_service.dart';
+import '../../group/domain/group_test_results.dart';
 import 'attempt_launch_store.dart';
 import 'disposable_notifier.dart';
 
@@ -64,7 +66,9 @@ class ResultsController extends DisposableNotifier {
   List<Question> _questionsList = const [];
   Map<String, Answer> _answersById = const {};
   Map<String, int> _answerKey = const {};
+  List<LeaderboardEntry> _leaderboard = const [];
   bool _loading = false;
+  bool _leaderboardLoading = false;
   bool _reviewLoaded = false;
   bool _answersLoadFailed = false;
   bool _busy = false;
@@ -76,6 +80,8 @@ class ResultsController extends DisposableNotifier {
   List<SubjectBreakdownItem> get subjectBreakdown => _subjects;
   List<TopicBreakdownItem> get topicBreakdown => _topics;
   List<Question> get questions => _questionsList;
+  List<LeaderboardEntry> get leaderboard => _leaderboard;
+  bool get isLeaderboardLoading => _leaderboardLoading;
   Answer? answerFor(String questionId) => _answersById[questionId];
 
   /// The real correct option for [questionId], from `rpc_get_my_answer_key`
@@ -97,6 +103,64 @@ class ResultsController extends DisposableNotifier {
   Result? get previousResult => _result == null
       ? null
       : ResultAnalyticsMapper.previous(_history, _result!.id);
+
+  /// Resolves the specific attempt row matching this result.
+  Attempt? get currentAttempt {
+    final targetId = _result?.attemptId ?? attemptId;
+    for (final a in _myAttempts) {
+      if (a.id == targetId) return a;
+    }
+    return _myAttempts.isNotEmpty ? _myAttempts.first : null;
+  }
+
+  /// Exact time spent on this attempt, computed from submittedAt - startedAt.
+  Duration? get timeSpent {
+    final a = currentAttempt;
+    if (a != null && a.submittedAt != null) {
+      final diff = a.submittedAt!.difference(a.startedAt);
+      return diff.isNegative ? Duration.zero : diff;
+    }
+    return null;
+  }
+
+  /// Formatted time spent e.g. "18m 42s" or "45s".
+  String get formattedTimeSpent {
+    final d = timeSpent;
+    if (d == null) return '--';
+    final m = d.inMinutes;
+    final s = d.inSeconds % 60;
+    if (m > 0) {
+      return '${m}m ${s.toString().padLeft(2, '0')}s';
+    } else {
+      return '${s}s';
+    }
+  }
+
+  /// Formatted total allowed test duration e.g. "60m" or "1h".
+  String get formattedTotalDuration {
+    final sec = _test?.durationSec;
+    if (sec == null || sec <= 0) return '';
+    final m = sec ~/ 60;
+    if (m >= 60 && m % 60 == 0) {
+      return '${m ~/ 60}h';
+    }
+    return '${m}m';
+  }
+
+  /// User's rank resolved from the server Result row or leaderboard ranking.
+  int? get userRank {
+    if (_result?.rank != null && _result!.rank! > 0) return _result!.rank;
+    for (final entry in _leaderboard) {
+      if (entry.isCurrentUser) return entry.rank;
+    }
+    return null;
+  }
+
+  /// Total participants scored on this test leaderboard.
+  int? get totalParticipants {
+    if (_leaderboard.isNotEmpty) return _leaderboard.length;
+    return null;
+  }
 
   Future<void> load() async {
     _loading = true;
@@ -139,12 +203,75 @@ class ResultsController extends DisposableNotifier {
         subjectNames: names,
       );
       _topics = ResultAnalyticsMapper.topics(r.topicBreakdown);
+
+      // Load leaderboard for peer / group tests
+      await _loadLeaderboardSilently(r.testId, r.userId);
     } on AppError catch (e) {
       _error = e.message;
     } finally {
       _loading = false;
       notifyListeners();
     }
+  }
+
+  /// Loads leaderboard ranking rows for this test from the server.
+  Future<void> _loadLeaderboardSilently(String testId, String currentUid) async {
+    _leaderboardLoading = true;
+    try {
+      final rows = await _results.leaderboard(testId);
+      _leaderboard = LeaderboardEntry.fromServerRows(
+        rows,
+        currentUserId: currentUid,
+        labelFor: (_) => 'Student',
+      );
+    } catch (e) {
+      AppLogger.warning('Leaderboard load failed for $testId: $e');
+    } finally {
+      _leaderboardLoading = false;
+    }
+  }
+
+  /// Explicitly reloads the test leaderboard.
+  Future<void> refreshLeaderboard() async {
+    final r = _result;
+    if (r == null) return;
+    _leaderboardLoading = true;
+    notifyListeners();
+    await _loadLeaderboardSilently(r.testId, r.userId);
+    notifyListeners();
+  }
+
+  /// Creates a practice test containing only the questions the student got wrong.
+  Future<String> createMistakesReTest() async {
+    if (!_reviewLoaded) {
+      await loadReview();
+    }
+    final wrongQuestionIds = <String>[];
+    for (final q in _questionsList) {
+      final ans = _answersById[q.id];
+      final correct = _answerKey[q.id];
+      if (correct != null && ans?.selectedOption != correct) {
+        wrongQuestionIds.add(q.id);
+      }
+    }
+    if (wrongQuestionIds.isEmpty) {
+      throw const ValidationError(message: 'No incorrect questions found to re-test.');
+    }
+    final client = SupabaseService.client;
+    final title = 'Mistake Re-test: ${_test?.title ?? 'Practice'}';
+    final durationSec = (wrongQuestionIds.length * 60).clamp(300, 3600);
+    final response = await client.rpc(
+      'rpc_create_selftest_from_mistakes',
+      params: {
+        'p_title': title,
+        'p_duration_sec': durationSec,
+        'p_question_ids': wrongQuestionIds,
+      },
+    );
+    if (response is String) {
+      return response;
+    }
+    throw const DataError(message: 'Failed to create mistake re-test session.');
   }
 
   /// Safe questions + the user's answers for the review screen (lazy).

@@ -74,15 +74,6 @@ class OutgoingInvitationsSection extends StatelessWidget {
           )
         else
           for (final inv in c.outgoingInvitations) _tile(context, inv),
-        if (c.error != null && c.outgoingInvitations.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Text(
-              c.error!,
-              key: const Key('outgoing_action_error'),
-              style: const TextStyle(color: AppColors.error),
-            ),
-          ),
       ],
     );
   }

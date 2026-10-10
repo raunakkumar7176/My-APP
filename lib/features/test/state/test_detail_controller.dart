@@ -4,6 +4,7 @@ import '../../../core/errors/app_error.dart';
 import '../../../core/logging/app_logger.dart';
 import '../../../core/models/attempt.dart';
 import '../../../core/models/question.dart';
+import '../../../core/models/result.dart';
 import '../../../core/models/result_batch.dart';
 import '../../../core/models/test.dart';
 import '../../../core/services/auth_service.dart';
@@ -234,6 +235,35 @@ class TestDetailController extends DisposableNotifier {
   int? _questionCount;
   int? _scopeNodeCount;
   String? _groupName;
+  Result? _myResult;
+
+  /// Newest own [Result] for this test; null while no attempt has been
+  /// scored yet (or the read failed). Straight from the stored row — the
+  /// screen must not invent a score of its own.
+  Result? get myResult => _myResult;
+
+  String? get scoreLabel {
+    final r = _myResult;
+    if (r == null) return null;
+    final obtained = r.marksObtained ?? r.score;
+    if (obtained == null) return null;
+    final total = r.totalMarks ?? r.maxScore;
+    return total == null ? _num(obtained) : '${_num(obtained)} / ${_num(total)}';
+  }
+
+  String? get accuracyLabel {
+    final a = _myResult?.accuracy ?? _myResult?.percentage;
+    return a == null ? null : '${_num(a)}%';
+  }
+
+  String? get rankLabel {
+    final rank = _myResult?.rank;
+    return rank == null || rank <= 0 ? null : '#$rank';
+  }
+
+  /// `12.5` stays `12.5`; a whole number is shown as `12`, never `12.0`.
+  static String _num(num v) =>
+      v == v.roundToDouble() ? v.round().toString() : '$v';
 
   String get questionCountLabel =>
       _questionCount == null ? '--' : '$_questionCount';
@@ -267,14 +297,12 @@ class TestDetailController extends DisposableNotifier {
   Future<void> _loadPreTestInfo() async {
     final t = _test;
     if (t == null) return;
-    // Question count via the safe RPC (never public.questions; the server
-    // applies access rules and may refuse before the test opens).
-    try {
-      _questionCount = (await _questions.safeQuestions(t.id)).length;
-    } catch (e) {
-      AppLogger.warning('Question count unavailable for ${t.id}: $e');
-      _questionCount = null;
-    }
+    // Question count comes from the stored `tests.total_questions` column
+    // (kept truthful by trigger fn_tests_refresh_total_questions) — NEVER
+    // from the question RPC. `get_test_questions_safe` now refuses to hand
+    // out the paper before `starts_at`, and fetching it just to count it was
+    // the pre-start payload leak this screen used to open.
+    _questionCount = t.totalQuestions;
     try {
       _scopeNodeCount = (await _tests.syllabusFor(t.id)).length;
     } catch (e) {
@@ -290,6 +318,23 @@ class TestDetailController extends DisposableNotifier {
       } catch (e) {
         AppLogger.warning('Group name unavailable: $e');
       }
+    }
+    await _loadMyResult();
+  }
+
+  /// Newest own [Result] for this test (RLS-scoped; null when the batch has
+  /// not scored my attempt yet or the read failed). Never fabricated — this
+  /// is what the score-summary card on the detail screen renders.
+  Future<void> _loadMyResult() async {
+    _myResult = null;
+    final t = _test;
+    if (t == null) return;
+    try {
+      final mine = await _results.mineForTest(t.id);
+      _myResult = mine.isEmpty ? null : mine.first;
+    } catch (e) {
+      AppLogger.warning('Own result unavailable for ${t.id}: $e');
+      _myResult = null;
     }
   }
 

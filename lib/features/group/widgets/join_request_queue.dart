@@ -81,15 +81,6 @@ class JoinRequestQueue extends StatelessWidget {
           )
         else
           for (final r in c.joinRequests) _tile(context, r),
-        if (c.error != null && c.joinRequests.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Text(
-              c.error!,
-              key: const Key('join_request_action_error'),
-              style: const TextStyle(color: AppColors.error),
-            ),
-          ),
       ],
     );
   }
