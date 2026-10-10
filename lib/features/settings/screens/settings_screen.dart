@@ -19,6 +19,7 @@ import '../../../core/services/push_notification_service.dart';
 import '../../../core/services/settings/library_mode_controller.dart';
 import '../../../core/services/supabase_service.dart';
 import '../../../core/services/theme_service.dart';
+import '../../../core/widgets/logout_confirmation_dialog.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../dashboard/widgets/library_mode_banner.dart';
 import '../../feedback/presentation/feedback_dialog.dart';
@@ -634,28 +635,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   // ── Log Out Dialog ──
   Future<void> _handleLogout() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Log Out of My Preparation?'),
-        content: const Text(
-          'You will need to sign in again to access your cohort, tests, and study progress.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.error),
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Log Out'),
-          ),
-        ],
-      ),
-    );
+    final confirmed = await LogoutConfirmationDialog.show(context);
 
-    if (confirmed == true && mounted) {
+    if (confirmed && mounted) {
       try {
         await AuthService.signOut();
       } catch (_) {}

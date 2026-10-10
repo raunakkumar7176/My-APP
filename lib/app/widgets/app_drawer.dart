@@ -7,6 +7,7 @@ import '../../core/services/app_share_service.dart';
 import '../../core/services/auth_service.dart';
 import '../../core/services/profile_service.dart';
 import '../../core/services/settings/library_mode_controller.dart';
+import '../../core/widgets/logout_confirmation_dialog.dart';
 import '../../features/feedback/presentation/feedback_dialog.dart';
 import '../../features/feedback/services/feedback_service.dart';
 
@@ -152,7 +153,7 @@ class AppDrawer extends StatelessWidget {
               label: 'Logout',
               color: AppColors.error,
               onTap: () async {
-                final shouldLogout = await _showLogoutConfirmation(context);
+                final shouldLogout = await LogoutConfirmationDialog.show(context);
                 if (shouldLogout != true) return;
                 try {
                   await AuthService.signOut();
@@ -246,29 +247,6 @@ class _ShareAndEarnTile extends StatelessWidget {
       onTap: () => _onTap(context),
     );
   }
-}
-
-Future<bool> _showLogoutConfirmation(BuildContext context) async {
-  return await showDialog<bool>(
-        context: context,
-        builder: (BuildContext context) {
-          return AlertDialog(
-            title: const Text('Confirm Logout'),
-            content: const Text('Are you want to Log out'),
-            actions: <Widget>[
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                child: const Text('No'),
-              ),
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(true),
-                child: const Text('Yes'),
-              ),
-            ],
-          );
-        },
-      ) ??
-      false;
 }
 
 class _Header extends StatelessWidget {

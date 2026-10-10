@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/models/profile.dart';
 import '../../core/services/auth_service.dart';
 import '../../core/services/profile_service.dart';
+import '../../core/widgets/logout_confirmation_dialog.dart';
 import '../profile/widgets/profile_avatar.dart';
 
 /// Profile tab: a summary card plus navigation shortcuts. The full editable
@@ -117,7 +118,7 @@ class _ProfileTabScreenState extends State<ProfileTabScreen> {
                   style: TextStyle(color: Theme.of(context).colorScheme.error),
                 ),
                 onTap: () async {
-                  final shouldLogout = await _showLogoutConfirmation(context);
+                  final shouldLogout = await LogoutConfirmationDialog.show(context);
                   if (shouldLogout != true) return;
                   try {
                     await AuthService.signOut();
@@ -138,26 +139,6 @@ class _ProfileTabScreenState extends State<ProfileTabScreen> {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Future<bool?> _showLogoutConfirmation(BuildContext context) {
-    return showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Logout'),
-        content: const Text('Are you sure you want to log out?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Logout'),
-          ),
-        ],
       ),
     );
   }
