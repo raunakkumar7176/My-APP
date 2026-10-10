@@ -95,6 +95,22 @@ class TestDetailController extends DisposableNotifier {
         isSoftDeleted: _test!.isSoftDeleted,
       );
 
+  bool get canArchive =>
+      _test != null &&
+      TestLifecycle.canArchive(
+        isOwner: isOwner,
+        status: _test!.status,
+        isSoftDeleted: _test!.isSoftDeleted,
+      );
+
+  bool get canDeleteArchived =>
+      _test != null &&
+      TestLifecycle.canDeleteArchived(
+        isOwner: isOwner,
+        status: _test!.status,
+        isSoftDeleted: _test!.isSoftDeleted,
+      );
+
   /// Owner + test over + no batch known to be pending/processing. A batch
   /// that completed, partially completed or failed may be re-requested; the
   /// server answers idempotently (`reused`).
@@ -207,6 +223,32 @@ class TestDetailController extends DisposableNotifier {
       );
     }
     await _tests.deleteDraft(testId, reason: reason);
+    _test = null;
+    _deleted = true;
+  });
+
+  /// Archives a published/completed/wrongly-created test (server-enforced
+  /// rule): hides it from listings, keeps every attempt/answer/result.
+  Future<void> archiveTest({String? reason}) => _action(() async {
+    if (!canArchive) {
+      throw const ValidationError(
+        message: 'This test cannot be archived right now.',
+      );
+    }
+    await _tests.archive(testId, reason: reason);
+    await load();
+  });
+
+  /// Permanently deletes an already-archived test — the server additionally
+  /// refuses this if the test has any attempts (TEST_HAS_ATTEMPTS), never
+  /// destroying a real result.
+  Future<void> deleteArchivedTest() => _action(() async {
+    if (!canDeleteArchived) {
+      throw const ValidationError(
+        message: 'Only an already-archived test can be permanently deleted.',
+      );
+    }
+    await _tests.deleteArchived(testId);
     _test = null;
     _deleted = true;
   });

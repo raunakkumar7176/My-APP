@@ -660,4 +660,6 @@ class _Delegating implements TestRepository {
       inner.listForGroup(groupId, limit: limit);
   @override
   Future<void> archive(String testId, {String? reason}) => inner.archive(testId, reason: reason);
+  @override
+  Future<void> deleteArchived(String testId) => inner.deleteArchived(testId);
 }

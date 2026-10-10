@@ -342,6 +342,28 @@ class FakeTestRepository implements TestRepository {
     );
   }
 
+  Object? failDeleteArchivedWith;
+
+  /// Mirrors `rpc_delete_archived_test`.
+  @override
+  Future<void> deleteArchived(String testId) async {
+    calls.add('deleteArchived:$testId');
+    if (failDeleteArchivedWith != null) throw failDeleteArchivedWith!;
+    final t = rows[testId];
+    if (t == null) throw const DataError(message: 'Test not found.');
+    if (t.createdBy != currentUser) {
+      throw const DataError(
+        message: 'You do not have permission to perform this action.',
+      );
+    }
+    if (t.status != TestStatus.archived || !t.isSoftDeleted) {
+      throw const DataError(
+        message: 'Only an already-archived test can be permanently deleted.',
+      );
+    }
+    rows.remove(testId);
+  }
+
   @override
   Future<List<TestSyllabus>> syllabusFor(String testId) async => [
     for (final n in syllabus[testId] ?? const <String>{})

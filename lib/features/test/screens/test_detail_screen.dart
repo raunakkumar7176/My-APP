@@ -34,7 +34,7 @@ class TestDetailScreen extends StatefulWidget {
   State<TestDetailScreen> createState() => _TestDetailScreenState();
 }
 
-enum _MoreAction { delete, questionPaper }
+enum _MoreAction { delete, archive, deleteArchived, questionPaper }
 
 class _TestDetailScreenState extends State<TestDetailScreen>
     with SingleTickerProviderStateMixin {
@@ -323,6 +323,98 @@ class _TestDetailScreenState extends State<TestDetailScreen>
     }
   });
 
+  /// Archive: hides a published/completed/wrong test from listings while
+  /// keeping every attempt/answer/result — never destructive.
+  Future<void> _confirmArchive() async {
+    final reason = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Archive this test?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'This test will be hidden from everyone\'s test list, but any '
+              'attempts, answers, and results already recorded stay intact. '
+              'You can\'t undo this from the app.',
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              key: const Key('archive_reason'),
+              controller: reason,
+              maxLength: 140,
+              decoration: const InputDecoration(
+                labelText: 'Reason (optional)',
+                isDense: true,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Archive Test'),
+          ),
+        ],
+      ),
+    );
+    final text = reason.text.trim();
+    WidgetsBinding.instance.addPostFrameCallback((_) => reason.dispose());
+    if (confirmed != true || !mounted) return;
+    await _run(() async {
+      await _c.archiveTest(reason: text.isEmpty ? null : text);
+      if (mounted) _snack('Test archived.');
+    });
+  }
+
+  /// Permanent delete — only ever enabled for an already-archived test, and
+  /// the server additionally refuses it if the test has any attempts.
+  Future<void> _confirmDeleteArchived() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Permanently delete this test?'),
+        content: const Text(
+          'This cannot be undone — the test itself will be gone forever. '
+          '(The server refuses this if anyone has an attempt on it, to '
+          'never destroy a real result.)',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const Key('confirm_delete_archived_test'),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Delete Permanently'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await _run(() async {
+      await _c.deleteArchivedTest();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(content: Text('Test permanently deleted.')));
+      if (context.canPop()) {
+        context.pop();
+      } else {
+        context.go('/tests');
+      }
+    });
+  }
+
   void _setPulsing(bool on) {
     if (on == _pulsing) return;
     _pulsing = on;
@@ -468,7 +560,7 @@ class _TestDetailScreenState extends State<TestDetailScreen>
         actions: [
           // Draft-only secondary action, tucked into "More" (never a
           // prominent destructive button on every detail screen).
-          if (_c.canDelete || _c.isOwner)
+          if (_c.canDelete || _c.canArchive || _c.canDeleteArchived || _c.isOwner)
             PopupMenuButton<_MoreAction>(
               tooltip: 'More',
               enabled: !_c.isBusy,
@@ -476,6 +568,10 @@ class _TestDetailScreenState extends State<TestDetailScreen>
                 switch (a) {
                   case _MoreAction.delete:
                     _confirmDelete();
+                  case _MoreAction.archive:
+                    _confirmArchive();
+                  case _MoreAction.deleteArchived:
+                    _confirmDeleteArchived();
                   case _MoreAction.questionPaper:
                     _downloadQuestionPaper();
                 }
@@ -499,6 +595,28 @@ class _TestDetailScreenState extends State<TestDetailScreen>
                       contentPadding: EdgeInsets.zero,
                       leading: Icon(Icons.delete_outline),
                       title: Text('Delete Test'),
+                    ),
+                  ),
+                // Non-draft (published/completed/wrong) tests: hide from
+                // listings without touching anyone's recorded attempt.
+                if (_c.canArchive)
+                  const PopupMenuItem(
+                    value: _MoreAction.archive,
+                    child: ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(Icons.archive_outlined),
+                      title: Text('Archive Test'),
+                    ),
+                  ),
+                // Already-archived: a true, permanent delete — server
+                // still refuses this if the test has any attempts.
+                if (_c.canDeleteArchived)
+                  const PopupMenuItem(
+                    value: _MoreAction.deleteArchived,
+                    child: ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(Icons.delete_forever_outlined),
+                      title: Text('Delete Permanently'),
                     ),
                   ),
               ],

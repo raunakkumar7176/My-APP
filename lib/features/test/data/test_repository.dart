@@ -146,6 +146,11 @@ abstract interface class TestRepository {
   /// (group owner OR EDIT_TEST); refused for live/scheduled; sets
   /// status = archived + is_soft_deleted, keeps attempts/answers/results.
   Future<void> archive(String testId, {String? reason});
+
+  /// `rpc_delete_archived_test(p_test_id)` — permanently deletes an
+  /// already-archived test, creator only, refused server-side if it has
+  /// any attempts (TEST_HAS_ATTEMPTS) — never destroys a real result.
+  Future<void> deleteArchived(String testId);
 }
 
 class SupabaseTestRepository implements TestRepository {
@@ -343,6 +348,20 @@ class SupabaseTestRepository implements TestRepository {
       },
     );
     AppLogger.rpcShape('fn_soft_delete_test', response);
+  }, TestErrorContext.delete);
+
+  @override
+  Future<void> deleteArchived(String testId) => _guard(() async {
+    final response = await _client.rpc(
+      'rpc_delete_archived_test',
+      params: {'p_test_id': testId},
+    );
+    AppLogger.rpcShape('rpc_delete_archived_test', response);
+    if (!deletedFromResponse(response)) {
+      throw const DataError(
+        message: 'The server did not confirm the deletion.',
+      );
+    }
   }, TestErrorContext.delete);
 
   // ── helpers ──

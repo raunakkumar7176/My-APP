@@ -53,6 +53,33 @@ abstract final class TestLifecycle {
     required bool isSoftDeleted,
   }) => isOwner && status == TestStatus.draft && !isSoftDeleted;
 
+  /// Hides a published/completed/wrongly-created test from listings while
+  /// keeping every attempt/answer/result intact — mirrors
+  /// `fn_soft_delete_test`, which refuses live/scheduled (cancel first) and
+  /// an already-archived test, but otherwise accepts any status.
+  static bool canArchive({
+    required bool isOwner,
+    required TestStatus status,
+    required bool isSoftDeleted,
+  }) =>
+      isOwner &&
+      !isSoftDeleted &&
+      status != TestStatus.draft &&
+      status != TestStatus.live &&
+      status != TestStatus.scheduled &&
+      status != TestStatus.archived;
+
+  /// Permanently removes an already-archived test — mirrors
+  /// `rpc_delete_archived_test`, which additionally requires zero attempts
+  /// server-side (never destroys a real student's result; the UI can't
+  /// know the attempt count up front, so this only gates on status and
+  /// lets the server be the final word).
+  static bool canDeleteArchived({
+    required bool isOwner,
+    required TestStatus status,
+    required bool isSoftDeleted,
+  }) => isOwner && status == TestStatus.archived && isSoftDeleted;
+
   /// Owner may request batch results once the test is over.
   static bool canGenerateResults({
     required bool isOwner,
