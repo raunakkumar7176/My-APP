@@ -16,7 +16,7 @@ import '../features/routine/data/routine_repository.dart';
 import '../features/routine/state/routine_controller.dart';
 import '../features/dashboard/dashboard_screen.dart';
 import '../features/dashboard/widgets/library_mode_banner.dart';
-import '../features/dashboard/profile_tab_screen.dart';
+import '../features/profile/profile_screen.dart';
 import '../features/dashboard/study_tab_screen.dart';
 import '../features/test/screens/test_listing_screen.dart';
 import '../features/performance/performance_screen.dart';
@@ -54,7 +54,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     StudyTabScreen(),
     TestListingScreen(showAppBar: false),
     PerformanceScreen(),
-    ProfileTabScreen(),
+    ProfileScreen(showAppBar: false),
   ];
 
   @override

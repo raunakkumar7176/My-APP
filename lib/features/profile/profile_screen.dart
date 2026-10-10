@@ -8,6 +8,7 @@ import '../../core/models/profile.dart';
 import '../../core/services/auth_service.dart';
 import '../../core/services/profile_service.dart';
 import '../../core/services/supabase_service.dart';
+import '../../core/widgets/logout_confirmation_dialog.dart';
 import '../community/widgets/unique_id_search_sheet.dart';
 import 'domain/age_calculator.dart';
 import 'domain/social_platform.dart';
@@ -22,6 +23,7 @@ class ProfileScreen extends StatefulWidget {
     this.currentUserEmail,
     this.userId,
     this.initialProfile,
+    this.showAppBar = true,
     super.key,
   });
 
@@ -37,6 +39,15 @@ class ProfileScreen extends StatefulWidget {
 
   /// Optional initial profile data when navigating directly (e.g. Founder profile).
   final Profile? initialProfile;
+
+  /// False when embedded as the bottom-nav "Profile" tab inside [AppShell],
+  /// which already renders its own AppBar above every tab. The Search/
+  /// Refer & Earn/Edit actions this screen's own AppBar carries move into a
+  /// slim in-body row instead, and a Performance/Notifications/Settings/
+  /// Logout shortcuts card is appended — this tab used to show only that
+  /// shortcuts list (ProfileTabScreen) instead of the real profile, so
+  /// nothing from either screen is lost by merging them.
+  final bool showAppBar;
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -601,35 +612,39 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  List<Widget> _profileActions() => [
+    IconButton(
+      icon: const Icon(Icons.search),
+      tooltip: 'Search Student by ID',
+      onPressed: () => UniqueIdSearchSheet.show(context),
+    ),
+    if (!_isViewingOther)
+      IconButton(
+        key: const Key('refer_and_earn_button'),
+        tooltip: 'Refer & Earn',
+        icon: const Icon(Icons.card_giftcard_outlined),
+        onPressed: () => context.push('/refer-and-earn'),
+      ),
+    if (!_isViewingOther &&
+        _c.loadState == ProfileLoadState.loaded &&
+        !_c.isEditing)
+      IconButton(
+        key: const Key('profile_edit_button'),
+        tooltip: 'Edit profile',
+        icon: const Icon(Icons.edit_outlined),
+        onPressed: _startEditing,
+      ),
+  ];
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(_isViewingOther ? 'Student Profile' : 'My Portfolio'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.search),
-            tooltip: 'Search Student by ID',
-            onPressed: () => UniqueIdSearchSheet.show(context),
-          ),
-          if (!_isViewingOther)
-            IconButton(
-              key: const Key('refer_and_earn_button'),
-              tooltip: 'Refer & Earn',
-              icon: const Icon(Icons.card_giftcard_outlined),
-              onPressed: () => context.push('/refer-and-earn'),
-            ),
-          if (!_isViewingOther &&
-              _c.loadState == ProfileLoadState.loaded &&
-              !_c.isEditing)
-            IconButton(
-              key: const Key('profile_edit_button'),
-              tooltip: 'Edit profile',
-              icon: const Icon(Icons.edit_outlined),
-              onPressed: _startEditing,
-            ),
-        ],
-      ),
+      appBar: widget.showAppBar
+          ? AppBar(
+              title: Text(_isViewingOther ? 'Student Profile' : 'My Portfolio'),
+              actions: _profileActions(),
+            )
+          : null,
       body: _buildBody(),
     );
   }
@@ -684,6 +699,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    // Embedded-as-tab only: the AppBar actions this screen
+                    // normally carries (Search/Refer & Earn/Edit) move here
+                    // since there's no AppBar to put them on.
+                    if (!widget.showAppBar)
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: _profileActions(),
+                      ),
+
                     // 1. Header Identity & Avatar Ring
                     Center(
                       child: Container(
@@ -881,6 +905,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       _buildPeerViewCard(profile)
                     else
                       _buildViewCard(profile),
+
+                    // Embedded-as-tab only: the shortcuts the old separate
+                    // Profile-tab summary screen used to carry.
+                    if (!widget.showAppBar && !_isViewingOther) ...[
+                      const SizedBox(height: 20),
+                      _buildTabShortcuts(context),
+                    ],
                   ],
                 ),
               ),
@@ -888,6 +919,66 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
         );
       },
+    );
+  }
+
+  /// Quick links that ProfileTabScreen (the previous, separate "Profile"
+  /// bottom-nav screen) used to carry on its own — kept here instead of
+  /// dropped, now that this full portfolio screen IS the tab.
+  Widget _buildTabShortcuts(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Card(
+          child: Column(
+            children: [
+              ListTile(
+                leading: const Icon(Icons.insights_outlined),
+                title: const Text('Performance'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => context.push('/performance'),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.notifications_outlined),
+                title: const Text('Notifications'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => context.push('/notifications'),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.settings_outlined),
+                title: const Text('Settings'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => context.push('/settings'),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.logout, color: AppColors.error),
+            title: const Text('Logout', style: TextStyle(color: AppColors.error)),
+            onTap: () async {
+              final shouldLogout = await LogoutConfirmationDialog.show(context);
+              if (!shouldLogout) return;
+              try {
+                await AuthService.signOut();
+              } on Exception catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(e.toString().replaceFirst('AppError: ', '')),
+                      backgroundColor: AppColors.error,
+                    ),
+                  );
+                }
+              }
+            },
+          ),
+        ),
+      ],
     );
   }
 
