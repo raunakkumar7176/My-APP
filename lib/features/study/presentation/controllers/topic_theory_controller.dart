@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../../../../core/logging/app_logger.dart';
 import '../../../../core/services/auth_service.dart';
 import '../../../../core/services/gamification_service.dart';
+import '../../../../core/services/settings/study_language_preference.dart';
 import '../../../../core/services/supabase_service.dart';
 import '../../data/study_repository.dart';
 import '../../domain/content_block.dart';
@@ -29,7 +30,7 @@ class TopicTheoryController extends ChangeNotifier {
 
   // ── State ──
   String _currentTopicId;
-  String _languageCode = 'en';
+  String _languageCode = StudyLanguagePreference.instance.languageCode;
   StudyChapter? _chapter;
   StudyTopic? _topic;
   List<StudyTopic> _chapterTopics = [];
@@ -195,6 +196,7 @@ class TopicTheoryController extends ChangeNotifier {
   Future<void> setLanguage(String code) async {
     if (_languageCode == code) return;
     _languageCode = code;
+    await StudyLanguagePreference.instance.setLanguage(code);
     await load(languageCode: code);
   }
 

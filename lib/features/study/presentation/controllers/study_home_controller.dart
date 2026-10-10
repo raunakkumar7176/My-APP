@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../../../core/logging/app_logger.dart';
 import '../../../../core/services/auth_service.dart';
+import '../../../../core/services/settings/study_language_preference.dart';
 import '../../data/study_repository.dart';
 import '../../domain/continue_learning.dart';
 import '../../domain/study_subject.dart';
@@ -15,7 +16,7 @@ class StudyHomeController extends ChangeNotifier {
   bool _disposed = false;
 
   // ── State ──
-  String _languageCode = 'en';
+  String _languageCode = StudyLanguagePreference.instance.languageCode;
   List<StudySubject> _allSubjects = [];
   List<StudySubject> _filteredSubjects = [];
   String _searchQuery = '';
@@ -92,6 +93,7 @@ class StudyHomeController extends ChangeNotifier {
   Future<void> setLanguage(String code) async {
     if (_languageCode == code) return;
     _languageCode = code;
+    await StudyLanguagePreference.instance.setLanguage(code);
     await load(languageCode: code);
   }
 

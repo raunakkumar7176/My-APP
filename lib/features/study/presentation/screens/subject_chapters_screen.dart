@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/logging/app_logger.dart';
 import '../../../../core/services/auth_service.dart';
+import '../../../../core/services/settings/study_language_preference.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../data/study_repository.dart';
@@ -37,7 +38,7 @@ class _SubjectChaptersScreenState extends State<SubjectChaptersScreen> {
   late final StudyRepository _repository =
       widget.repository ?? const SupabaseStudyRepository();
 
-  String _languageCode = 'en';
+  String _languageCode = StudyLanguagePreference.instance.languageCode;
   bool _isLoading = true;
   String? _errorMessage;
 
@@ -143,6 +144,7 @@ class _SubjectChaptersScreenState extends State<SubjectChaptersScreen> {
     setState(() {
       _languageCode = next;
     });
+    StudyLanguagePreference.instance.setLanguage(next);
     _load();
   }
 

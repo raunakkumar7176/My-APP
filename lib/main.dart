@@ -11,6 +11,7 @@ import 'core/services/locale_service.dart';
 import 'core/services/network_status_service.dart';
 import 'core/services/push_notification_service.dart';
 import 'core/services/settings/library_mode_controller.dart';
+import 'core/services/settings/study_language_preference.dart';
 import 'core/services/supabase_service.dart';
 import 'core/services/theme_service.dart';
 
@@ -34,6 +35,7 @@ void main() {
     await ThemeService.initialize();
     await LocaleService.initialize();
     await LibraryModeController.instance.init();
+    await StudyLanguagePreference.initialize();
 
     runApp(App(config: config));
 

@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../../../../core/logging/app_logger.dart';
+import '../../../../core/services/settings/study_language_preference.dart';
 import '../../data/study_repository.dart';
 import '../../domain/study_question.dart';
 
@@ -13,9 +14,10 @@ class TopicPracticeController extends ChangeNotifier {
     this.chapterTitle,
     this.subjectTitle,
     this.subjectId,
-    this.languageCode = 'en',
+    String? languageCode,
     StudyRepository? repository,
-  }) : _repository = repository ?? const SupabaseStudyRepository();
+  }) : languageCode = languageCode ?? StudyLanguagePreference.instance.languageCode,
+       _repository = repository ?? const SupabaseStudyRepository();
 
   final String topicId;
   final String? chapterId;
@@ -255,6 +257,7 @@ class TopicPracticeController extends ChangeNotifier {
   /// Toggles between English and Hindi.
   void toggleLanguage() {
     languageCode = languageCode == 'en' ? 'hi' : 'en';
+    StudyLanguagePreference.instance.setLanguage(languageCode);
     loadQuestions();
   }
 }
