@@ -239,9 +239,10 @@ class TestDetailController extends DisposableNotifier {
     await load();
   });
 
-  /// Permanently deletes an already-archived test — the server additionally
-  /// refuses this if the test has any attempts (TEST_HAS_ATTEMPTS), never
-  /// destroying a real result.
+  /// Permanently deletes an already-archived test — this ALSO destroys
+  /// every attempt/answer/result anyone has on it (explicit product
+  /// decision, 0107: no attempt-count guard). The screen's confirmation
+  /// dialog is the only safeguard; there is no undo.
   Future<void> deleteArchivedTest() => _action(() async {
     if (!canDeleteArchived) {
       throw const ValidationError(

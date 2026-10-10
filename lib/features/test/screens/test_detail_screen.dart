@@ -374,17 +374,19 @@ class _TestDetailScreenState extends State<TestDetailScreen>
     });
   }
 
-  /// Permanent delete — only ever enabled for an already-archived test, and
-  /// the server additionally refuses it if the test has any attempts.
+  /// Permanent delete — only ever enabled for an already-archived test.
+  /// This ALSO destroys every attempt/answer/result anyone has on it, with
+  /// no attempt-count guard (explicit product decision, 0107) — this
+  /// dialog is the only safeguard, so it says so plainly.
   Future<void> _confirmDeleteArchived() async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Permanently delete this test?'),
         content: const Text(
-          'This cannot be undone — the test itself will be gone forever. '
-          '(The server refuses this if anyone has an attempt on it, to '
-          'never destroy a real result.)',
+          'This cannot be undone. The test itself, and every attempt, '
+          'answer, and result anyone has on it, will be gone forever — '
+          'including students who already took it.',
         ),
         actions: [
           TextButton(

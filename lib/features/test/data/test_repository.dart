@@ -148,8 +148,10 @@ abstract interface class TestRepository {
   Future<void> archive(String testId, {String? reason});
 
   /// `rpc_delete_archived_test(p_test_id)` — permanently deletes an
-  /// already-archived test, creator only, refused server-side if it has
-  /// any attempts (TEST_HAS_ATTEMPTS) — never destroys a real result.
+  /// already-archived test, creator only. Explicit product decision (0107):
+  /// this ALSO destroys every attempt/answer/result anyone has on it —
+  /// there is no attempt-count guard. The caller must warn the user before
+  /// calling this; there is no undo.
   Future<void> deleteArchived(String testId);
 }
 

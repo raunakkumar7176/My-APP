@@ -59,9 +59,6 @@ abstract final class TestErrors {
     if (lower.contains('test_not_archived')) {
       return 'Only an already-archived test can be permanently deleted.';
     }
-    if (lower.contains('test_has_attempts')) {
-      return 'This test has attempts on it and cannot be permanently deleted — it stays archived so those results are kept.';
-    }
     if (lower.contains('auth_required')) {
       return 'Your session has expired. Please log in again.';
     }

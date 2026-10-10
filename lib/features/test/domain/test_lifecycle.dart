@@ -70,10 +70,11 @@ abstract final class TestLifecycle {
       status != TestStatus.archived;
 
   /// Permanently removes an already-archived test — mirrors
-  /// `rpc_delete_archived_test`, which additionally requires zero attempts
-  /// server-side (never destroys a real student's result; the UI can't
-  /// know the attempt count up front, so this only gates on status and
-  /// lets the server be the final word).
+  /// `rpc_delete_archived_test`. Explicit product decision (0107): this
+  /// also destroys every attempt/answer/result anyone has on the test,
+  /// with no attempt-count guard — the confirmation dialog is the only
+  /// thing standing between a tap and permanent loss of other students'
+  /// results, so it must say so plainly.
   static bool canDeleteArchived({
     required bool isOwner,
     required TestStatus status,
