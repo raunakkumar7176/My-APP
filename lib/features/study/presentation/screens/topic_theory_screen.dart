@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 import '../../../../core/theme/app_radius.dart';
+import '../../../../core/widgets/ads/ad_banner_widget.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../data/study_repository.dart';
 import '../controllers/topic_theory_controller.dart';
@@ -368,7 +370,7 @@ class _TopicTheoryScreenState extends State<TopicTheoryScreen> {
     return ListView.builder(
       controller: _scrollController,
       padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 96.0),
-      itemCount: blocks.length + 6,
+      itemCount: blocks.length + 8,
       itemBuilder: (context, index) {
         if (index == 0) {
           return _buildTopicMetaHeader(
@@ -390,10 +392,16 @@ class _TopicTheoryScreenState extends State<TopicTheoryScreen> {
           );
         }
         if (index == blocks.length + 2) return const SizedBox(height: 24);
+        // Chapter-end ad, between the end of theory and the practice CTA —
+        // never inside the live practice/test flow itself.
         if (index == blocks.length + 3) {
-          return _buildTopicPracticeCard(isDark, isHindi);
+          return const AdBannerWidget(size: AdSize.mediumRectangle);
         }
         if (index == blocks.length + 4) return const SizedBox(height: 16);
+        if (index == blocks.length + 5) {
+          return _buildTopicPracticeCard(isDark, isHindi);
+        }
+        if (index == blocks.length + 6) return const SizedBox(height: 16);
         return _buildTopicTraversalBar(isDark, isHindi);
       },
     );

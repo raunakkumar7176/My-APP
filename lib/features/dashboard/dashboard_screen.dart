@@ -10,6 +10,7 @@ import '../../core/models/result_analytics.dart';
 import '../../core/models/test.dart';
 import '../../core/services/academic_special_day_service.dart';
 import '../../core/services/profile_service.dart';
+import '../../core/widgets/ads/ad_banner_widget.dart';
 import '../calendar/domain/calendar_clock.dart';
 import '../calendar/widgets/special_day_bottom_sheet.dart';
 import '../performance/state/performance_controller.dart';
@@ -263,6 +264,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                   const SizedBox(height: 8),
                   const GroupsPreviewCard(),
+                  const SizedBox(height: 20),
+                  const AdBannerWidget(),
                   const SizedBox(height: 24),
                 ],
               ),

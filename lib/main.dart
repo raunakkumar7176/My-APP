@@ -6,6 +6,7 @@ import 'app/app.dart';
 import 'app/app_config.dart';
 import 'core/errors/error_handler.dart';
 import 'core/logging/app_logger.dart';
+import 'core/services/ads/ad_service.dart';
 import 'core/services/auth_service.dart';
 import 'core/services/locale_service.dart';
 import 'core/services/network_status_service.dart';
@@ -55,5 +56,10 @@ void main() {
         AppLogger.error('Push notification setup failed: $e');
       }
     });
+
+    // Ad SDK init can take a moment on a cold network — deferred past the
+    // first frame for the same reason push setup is, so it never delays
+    // cold start.
+    unawaited(AdService.initialize());
   }, ErrorHandler.handleZoneError);
 }

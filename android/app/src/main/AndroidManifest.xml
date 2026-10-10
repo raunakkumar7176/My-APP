@@ -74,6 +74,18 @@
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"
             android:resource="@mipmap/ic_launcher" />
+        <!-- Google Mobile Ads SDK requires this App ID meta-data to be
+             present or the app crashes on first ad load. This is GOOGLE'S
+             OWN OFFICIAL SAMPLE APP ID (safe for development/testing,
+             matches Google's published AdMob quick-start docs) — NOT this
+             app's real AdMob App ID. Swap this for the real App ID (from
+             the AdMob console, after the account/ad-units are set up) only
+             right before a production/Play Store release; shipping the
+             sample ID in a real release would mean real ad requests get
+             rejected and/or risks an AdMob policy violation. -->
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="ca-app-pub-3940256099942544~3347511713" />
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

@@ -4,16 +4,22 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:printing/printing.dart';
 import 'package:go_router/go_router.dart';
+import 'package:timezone/timezone.dart' as tz;
 
 import '../../../core/constants/theme/app_colors.dart';
 import '../../../core/errors/app_error.dart';
+import '../../../core/logging/app_logger.dart';
 import '../../../core/models/result_batch.dart';
+import '../../../core/models/test.dart';
+import '../../../core/services/push_notification_service.dart';
+import '../../../core/widgets/ads/ad_banner_widget.dart';
 import '../domain/attempt_policy.dart';
 import '../domain/test_kind.dart';
 import '../domain/test_lifecycle.dart';
 import '../state/attempt_launch_store.dart';
 import '../state/challenge_controller.dart';
 import '../state/test_detail_controller.dart';
+import '../widgets/countdown_timer.dart';
 import '../widgets/test_formatters.dart';
 
 /// Detail by id. Every action delegates to the controller; the server
@@ -30,9 +36,23 @@ class TestDetailScreen extends StatefulWidget {
 
 enum _MoreAction { delete, questionPaper }
 
-class _TestDetailScreenState extends State<TestDetailScreen> {
+class _TestDetailScreenState extends State<TestDetailScreen>
+    with SingleTickerProviderStateMixin {
   late final TestDetailController _c;
   late final bool _owns;
+
+  /// Drives the pulsing 🔴 LIVE badge — started only while that badge is
+  /// actually on screen, so a screen with no live test never keeps a ticker
+  /// (and therefore a widget test) running forever.
+  late final AnimationController _pulse = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  );
+  bool _pulsing = false;
+
+  /// Which test, if any, the app has already armed a local "test is live"
+  /// alert for — see [_syncStartAlarm].
+  String? _armedAlarmFor;
 
   @override
   void initState() {
@@ -44,11 +64,14 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
   }
 
   void _onChanged() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    unawaited(_syncStartAlarm());
+    setState(() {});
   }
 
   @override
   void dispose() {
+    _pulse.dispose();
     _c.removeListener(_onChanged);
     if (_owns) _c.dispose();
     super.dispose();
@@ -300,6 +323,87 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
     }
   });
 
+  void _setPulsing(bool on) {
+    if (on == _pulsing) return;
+    _pulsing = on;
+    if (on) {
+      _pulse.value = 0;
+      _pulse.repeat(reverse: true);
+    } else {
+      _pulse.stop();
+      _pulse.value = 0;
+    }
+  }
+
+  /// Standalone tests (no group) have no server-side roster, so nothing
+  /// would ever tell the student when one goes live — the app schedules that
+  /// alert itself, on the SAME `test_start` channel (and therefore the SAME
+  /// `Test Start.mp3`) a server push would have used. Group tests are
+  /// deliberately left alone: `fn_send_test_reminders` already rings every
+  /// member at `starts_at`, and a second local copy would ring twice.
+  Future<void> _syncStartAlarm() async {
+    try {
+      final t = _c.test;
+      final startsAt = t?.startsAt;
+      final arm = t != null &&
+          startsAt != null &&
+          t.groupId == null &&
+          _c.phase == SchedulePhase.notStarted;
+      if (!arm) {
+        final armed = _armedAlarmFor;
+        _armedAlarmFor = null;
+        if (armed != null) {
+          await PushNotificationService.instance.cancelScheduledNotification(
+            _alarmIdFor(armed),
+          );
+        }
+        return;
+      }
+      if (_armedAlarmFor == t.id) return;
+      // No plugin / no timezone database (a test run, or a dev build with no
+      // Firebase config): there is nothing to schedule against, and the
+      // server push still rings at starts_at — a quiet skip, not a failure,
+      // so a plain screen load never logs an error.
+      if (!await PushNotificationService.instance.localNotificationsReady) {
+        return;
+      }
+      if (_armedAlarmFor == t.id) return; // re-entered while we awaited
+      // Set before awaiting: notifyListeners (and therefore _onChanged) can
+      // re-enter while this is in flight.
+      _armedAlarmFor = t.id;
+      final scheduled = await PushNotificationService.instance
+          .scheduleExactNotification(
+            id: _alarmIdFor(t.id),
+            title: '⚔️ Test is LIVE NOW!',
+            body: '${t.title} shuru ho chuka hai. Abhi judiye!',
+            scheduledDate: tz.TZDateTime.from(startsAt, tz.local),
+            payload: '/tests/${t.id}',
+            channel: PushChannel.testStart,
+          );
+      // The OS said no (permission missing, plugin error): forget it so the
+      // next notify retries instead of believing an alarm exists that never
+      // will. The re-arm guard above still keeps this off a hot path.
+      if (!scheduled) _armedAlarmFor = null;
+    } catch (e, st) {
+      // Never let an OS/timezone/plugin problem break the detail screen — the
+      // student simply gets no local fallback alert and is still reachable
+      // through the server push.
+      AppLogger.warning('Start alarm sync failed: $e', stackTrace: st);
+    }
+  }
+
+  /// Stable, positive (Android notification ids are ints) per test.
+  int _alarmIdFor(String testId) => 'test_start:$testId'.hashCode & 0x7fffffff;
+
+  /// The countdown reached `starts_at`: the disabled CTA must unlock right
+  /// now instead of waiting for a manual refresh, and the server-side status
+  /// flip (scheduled → live) is re-read in the background.
+  void _onStartWindowOpen() {
+    if (!mounted) return;
+    setState(() {});
+    unawaited(_c.refresh());
+  }
+
   @override
   Widget build(BuildContext context) {
     final test = _c.test;
@@ -348,6 +452,15 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
     final startReason = _c.startBlockReason(
       formatDateTime: TestFormatters.dateTime,
     );
+    final phase = _c.phase;
+    // "LIVE" means the scheduled window is open on a startable test — no
+    // starts_at means there is no window to be inside of, and a draft or a
+    // cancelled row is not live no matter what the clock says.
+    final isLive = phase == SchedulePhase.active &&
+        test.startsAt != null &&
+        TestLifecycle.isStartableStatus(test.status);
+    _setPulsing(isLive);
+    final scoreCard = _scoreSummary();
 
     return Scaffold(
       appBar: AppBar(
@@ -402,26 +515,32 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
                 _badge(TestLifecycle.statusLabel(test.status), statusColor),
                 const SizedBox(width: 8),
                 _badge(_c.kind.label, AppColors.primaryLight),
+                if (isLive) ...[
+                  const SizedBox(width: 8),
+                  _liveBadge(),
+                ],
               ],
             ),
+            if (phase == SchedulePhase.notStarted && test.startsAt != null)
+              _countdownCard(test.startsAt!),
+            // Completed: the score the student came back for, before any
+            // of the metadata they already read on the way in.
+            ?scoreCard,
             if (test.description != null && test.description!.isNotEmpty) ...[
               const SizedBox(height: 12),
               Text(test.description!),
             ],
             const SizedBox(height: 16),
+            // ── At a glance: the four numbers a student actually decides
+            //    with, folded out of the old "About this test" rows. ──
+            _statsRow(test),
+            const SizedBox(height: 12),
             // ── Pre-test information: every value comes from the stored row
             //    (nothing fabricated; absent data shows as "--"). ──
             _section(context, 'About this test', [
               _row('Test type', _c.kind.label),
-              _row('What it is', _c.kind.purpose),
-              _row('Questions', _c.questionCountLabel),
-              _row('Duration', TestFormatters.duration(test.durationSec)),
-              _row(
-                'Marks per question',
-                test.marksPerQuestion?.toString() ?? '--',
-              ),
-              _row('Negative marks', test.negativeMarks?.toString() ?? 'None'),
-              _row('Attempts', _c.attemptPolicyLabel),
+              if (test.negativeMarks != null && test.negativeMarks! > 0)
+                _row('Negative marks', '${test.negativeMarks}'),
               if (_c.kind.supportsLateJoin)
                 _row('Late joining', _c.lateJoinLabel),
               if (_c.scopeLabel != null) _row('Syllabus scope', _c.scopeLabel!),
@@ -436,9 +555,11 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
                 if (test.maxParticipants != null)
                   _row('Max participants', '${test.maxParticipants}'),
               ]),
-            if (_c.isOwner && (test.accessCode != null || _c.showsJoinCode))
+            // "Access code: Set" carried no information a student could act
+            // on — the code is never revealed from this screen — so it is
+            // gone; a join code (an actual sharing feature) still is shown.
+            if (_c.isOwner && _c.showsJoinCode)
               _section(context, 'Access', [
-                if (test.accessCode != null) _row('Access code', 'Set'),
                 if (_c.showsJoinCode)
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 4),
@@ -492,6 +613,7 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
                   _row('Note', 'Existing batch reused'),
               ]),
             const SizedBox(height: 16),
+            const AdBannerWidget(),
             ..._actions(startReason),
           ],
         ),
@@ -541,12 +663,16 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
             style: muted,
           ),
           const SizedBox(height: 8),
-          OutlinedButton.icon(
+          FilledButton.icon(
             onPressed: busy
                 ? null
                 : () => context.push('/attempts/${last.id}/result'),
-            icon: const Icon(Icons.assessment_outlined),
-            label: const Text('View Result'),
+            icon: const Icon(Icons.bar_chart_rounded),
+            label: Text(
+              last.attemptNumber > 1
+                  ? 'View Full Scorecard & Leaderboard (Attempt ${last.attemptNumber})'
+                  : 'View Full Scorecard & Leaderboard',
+            ),
           ),
           const SizedBox(height: 8),
           if (s.cta == AttemptCta.reattempt)
@@ -587,17 +713,51 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
       );
     }
     if (!_c.canEdit) {
-      if (startReason == null) {
+      // Not open yet: hold the CTA visibly disabled, carrying the exact
+      // instant on its face, until the countdown card above reaches zero —
+      // then it unlocks into the normal Start Test CTA without anyone
+      // having to pull-to-refresh.
+      final awaitingStart =
+          startReason != null && _c.phase == SchedulePhase.notStarted;
+      if (awaitingStart) {
+        widgets.add(
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: null,
+              icon: const Icon(Icons.schedule),
+              label: Text(
+                'Starts at ${TestFormatters.dateTime(_c.test!.startsAt)}',
+              ),
+            ),
+          ),
+        );
+        final last = _c.attemptState?.latestCompleted;
+        if (last != null) {
+          widgets.add(const SizedBox(height: 8));
+          widgets.add(
+            OutlinedButton.icon(
+              onPressed: () => context.push('/attempts/${last.id}/result'),
+              icon: const Icon(Icons.assessment_outlined),
+              label: Text('View Result (Attempt ${last.attemptNumber})'),
+            ),
+          );
+        }
+      } else if (startReason == null) {
         widgets.addAll(_attemptActions(busy));
       } else {
         // Window closed / not open: a completed attempt's result stays reachable.
         final last = _c.attemptState?.latestCompleted;
         if (last != null) {
           widgets.add(
-            OutlinedButton.icon(
+            FilledButton.icon(
               onPressed: () => context.push('/attempts/${last.id}/result'),
-              icon: const Icon(Icons.assessment_outlined),
-              label: Text('View Result (Attempt ${last.attemptNumber})'),
+              icon: const Icon(Icons.bar_chart_rounded),
+              label: Text(
+                last.attemptNumber > 1
+                    ? 'View Full Scorecard & Leaderboard (Attempt ${last.attemptNumber})'
+                    : 'View Full Scorecard & Leaderboard',
+              ),
             ),
           );
           widgets.add(const SizedBox(height: 8));
@@ -612,7 +772,11 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
         );
       }
     }
-    if (_c.canGenerateResults) {
+    // Only show Generate Results if the test owner/admin has NOT completed an attempt
+    // AND batch results have not been generated yet. When results exist or user has completed
+    // an attempt, showing both causes confusion.
+    final hasCompletedAttempt = _c.attemptState?.latestCompleted != null;
+    if (_c.canGenerateResults && !hasCompletedAttempt && (_c.latestBatch == null || _c.latestBatch!.isFailed)) {
       widgets.add(const SizedBox(height: 8));
       widgets.add(
         OutlinedButton.icon(
@@ -644,6 +808,216 @@ class _TestDetailScreenState extends State<TestDetailScreen> {
           color: color,
           fontWeight: FontWeight.w600,
           fontSize: 12,
+        ),
+      ),
+    );
+  }
+
+  /// Pulsing 🔴 LIVE chip — the one signal that the window is open *right
+  /// now*. Red is reserved for this; the ordinary status badge above stays
+  /// in its own colour so "Ongoing" never reads as an alert.
+  Widget _liveBadge() {
+    return FadeTransition(
+      opacity: Tween<double>(begin: 1, end: 0.35).animate(
+        CurvedAnimation(parent: _pulse, curve: Curves.easeInOut),
+      ),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: AppColors.error,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.circle, size: 8, color: Colors.white),
+            SizedBox(width: 6),
+            Text(
+              'LIVE',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+                fontSize: 12,
+                letterSpacing: 1.2,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Schedule card: when the paper unlocks, a live ticking countdown to that
+  /// instant, and (via [CountdownTimer.onTimeUp]) the trigger that swaps the
+  /// disabled "Starts at …" button for the real Start Test CTA.
+  Widget _countdownCard(DateTime startsAt) {
+    final theme = Theme.of(context);
+    return Card(
+      margin: const EdgeInsets.only(top: 12),
+      color: theme.colorScheme.primaryContainer.withValues(alpha: 0.30),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.event_available_outlined,
+                  size: 18,
+                  color: theme.colorScheme.primary,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Starts at ${TestFormatters.dateTime(startsAt)}',
+                    style: theme.textTheme.titleSmall
+                        ?.copyWith(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            CountdownTimer(deadlineAt: startsAt, onTimeUp: _onStartWindowOpen),
+            const SizedBox(height: 8),
+            Text(
+              'Questions unlock automatically at the start time — nothing to '
+              'refresh.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.outline,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// The four at-a-glance numbers: duration, question count, paper total and
+  /// attempt allowance. All derived from the stored `tests` row — this is
+  /// what the student is allowed to know before the window opens.
+  Widget _statsRow(Test test) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        _statChip('⏱️ ${TestFormatters.duration(test.durationSec)}'),
+        _statChip('❓ ${_c.questionCountLabel}'),
+        _statChip('🎯 ${_totalMarks(test)}'),
+        _statChip('👤 ${_c.attemptPolicyLabel}'),
+      ],
+    );
+  }
+
+  /// Paper total from the stored counts; `--` when either side is unknown
+  /// rather than a number guessed from nothing. Prefers `total_marks` when
+  /// the row actually carries one.
+  String _totalMarks(Test test) {
+    final stored = test.totalMarks;
+    if (stored != null) return '$stored';
+    final q = test.totalQuestions;
+    final m = test.marksPerQuestion;
+    if (q == null || m == null) return '--';
+    final total = q * m;
+    return total == total.roundToDouble()
+        ? total.round().toString()
+        : '$total';
+  }
+
+  Widget _statChip(String text) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.65),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
+        ),
+      ),
+      child: Text(
+        text,
+        style: theme.textTheme.labelMedium?.copyWith(
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
+  /// Completed-state summary: exactly what the stored [Result] carries, with
+  /// a single way into the full analysis. Null while there is nothing to
+  /// show (attempt not scored yet, or the read failed) — never a zeroed card
+  /// that would look like a real score of 0.
+  Widget? _scoreSummary() {
+    final r = _c.myResult;
+    if (r == null) return null;
+    final theme = Theme.of(context);
+    final metrics = <(String, String)>[
+      if (_c.scoreLabel != null) ('Score', _c.scoreLabel!),
+      if (_c.accuracyLabel != null) ('Accuracy', _c.accuracyLabel!),
+      if (_c.rankLabel != null) ('Rank', _c.rankLabel!),
+      if (r.correctCount != null)
+        ('Correct / Wrong', '${r.correctCount} / ${r.wrongCount ?? 0}'),
+    ];
+    if (metrics.isEmpty) return null;
+    return Card(
+      margin: const EdgeInsets.only(top: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(
+                  Icons.emoji_events_outlined,
+                  size: 18,
+                  color: AppColors.warning,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Your performance',
+                  style: theme.textTheme.titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w600),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 16,
+              runSpacing: 8,
+              children: [
+                for (final (label, value) in metrics)
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        value,
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      Text(
+                        label,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.outline,
+                        ),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: () => context.push('/attempts/${r.attemptId}/result'),
+                icon: const Icon(Icons.insights_outlined),
+                label: const Text('View Detailed Analysis & Solutions'),
+              ),
+            ),
+          ],
         ),
       ),
     );
