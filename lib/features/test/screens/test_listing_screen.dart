@@ -17,12 +17,24 @@ enum TestProvenance { myStudy, document, ai, group, standard }
 /// Tabs: Upcoming · Challenge with Friends · Previous · My Drafts.
 /// Authoritative Test Center unifying study, document intake, AI tests, and challenges.
 class TestListingScreen extends StatefulWidget {
-  const TestListingScreen({this.initialTab = 0, this.controller, super.key});
+  const TestListingScreen({
+    this.initialTab = 0,
+    this.controller,
+    this.showAppBar = true,
+    super.key,
+  });
 
   final int initialTab;
 
   /// Injectable for tests; defaults to a Supabase-backed controller.
   final TestListingController? controller;
+
+  /// False when embedded as the bottom-nav "Tests" tab inside [AppShell],
+  /// which already renders its own AppBar (title, XP pill, Library Mode,
+  /// notifications) above every tab — an inner AppBar here too would stack
+  /// a second title bar underneath it. The "Join with code" action this
+  /// AppBar carries is still reachable via the Hero card's own button.
+  final bool showAppBar;
 
   static const tabs = [
     ListingCategory.upcoming,
@@ -98,7 +110,7 @@ class _TestListingScreenState extends State<TestListingScreen>
 
     return Scaffold(
       backgroundColor: bgColor,
-      appBar: _buildAppBar(context, isDark),
+      appBar: widget.showAppBar ? _buildAppBar(context, isDark) : null,
       floatingActionButton: FloatingActionButton.extended(
         key: const Key('create_test_fab'),
         onPressed: () => _pushThenRefresh('/tests/create'),

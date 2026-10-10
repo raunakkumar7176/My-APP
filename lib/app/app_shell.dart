@@ -18,7 +18,7 @@ import '../features/dashboard/dashboard_screen.dart';
 import '../features/dashboard/widgets/library_mode_banner.dart';
 import '../features/dashboard/profile_tab_screen.dart';
 import '../features/dashboard/study_tab_screen.dart';
-import '../features/dashboard/tests_tab_screen.dart';
+import '../features/test/screens/test_listing_screen.dart';
 import '../features/performance/performance_screen.dart';
 import '../l10n/app_localizations.dart';
 import 'widgets/app_drawer.dart';
@@ -52,7 +52,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   final _tabs = const [
     DashboardScreen(),
     StudyTabScreen(),
-    TestsTabScreen(),
+    TestListingScreen(showAppBar: false),
     PerformanceScreen(),
     ProfileTabScreen(),
   ];
