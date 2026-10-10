@@ -14,6 +14,7 @@ import '../../core/widgets/ads/ad_banner_widget.dart';
 import '../calendar/domain/calendar_clock.dart';
 import '../calendar/widgets/special_day_bottom_sheet.dart';
 import '../performance/state/performance_controller.dart';
+import '../profile/widgets/profile_avatar.dart';
 import '../routine/widgets/today_routine_card.dart';
 import '../test/data/test_repository.dart';
 import '../test/domain/backend_mapping.dart';
@@ -1336,42 +1337,17 @@ class _GreetingHeaderState extends State<_GreetingHeader> {
           ),
         ),
         const SizedBox(width: 12),
-        // User Profile Avatar with profile navigation
-        InkWell(
-          borderRadius: BorderRadius.circular(24),
+        // User Profile Avatar with profile navigation — shows the real
+        // uploaded photo (profile.avatarUrl) via ProfileAvatar, same widget
+        // Settings/the Profile screen use; previously this was a hardcoded
+        // gradient circle that only ever showed the initial letter and
+        // never actually looked at avatarUrl at all.
+        ProfileAvatar(
+          key: const Key('dashboard_profile_avatar'),
+          initials: initial,
+          avatarUrl: profile?.avatarUrl,
+          radius: 22,
           onTap: () => context.push('/profile'),
-          child: Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  theme.colorScheme.primary,
-                  theme.colorScheme.primary.withValues(alpha: 0.8),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: theme.colorScheme.primary.withValues(alpha: 0.25),
-                  blurRadius: 8,
-                  offset: const Offset(0, 3),
-                ),
-              ],
-            ),
-            child: Center(
-              child: Text(
-                initial,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 18,
-                ),
-              ),
-            ),
-          ),
         ),
       ],
     );
