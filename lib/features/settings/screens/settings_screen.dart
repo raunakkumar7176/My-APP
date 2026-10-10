@@ -17,6 +17,7 @@ import '../../../core/services/profile_service.dart';
 import '../../../core/services/locale_service.dart';
 import '../../../core/services/push_notification_service.dart';
 import '../../../core/services/settings/library_mode_controller.dart';
+import '../../../core/services/settings/study_language_preference.dart';
 import '../../../core/services/supabase_service.dart';
 import '../../../core/services/theme_service.dart';
 import '../../../core/widgets/logout_confirmation_dialog.dart';
@@ -98,11 +99,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   // Persisted Preference States
   String _targetExam = 'UPSC CSE 2026';
-  String _dailyGoal = '45 Mins / Day • 3 Tests Target';
   String _language = 'English (US)';
+  String _studyContentLanguage = 'English';
 
   bool _hapticFeedback = true;
-  bool _soundEffects = true;
 
   String _revisionReminder = '07:00 AM';
 
@@ -169,13 +169,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ProfileService.currentProfile?.examTargets.firstOrNull ??
             prefs.getString('settings_target_exam') ??
             'UPSC CSE 2026';
-        _dailyGoal =
-            prefs.getString('settings_daily_study_goal') ??
-            '45 Mins / Day • 3 Tests Target';
         _language =
             prefs.getString('settings_language_medium') ?? 'English (US)';
         _hapticFeedback = prefs.getBool('settings_haptic_feedback') ?? true;
-        _soundEffects = prefs.getBool('settings_sound_effects') ?? true;
+        _studyContentLanguage =
+            StudyLanguagePreference.instance.languageCode == 'hi'
+                ? 'Hindi'
+                : 'English';
         _revisionReminder =
             prefs.getString('settings_revision_reminder') ?? '07:00 AM';
         // Real, server-enforced field (profiles.group_invite_policy, 0085).
@@ -260,14 +260,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  Future<void> _showDailyGoalModal() async {
-    final goals = [
-      '30 Mins / Day • 2 Tests Target',
-      '45 Mins / Day • 3 Tests Target',
-      '60 Mins / Day • 4 Tests Target',
-      '90 Mins / Day • 6 Tests Target',
-      '120 Mins / Day • 8 Tests Target',
-    ];
+  Future<void> _showStudyContentLanguageModal() async {
+    final options = ['English', 'Hindi'];
 
     final picked = await showModalBottomSheet<String>(
       context: context,
@@ -276,16 +270,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
       builder: (ctx) => _buildSelectionSheet(
         ctx,
-        title: 'Daily Study Goal',
-        options: goals,
-        selected: _dailyGoal,
+        title: 'My Study Content Language',
+        options: options,
+        selected: _studyContentLanguage,
       ),
     );
 
-    if (picked != null && picked != _dailyGoal) {
+    if (picked != null && picked != _studyContentLanguage) {
       _triggerHapticIfEnabled();
-      setState(() => _dailyGoal = picked);
-      _saveString('settings_daily_study_goal', picked);
+      setState(() => _studyContentLanguage = picked);
+      // Same shared preference My Study's per-screen language toggle reads
+      // and writes — this just gives it a home in Settings too.
+      await StudyLanguagePreference.instance.setLanguage(
+        picked == 'Hindi' ? 'hi' : 'en',
+      );
     }
   }
 
@@ -693,17 +691,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     const Divider(height: 1),
                     ListTile(
                       leading: const Icon(
-                        Icons.timer_outlined,
-                        color: Color(0xFFD97706),
-                      ),
-                      title: Text(l10n.settingsDailyGoal),
-                      subtitle: Text(_dailyGoal),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: _showDailyGoalModal,
-                    ),
-                    const Divider(height: 1),
-                    ListTile(
-                      leading: const Icon(
                         Icons.translate_rounded,
                         color: Color(0xFF10B981),
                       ),
@@ -711,6 +698,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       subtitle: Text(_language),
                       trailing: const Icon(Icons.chevron_right),
                       onTap: _showLanguageModal,
+                    ),
+                    const Divider(height: 1),
+                    ListTile(
+                      leading: const Icon(
+                        Icons.menu_book_outlined,
+                        color: Color(0xFFD97706),
+                      ),
+                      title: const Text('My Study Content Language'),
+                      subtitle: Text(
+                        '$_studyContentLanguage • theory & questions',
+                      ),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: _showStudyContentLanguageModal,
                     ),
                   ],
                 ),
@@ -748,24 +748,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         setState(() => _hapticFeedback = val);
                         _saveBool('settings_haptic_feedback', val);
                         if (val) HapticFeedback.lightImpact();
-                      },
-                    ),
-                    const Divider(height: 1),
-                    SwitchListTile.adaptive(
-                      secondary: const Icon(
-                        Icons.volume_up_outlined,
-                        color: Color(0xFFF59E0B),
-                      ),
-                      title: Text(l10n.settingsSoundEffects),
-                      subtitle: Text(
-                        l10n.settingsSoundEffectsSubtitle,
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                      value: _soundEffects,
-                      onChanged: (val) {
-                        setState(() => _soundEffects = val);
-                        _saveBool('settings_sound_effects', val);
-                        _triggerHapticIfEnabled();
                       },
                     ),
                     const Divider(height: 1),
