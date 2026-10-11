@@ -6,11 +6,13 @@ import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/constants/theme/app_colors.dart';
+import '../../../core/theme/app_radius.dart';
 import '../../../core/services/supabase_service.dart';
 import '../domain/group_errors.dart';
 import '../domain/group_privacy.dart';
 import '../state/group_hub_controller.dart';
 import '../state/invite_code_controller.dart';
+import '../widgets/gradient_button.dart';
 import '../widgets/group_avatar.dart';
 
 /// Full group settings: profile, privacy, invite code, rules summary,
@@ -650,143 +652,184 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
     }
 
     final hasLogo = (group.logoUrl ?? '').trim().isNotEmpty;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
+      backgroundColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
       appBar: AppBar(title: const Text('Group Settings')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Row(
-            children: [
-              InkWell(
-                onTap: _showAvatarOptions,
-                borderRadius: BorderRadius.circular(32),
-                child: Stack(
-                  children: [
-                    GroupAvatar(name: group.name, logoUrl: group.logoUrl, radius: 32),
-                    Positioned(
-                      bottom: 0,
-                      right: 0,
-                      child: Container(
-                        padding: const EdgeInsets.all(4),
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).primaryColor,
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(Icons.camera_alt, size: 14, color: Colors.white),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Logo', style: Theme.of(context).textTheme.titleSmall),
-                    const SizedBox(height: 4),
-                    Text(
-                      hasLogo
-                          ? 'Tap to change group logo.'
-                          : 'Tap to set group logo.',
-                      key: const Key('logo_status'),
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                    if (hasLogo)
-                      TextButton.icon(
-                        key: const Key('remove_logo_button'),
-                        onPressed: _c.isBusy ? null : _removeLogo,
-                        icon: const Icon(Icons.delete_outline, size: 18),
-                        label: const Text('Remove logo'),
-                      ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          _inviteSection(context),
-          TextField(
-            key: const Key('settings_name_field'),
-            controller: _name,
-            maxLength: GroupErrors.nameMaxLength,
-            decoration: InputDecoration(
-              labelText: 'Group name',
-              border: const OutlineInputBorder(),
-              errorText: _nameError,
-            ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            key: const Key('settings_description_field'),
-            controller: _description,
-            maxLines: 3,
-            decoration: const InputDecoration(
-              labelText: 'Description',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Text('Privacy', style: Theme.of(context).textTheme.titleSmall),
-          RadioGroup<GroupPrivacy>(
-            groupValue: _privacy,
-            onChanged: (v) => setState(() => _privacy = v ?? _privacy),
-            child: Column(
+          _sectionCard(
+            isDark: isDark,
+            child: Row(
               children: [
-                for (final p in GroupPrivacy.values)
-                  RadioListTile<GroupPrivacy>(
-                    key: Key('settings_privacy_${p.name}'),
-                    value: p,
-                    title: Text(p.label),
-                    subtitle: Text(p.description),
+                InkWell(
+                  onTap: _showAvatarOptions,
+                  borderRadius: AppRadius.pillBorder,
+                  child: Stack(
+                    children: [
+                      GroupAvatar(name: group.name, logoUrl: group.logoUrl, radius: 32),
+                      Positioned(
+                        bottom: 0,
+                        right: 0,
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: const BoxDecoration(
+                            gradient: AppColors.primaryGradient,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.camera_alt, size: 14, color: Colors.white),
+                        ),
+                      ),
+                    ],
                   ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Logo', style: Theme.of(context).textTheme.titleSmall),
+                      const SizedBox(height: 4),
+                      Text(
+                        hasLogo
+                            ? 'Tap to change group logo.'
+                            : 'Tap to set group logo.',
+                        key: const Key('logo_status'),
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      if (hasLogo)
+                        TextButton.icon(
+                          key: const Key('remove_logo_button'),
+                          onPressed: _c.isBusy ? null : _removeLogo,
+                          icon: const Icon(Icons.delete_outline, size: 18),
+                          label: const Text('Remove logo'),
+                        ),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
-          if (_c.error != null) ...[
-            const SizedBox(height: 8),
-            Text(
-              _c.error!,
-              key: const Key('settings_error'),
-              style: const TextStyle(color: AppColors.error),
-            ),
-          ],
-          if (_saved && _c.error == null) ...[
-            const SizedBox(height: 8),
-            const Text(
-              'Saved.',
-              key: Key('settings_saved'),
-              style: TextStyle(color: AppColors.success),
-            ),
-          ],
           const SizedBox(height: 16),
-          FilledButton(
-            key: const Key('settings_save'),
-            // Disabled while the update is in flight: no duplicate submission.
-            onPressed: _c.isBusy ? null : _save,
-            child: Text(_c.isBusy ? 'Saving…' : 'Save'),
+          _sectionCard(isDark: isDark, child: _inviteSection(context)),
+          const SizedBox(height: 16),
+          _sectionCard(
+            isDark: isDark,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  key: const Key('settings_name_field'),
+                  controller: _name,
+                  maxLength: GroupErrors.nameMaxLength,
+                  decoration: InputDecoration(
+                    labelText: 'Group name',
+                    border: const OutlineInputBorder(borderRadius: AppRadius.mdBorder),
+                    errorText: _nameError,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  key: const Key('settings_description_field'),
+                  controller: _description,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    labelText: 'Description',
+                    border: OutlineInputBorder(borderRadius: AppRadius.mdBorder),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text('Privacy', style: Theme.of(context).textTheme.titleSmall),
+                RadioGroup<GroupPrivacy>(
+                  groupValue: _privacy,
+                  onChanged: (v) => setState(() => _privacy = v ?? _privacy),
+                  child: Column(
+                    children: [
+                      for (final p in GroupPrivacy.values)
+                        RadioListTile<GroupPrivacy>(
+                          key: Key('settings_privacy_${p.name}'),
+                          contentPadding: EdgeInsets.zero,
+                          value: p,
+                          title: Text(p.label),
+                          subtitle: Text(p.description),
+                        ),
+                    ],
+                  ),
+                ),
+                if (_c.error != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    _c.error!,
+                    key: const Key('settings_error'),
+                    style: const TextStyle(color: AppColors.error),
+                  ),
+                ],
+                if (_saved && _c.error == null) ...[
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Saved.',
+                    key: Key('settings_saved'),
+                    style: TextStyle(color: AppColors.success),
+                  ),
+                ],
+                const SizedBox(height: 16),
+                GradientButton(
+                  key: const Key('settings_save'),
+                  // Disabled while the update is in flight: no duplicate submission.
+                  onPressed: _c.isBusy ? null : _save,
+                  label: _c.isBusy ? 'Saving…' : 'Save',
+                  busy: _c.isBusy,
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 24),
-          // ── Rules summary ──
-          const Divider(),
-          const SizedBox(height: 8),
-          _rulesSummary(context),
-          const SizedBox(height: 24),
-          // ── Members summary ──
-          const Divider(),
-          const SizedBox(height: 8),
-          _membersSummary(context),
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
+          _sectionCard(isDark: isDark, child: _rulesSummary(context)),
+          const SizedBox(height: 16),
+          _sectionCard(isDark: isDark, child: _membersSummary(context)),
+          const SizedBox(height: 16),
           // ── Danger zone: leave ──
-          const Divider(),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF2A1215) : const Color(0xFFFEF2F2),
+              borderRadius: AppRadius.xlBorder,
+              border: Border.all(
+                color: isDark ? const Color(0xFF5C1D24) : const Color(0xFFFECACA),
+              ),
+            ),
+            child: _leaveSection(context),
+          ),
           const SizedBox(height: 8),
-          _leaveSection(context),
-          const SizedBox(height: 8),
-          TextButton(
-            onPressed: () => context.pop(),
-            child: const Text('Back to group'),
+          Center(
+            child: TextButton(
+              onPressed: () => context.pop(),
+              child: const Text('Back to group'),
+            ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _sectionCard({required bool isDark, required Widget child}) {
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+        borderRadius: AppRadius.xlBorder,
+        border: Border.all(
+          color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+        ),
+      ),
+      clipBehavior: Clip.antiAlias,
+      // ListTile/RadioListTile paint their background/ink on the nearest
+      // Material ancestor — without this, Flutter asserts (their splash and
+      // selected-background effects would otherwise be invisible, painted
+      // underneath this card's own background).
+      child: Material(
+        color: Colors.transparent,
+        child: Padding(padding: const EdgeInsets.all(16), child: child),
       ),
     );
   }
