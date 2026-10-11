@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../domain/content_block.dart';
@@ -29,6 +30,27 @@ class ContentBlockRenderer extends StatelessWidget {
   /// Scales a body-text size; labels/badges/icons stay fixed for legibility.
   double _f(double base) => base * fontScale;
 
+  /// The reading-article typeface (Wikipedia-style: a serif body font, used
+  /// only for actual content text — headings/paragraphs/definitions/
+  /// examples/callouts). UI chrome (badges, labels, buttons) stays on the
+  /// app's normal sans-serif everywhere else, matching how Wikipedia itself
+  /// keeps its interface sans-serif while the article body is serif.
+  TextStyle _serif({
+    required double fontSize,
+    required FontWeight fontWeight,
+    required Color color,
+    double height = 1.65,
+    double letterSpacing = 0,
+    FontStyle? fontStyle,
+  }) => GoogleFonts.notoSerif(
+    fontSize: fontSize,
+    fontWeight: fontWeight,
+    color: color,
+    height: height,
+    letterSpacing: letterSpacing,
+    fontStyle: fontStyle,
+  );
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -54,40 +76,29 @@ class ContentBlockRenderer extends StatelessWidget {
   }
 
   // ── 1. Heading ─────────────────────────────────────────────────────────────
+  // Wikipedia article style: a plain serif section header with a thin
+  // bottom rule, not a colored accent bar — reads as part of the article
+  // flow rather than an app-chrome element.
   Widget _buildHeading(BuildContext context, bool isDark) {
     final textColor = isDark ? Colors.white : const Color(0xFF0F172A);
-    final accentColor = isDark
-        ? const Color(0xFF60A5FA)
-        : const Color(0xFF2563EB);
+    final ruleColor = isDark ? const Color(0xFF334155) : const Color(0xFFD1D5DB);
 
     return Padding(
-      padding: const EdgeInsets.only(top: 20.0, bottom: 8.0),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 4,
-            height: 24,
-            margin: const EdgeInsets.only(top: 2, right: 10),
-            decoration: BoxDecoration(
-              color: accentColor,
-              borderRadius: BorderRadius.circular(2),
-            ),
+      padding: const EdgeInsets.only(top: 24.0, bottom: 10.0),
+      child: Container(
+        padding: const EdgeInsets.only(bottom: 6),
+        decoration: BoxDecoration(
+          border: Border(bottom: BorderSide(color: ruleColor, width: 1)),
+        ),
+        child: Text(
+          block.text,
+          style: _serif(
+            fontSize: _f(22),
+            fontWeight: FontWeight.w600,
+            color: textColor,
+            height: 1.3,
           ),
-          Expanded(
-            child: Text(
-              block.text,
-              style: TextStyle(
-                fontFamily: 'Roboto',
-                fontSize: _f(20),
-                fontWeight: FontWeight.w700,
-                color: textColor,
-                letterSpacing: -0.3,
-                height: 1.3,
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -96,15 +107,14 @@ class ContentBlockRenderer extends StatelessWidget {
   Widget _buildParagraph(BuildContext context, bool isDark) {
     final textColor = isDark
         ? const Color(0xFFCBD5E1)
-        : const Color(0xFF334155);
+        : const Color(0xFF1F2937);
 
     return Text(
       block.text,
-      style: TextStyle(
-        fontFamily: 'Roboto',
-        fontSize: _f(15.5),
+      style: _serif(
+        fontSize: _f(16.5),
         fontWeight: FontWeight.w400,
-        height: 1.65,
+        height: 1.75,
         letterSpacing: 0.1,
         color: textColor,
       ),
@@ -186,11 +196,10 @@ class ContentBlockRenderer extends StatelessWidget {
                     const SizedBox(height: 10),
                     Text(
                       block.text,
-                      style: TextStyle(
-                        fontFamily: 'Roboto',
-                        fontSize: _f(15),
+                      style: _serif(
+                        fontSize: _f(16),
                         fontWeight: FontWeight.w500,
-                        height: 1.6,
+                        height: 1.65,
                         color: textColor,
                       ),
                     ),
@@ -404,11 +413,10 @@ class ContentBlockRenderer extends StatelessWidget {
                 const SizedBox(height: 6),
                 Text(
                   problemText,
-                  style: TextStyle(
-                    fontFamily: 'Roboto',
-                    fontSize: _f(14.5),
+                  style: _serif(
+                    fontSize: _f(15.5),
                     fontWeight: FontWeight.w500,
-                    height: 1.55,
+                    height: 1.6,
                     color: textColor,
                   ),
                 ),
@@ -456,11 +464,10 @@ class ContentBlockRenderer extends StatelessWidget {
                   const SizedBox(height: 8),
                   Text(
                     solutionText,
-                    style: TextStyle(
-                      fontFamily: 'Roboto',
-                      fontSize: _f(14),
+                    style: _serif(
+                      fontSize: _f(15),
                       fontWeight: FontWeight.w400,
-                      height: 1.6,
+                      height: 1.65,
                       color: textColor,
                     ),
                   ),
@@ -519,11 +526,10 @@ class ContentBlockRenderer extends StatelessWidget {
           if (block.text.isNotEmpty) ...[
             Text(
               block.text,
-              style: TextStyle(
-                fontFamily: 'Roboto',
-                fontSize: _f(14.5),
+              style: _serif(
+                fontSize: _f(15.5),
                 fontWeight: FontWeight.w600,
-                height: 1.5,
+                height: 1.55,
                 color: textColor,
               ),
             ),
@@ -549,10 +555,10 @@ class ContentBlockRenderer extends StatelessWidget {
                     Expanded(
                       child: Text(
                         pt,
-                        style: TextStyle(
-                          fontFamily: 'Roboto',
-                          fontSize: _f(14),
-                          height: 1.55,
+                        style: _serif(
+                          fontSize: _f(15),
+                          fontWeight: FontWeight.w400,
+                          height: 1.6,
                           color: textColor,
                         ),
                       ),
@@ -631,11 +637,10 @@ class ContentBlockRenderer extends StatelessWidget {
                   Expanded(
                     child: Text(
                       '${isHindi ? "गलती" : "Mistake"}: $mistake',
-                      style: TextStyle(
-                        fontFamily: 'Roboto',
-                        fontSize: _f(13.5),
+                      style: _serif(
+                        fontSize: _f(14.5),
                         fontWeight: FontWeight.w600,
-                        height: 1.45,
+                        height: 1.5,
                         color: isDark ? const Color(0xFFFCA5A5) : errorColor,
                       ),
                     ),
@@ -663,11 +668,10 @@ class ContentBlockRenderer extends StatelessWidget {
                     Expanded(
                       child: Text(
                         '${isHindi ? "सही समझ" : "Correct Understanding"}: $correction',
-                        style: TextStyle(
-                          fontFamily: 'Roboto',
-                          fontSize: _f(13.5),
+                        style: _serif(
+                          fontSize: _f(14.5),
                           fontWeight: FontWeight.w600,
-                          height: 1.45,
+                          height: 1.5,
                           color: isDark
                               ? const Color(0xFF86EFAC)
                               : successColor,
@@ -681,11 +685,10 @@ class ContentBlockRenderer extends StatelessWidget {
           ] else ...[
             Text(
               block.text,
-              style: TextStyle(
-                fontFamily: 'Roboto',
-                fontSize: _f(14),
+              style: _serif(
+                fontSize: _f(15),
                 fontWeight: FontWeight.w400,
-                height: 1.5,
+                height: 1.6,
                 color: isDark
                     ? const Color(0xFFFCA5A5)
                     : const Color(0xFF7F1D1D),
@@ -722,11 +725,11 @@ class ContentBlockRenderer extends StatelessWidget {
           Expanded(
             child: Text(
               block.text,
-              style: TextStyle(
-                fontFamily: 'Roboto',
-                fontSize: _f(14),
+              style: _serif(
+                fontSize: _f(15),
+                fontWeight: FontWeight.w400,
                 fontStyle: FontStyle.italic,
-                height: 1.55,
+                height: 1.6,
                 color: noteColor,
               ),
             ),

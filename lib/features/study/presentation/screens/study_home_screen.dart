@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_radius.dart';
@@ -70,8 +71,7 @@ class _StudyHomeScreenState extends State<StudyHomeScreen> {
             AppSpacing.hGapXs,
             Text(
               _controller.isHindi ? 'HI' : 'EN',
-              style: TextStyle(
-                fontFamily: 'Roboto',
+              style: GoogleFonts.plusJakartaSans(
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
                 color: isDark ? AppColors.primaryDark : AppColors.primaryLight,

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import 'app_colors.dart';
 import 'app_dimensions.dart';
@@ -34,7 +35,7 @@ abstract final class AppTheme {
       brightness: Brightness.light,
       colorScheme: colorScheme,
       scaffoldBackgroundColor: colorScheme.surfaceContainerLow,
-      fontFamily: AppTypography.fontFamily,
+      fontFamily: GoogleFonts.plusJakartaSans().fontFamily,
       textTheme: textTheme,
 
       // 1. AppBar Theme (Surface neutral — decoupled from primary button)
@@ -279,7 +280,7 @@ abstract final class AppTheme {
       brightness: Brightness.dark,
       colorScheme: colorScheme,
       scaffoldBackgroundColor: colorScheme.surfaceContainerLow,
-      fontFamily: AppTypography.fontFamily,
+      fontFamily: GoogleFonts.plusJakartaSans().fontFamily,
       textTheme: textTheme,
 
       // 1. AppBar Theme
