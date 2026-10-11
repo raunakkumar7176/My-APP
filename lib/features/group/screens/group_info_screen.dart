@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/constants/theme/app_colors.dart';
+import '../../../core/theme/app_radius.dart';
 import '../../../core/models/group.dart';
 import '../../../core/models/group_member.dart';
 import '../../../core/services/supabase_service.dart';
@@ -411,7 +412,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
       padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF1E293B) : Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: AppRadius.xlBorder,
         border: Border.all(
           color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
         ),
@@ -431,15 +432,19 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                   bottom: 0,
                   right: 0,
                   child: Material(
-                    color: theme.colorScheme.primary,
+                    color: Colors.transparent,
                     shape: const CircleBorder(),
                     elevation: 2,
                     child: InkWell(
                       onTap: _showAvatarOptions,
                       customBorder: const CircleBorder(),
-                      child: const Padding(
-                        padding: EdgeInsets.all(7),
-                        child: Icon(
+                      child: Container(
+                        padding: const EdgeInsets.all(7),
+                        decoration: const BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: AppColors.primaryGradient,
+                        ),
+                        child: const Icon(
                           Icons.camera_alt,
                           size: 18,
                           color: Colors.white,
@@ -533,7 +538,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
         Expanded(
           child: InkWell(
             onTap: _openTests,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: AppRadius.xlBorder,
             child: _statCard(
               context: context,
               icon: Icons.quiz_outlined,
@@ -561,7 +566,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF1E293B) : Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: AppRadius.xlBorder,
         border: Border.all(
           color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
         ),
@@ -613,7 +618,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
     return Container(
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF1E293B) : Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: AppRadius.xlBorder,
         border: Border.all(
           color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
         ),
@@ -670,7 +675,10 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
               ),
               itemBuilder: (context, index) {
                 final m = members[index];
-                return _memberTile(context, m, isDark);
+                return _FadeInListItem(
+                  index: index,
+                  child: _memberTile(context, m, isDark),
+                );
               },
             ),
         ],
@@ -807,7 +815,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF2A1215) : const Color(0xFFFEF2F2),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: AppRadius.xlBorder,
         border: Border.all(
           color: isDark ? const Color(0xFF5C1D24) : const Color(0xFFFECACA),
         ),
@@ -877,6 +885,48 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// A short, staggered fade + slide entrance for a list row — the "smooth
+/// 200-300ms" list-item animation from the redesign spec, built with plain
+/// implicit Flutter animations (no new package needed).
+class _FadeInListItem extends StatefulWidget {
+  const _FadeInListItem({required this.index, required this.child});
+
+  final int index;
+  final Widget child;
+
+  @override
+  State<_FadeInListItem> createState() => _FadeInListItemState();
+}
+
+class _FadeInListItemState extends State<_FadeInListItem> {
+  bool _visible = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Capped stagger so a long member list doesn't keep animating for ages.
+    final delayMs = (widget.index * 35).clamp(0, 300);
+    Future.delayed(Duration(milliseconds: delayMs), () {
+      if (mounted) setState(() => _visible = true);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedOpacity(
+      opacity: _visible ? 1 : 0,
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOut,
+      child: AnimatedSlide(
+        offset: _visible ? Offset.zero : const Offset(0, 0.08),
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+        child: widget.child,
       ),
     );
   }

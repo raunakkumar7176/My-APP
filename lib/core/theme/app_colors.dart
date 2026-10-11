@@ -109,6 +109,30 @@ abstract final class AppColors {
   static const Color disabledDark = Color(0xFF334155);
   static const Color onDisabledDark = Color(0xFF64748B);
 
+  // ── Premium blue-violet accent gradient ──────────────────────────────────
+  // The Linear/Notion-style redesign's signature accent — used for primary
+  // CTAs, avatar backgrounds, and hero cards. Same two stops in both modes;
+  // dark mode just sits on a dark surface instead of a light one.
+  static const Color gradientStart = Color(0xFF2563EB); // blue
+  static const Color gradientEnd = Color(0xFF7C3AED); // violet
+
+  static const LinearGradient primaryGradient = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [gradientStart, gradientEnd],
+  );
+
+  /// A low-alpha wash of the same gradient, for subtle card backgrounds.
+  static LinearGradient primaryGradientSoft({double alpha = 0.12}) =>
+      LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          gradientStart.withValues(alpha: alpha),
+          gradientEnd.withValues(alpha: alpha),
+        ],
+      );
+
   // ── 3. Material 3 ColorScheme Builders ──────────────────────────────────
 
   static ColorScheme get lightColorScheme => const ColorScheme(
