@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/theme/app_colors.dart';
+import '../../../core/theme/app_radius.dart';
 import '../../../core/models/group.dart';
 import '../../../core/models/group_member.dart';
 import '../domain/group_role.dart';
@@ -76,7 +77,9 @@ class _GroupMembersScreenState extends State<GroupMembersScreen> {
 
     final group = _c.group!;
     final members = _c.filteredMembers;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
+      backgroundColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
       appBar: AppBar(
         title: Text(
           'Members · ${_c.memberCount}',
@@ -95,7 +98,14 @@ class _GroupMembersScreenState extends State<GroupMembersScreen> {
                 hintText: 'Search by name or student code',
                 prefixIcon: const Icon(Icons.search),
                 isDense: true,
-                border: const OutlineInputBorder(),
+                filled: true,
+                fillColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+                border: OutlineInputBorder(
+                  borderRadius: AppRadius.mdBorder,
+                  borderSide: BorderSide(
+                    color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                  ),
+                ),
                 suffixIcon: _c.memberQuery.isEmpty
                     ? null
                     : IconButton(
@@ -213,6 +223,7 @@ class _GroupMembersScreenState extends State<GroupMembersScreen> {
     List<GroupMember> members,
   ) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     final sections = <GroupRole, List<GroupMember>>{};
     for (final m in members) {
       sections.putIfAbsent(GroupRole.fromDb(m.role), () => []).add(m);
@@ -229,7 +240,7 @@ class _GroupMembersScreenState extends State<GroupMembersScreen> {
       if (roleMembers == null || roleMembers.isEmpty) continue;
       widgets.add(
         Padding(
-          padding: const EdgeInsets.fromLTRB(4, 12, 4, 4),
+          padding: const EdgeInsets.fromLTRB(4, 12, 4, 8),
           child: Text(
             '${role.label.toUpperCase()} (${roleMembers.length})',
             style: theme.textTheme.labelMedium?.copyWith(
@@ -239,21 +250,47 @@ class _GroupMembersScreenState extends State<GroupMembersScreen> {
           ),
         ),
       );
-      for (final m in roleMembers) {
-        widgets.add(
-          MemberTile(
-            key: ValueKey('member_tile_${m.userId}'),
-            member: m,
-            controller: _c,
-            onTap: () => MemberDetailSheet.show(
-              context,
-              member: m,
-              groupName: group.name,
-              isMe: m.userId == _c.currentUserId,
+      widgets.add(
+        Container(
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF1E293B) : Colors.white,
+            borderRadius: AppRadius.xlBorder,
+            border: Border.all(
+              color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
             ),
           ),
-        );
-      }
+          clipBehavior: Clip.antiAlias,
+          child: Material(
+            color: Colors.transparent,
+            child: Column(
+              children: [
+                for (var i = 0; i < roleMembers.length; i++) ...[
+                  if (i > 0)
+                    Divider(
+                      height: 1,
+                      indent: 16,
+                      color: isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9),
+                    ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: MemberTile(
+                      key: ValueKey('member_tile_${roleMembers[i].userId}'),
+                      member: roleMembers[i],
+                      controller: _c,
+                      onTap: () => MemberDetailSheet.show(
+                        context,
+                        member: roleMembers[i],
+                        groupName: group.name,
+                        isMe: roleMembers[i].userId == _c.currentUserId,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      );
     }
     return widgets;
   }
