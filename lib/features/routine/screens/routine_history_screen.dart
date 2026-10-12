@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/constants/theme/app_colors.dart';
+import '../../../core/theme/app_radius.dart';
 import '../../../core/errors/app_error.dart';
 import '../../../core/models/routine.dart';
 import '../../../core/models/routine_log.dart';
@@ -245,7 +246,7 @@ class _RoutineHistoryScreenState extends State<RoutineHistoryScreen> {
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                     decoration: BoxDecoration(
                       color: AppColors.success.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: AppRadius.pillBorder,
                     ),
                     child: Text(
                       '$completed/${logs.length}',
@@ -273,7 +274,8 @@ class _RoutineHistoryScreenState extends State<RoutineHistoryScreen> {
     final routine = _routinesById[log.routineId];
     return Card(
       key: Key('routine_history_${log.routineId}_${log.logDate}'),
-      margin: const EdgeInsets.only(bottom: 4),
+      margin: const EdgeInsets.only(bottom: 6),
+      shape: const RoundedRectangleBorder(borderRadius: AppRadius.lgBorder),
       child: ListTile(
         leading: Icon(_statusIcon(log.status), color: _statusColor(log.status), size: 24),
         title: Text(

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/theme/app_colors.dart';
+import '../../../core/theme/app_radius.dart';
 import '../../../core/errors/app_error.dart';
 import '../../../core/models/routine.dart';
 import '../../../core/models/subject.dart';
@@ -371,32 +372,63 @@ class _RoutineCreateScreenState extends State<RoutineCreateScreen> {
           padding: const EdgeInsets.all(16),
           children: [
             if (_error != null) _buildErrorBanner(),
-            _buildSessionTypePicker(),
-            const SizedBox(height: 16),
-            if (_isAcademicType) ...[
-              _buildSubjectDropdown(),
-              const SizedBox(height: 16),
-              if (_selectedSubjectId != null) ...[
-                _buildTopicDropdown(),
+            _section([
+              _buildSessionTypePicker(),
+              if (_isAcademicType) ...[
                 const SizedBox(height: 16),
+                _buildSubjectDropdown(),
+                if (_selectedSubjectId != null) ...[
+                  const SizedBox(height: 16),
+                  _buildTopicDropdown(),
+                ],
+                const SizedBox(height: 16),
+                _buildActivityDropdown(),
               ],
-              _buildActivityDropdown(),
+            ]),
+            const SizedBox(height: 16),
+            _section([
+              _buildTitleField(),
               const SizedBox(height: 16),
-            ],
-            _buildTitleField(),
+              _buildTimeRow(),
+              const SizedBox(height: 16),
+              _buildDurationField(),
+            ]),
             const SizedBox(height: 16),
-            _buildTimeRow(),
-            const SizedBox(height: 16),
-            _buildDurationField(),
-            const SizedBox(height: 16),
-            _buildWeekdayPicker(),
-            const SizedBox(height: 16),
-            _buildReminderSwitch(),
-            const SizedBox(height: 16),
-            _buildAlarmSection(),
+            _section([
+              _buildWeekdayPicker(),
+              const SizedBox(height: 12),
+              _buildReminderSwitch(),
+              _buildAlarmSection(),
+            ]),
             const SizedBox(height: 24),
             _buildSaveButton(),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// Groups related fields into one premium xl-radius card — same
+  /// bordered-card language as the Group feature's redesigned screens.
+  /// `Material(transparent)` is required here: the children can include
+  /// `SwitchListTile`/`DropdownButtonFormField` which paint their own
+  /// ink/background and need a `Material` ancestor to do it.
+  Widget _section(List<Widget> children) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+        borderRadius: AppRadius.xlBorder,
+        border: Border.all(
+          color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+        ),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Material(
+        color: Colors.transparent,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: children),
         ),
       ),
     );
