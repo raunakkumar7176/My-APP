@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/theme/app_colors.dart';
+import '../../../core/theme/app_radius.dart';
 import '../../../core/models/test.dart';
 import '../../test/domain/backend_mapping.dart';
 import '../../test/domain/test_lifecycle.dart';
 import '../../test/widgets/test_formatters.dart';
 import '../domain/group_test_management.dart';
 import '../state/group_tests_controller.dart';
+import '../widgets/gradient_button.dart';
 
 /// Group test management (G10): the group's tests in management sections
 /// plus the lifecycle actions the live backend supports. Creation, question
@@ -117,7 +119,9 @@ class _GroupTestsScreenState extends State<GroupTestsScreen> {
       );
     }
     final sections = _c.sections;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
+      backgroundColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
       appBar: AppBar(
         title: Text('${_c.group!.name} · Tests'),
         actions: [
@@ -168,14 +172,22 @@ class _GroupTestsScreenState extends State<GroupTestsScreen> {
               for (final s in GroupTestSection.values)
                 if (sections[s]!.isNotEmpty) ...[
                   Padding(
-                    padding: const EdgeInsets.only(top: 8, bottom: 4),
+                    padding: const EdgeInsets.only(top: 8, bottom: 8),
                     child: Text(
-                      '${s.label} · ${sections[s]!.length}',
+                      '${s.label.toUpperCase()} · ${sections[s]!.length}',
                       key: Key('section_${s.name}'),
-                      style: Theme.of(context).textTheme.titleMedium,
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        letterSpacing: 0.5,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.6),
+                      ),
                     ),
                   ),
-                  for (final t in sections[s]!) _tile(t),
+                  for (final t in sections[s]!) ...[
+                    _tile(t, isDark),
+                    const SizedBox(height: 10),
+                  ],
                 ],
           ],
         ),
@@ -183,32 +195,104 @@ class _GroupTestsScreenState extends State<GroupTestsScreen> {
     );
   }
 
-  Widget _tile(Test t) {
+  Widget _tile(Test t, bool isDark) {
     final acting = _c.actingTestId == t.id;
-    return Card(
+    final statusColor = TestFormatters.statusColor(t.status);
+    return Container(
       key: Key('group_test_${t.id}'),
-      margin: const EdgeInsets.only(bottom: 8),
-      child: ListTile(
-        title: Text(t.title),
-        subtitle: Text(
-          '${TestLifecycle.statusLabel(t.status)} · '
-          '${TestFormatters.duration(t.durationSec)}'
-          '${t.startsAt != null ? ' · starts ${TestFormatters.dateTime(t.startsAt)}' : ''}',
-          key: Key('group_test_meta_${t.id}'),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+        borderRadius: AppRadius.xlBorder,
+        border: Border.all(
+          color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
         ),
-        trailing: acting
-            ? const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : IconButton(
-                key: Key('manage_${t.id}'),
-                tooltip: 'Manage',
-                icon: const Icon(Icons.more_vert),
-                onPressed: _c.isBusy ? null : () => _manage(t),
-              ),
-        onTap: _c.isBusy ? null : () => _open(t),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: _c.isBusy ? null : () => _open(t),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+            child: Row(
+              children: [
+                Container(
+                  width: 4,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: statusColor,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        t.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: statusColor.withValues(alpha: isDark ? 0.2 : 0.12),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              TestLifecycle.statusLabel(t.status),
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w700,
+                                color: statusColor,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              '${TestFormatters.duration(t.durationSec)}'
+                              '${t.startsAt != null ? ' · starts ${TestFormatters.dateTime(t.startsAt)}' : ''}',
+                              key: Key('group_test_meta_${t.id}'),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: isDark
+                                    ? const Color(0xFF94A3B8)
+                                    : const Color(0xFF64748B),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                acting
+                    ? const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      )
+                    : IconButton(
+                        key: Key('manage_${t.id}'),
+                        tooltip: 'Manage',
+                        icon: const Icon(Icons.more_vert),
+                        onPressed: _c.isBusy ? null : () => _manage(t),
+                      ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -283,6 +367,9 @@ class GroupTestManageSheet extends StatefulWidget {
     return showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (_) => GroupTestManageSheet(
         controller: controller,
         test: test,
@@ -529,11 +616,11 @@ class _GroupTestManageSheetState extends State<GroupTestManageSheet> {
                       label: const Text('Schedule'),
                     ),
                   if (c.canPublish(test))
-                    FilledButton.icon(
+                    GradientButton(
                       key: const Key('manage_publish'),
                       onPressed: busy ? null : _publish,
-                      icon: const Icon(Icons.publish, size: 18),
-                      label: const Text('Publish'),
+                      icon: Icons.publish,
+                      label: 'Publish',
                     ),
                   if (c.canArchive(test))
                     OutlinedButton.icon(
