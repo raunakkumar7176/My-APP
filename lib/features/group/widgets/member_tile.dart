@@ -30,8 +30,13 @@ class MemberTile extends StatelessWidget {
     final role = GroupRole.fromDb(member.role);
     final isMe = member.userId == c.currentUserId;
     // Never yourself, never the owner — invariants, not permissions.
-    final canRemove = c.canManageMembers && !isMe && !role.isOwner;
-    final canChangeRole = c.canManageRoles && !isMe && !role.isOwner;
+    // Only the owner may touch an admin (change role / remove) — mirrors
+    // the server trigger (migration 0108) exactly, so the control is never
+    // offered only to fail.
+    final canRemove = !isMe &&
+        !role.isOwner &&
+        (c.canManageMembers && (c.isOwner || !role.isAdmin));
+    final canChangeRole = c.isOwner && !isMe && !role.isOwner;
     final code = member.studentCode?.trim();
 
     return ListTile(

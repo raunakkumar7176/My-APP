@@ -11,7 +11,7 @@ import 'package:my_praperation/core/errors/app_error.dart';
 import 'package:my_praperation/core/models/group.dart';
 import 'package:my_praperation/core/models/group_invitation.dart';
 import 'package:my_praperation/features/group/domain/group_errors.dart';
-import 'package:my_praperation/features/group/screens/group_hub_screen.dart';
+import 'package:my_praperation/features/group/screens/group_info_screen.dart';
 import 'package:my_praperation/features/group/screens/group_list_screen.dart';
 import 'package:my_praperation/features/group/state/group_hub_controller.dart';
 import 'package:my_praperation/features/group/state/group_list_controller.dart';
@@ -197,7 +197,7 @@ void main() {
 
   group('Screens', () {
     Future<void> pumpTall(WidgetTester tester, Widget home) async {
-      tester.view.physicalSize = const Size(800, 1600);
+      tester.view.physicalSize = const Size(800, 2500);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       await tester.pumpWidget(MaterialApp(home: home));
@@ -309,7 +309,7 @@ void main() {
           ),
         ],
       );
-      tester.view.physicalSize = const Size(800, 1600);
+      tester.view.physicalSize = const Size(800, 2500);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       await tester.pumpWidget(MaterialApp.router(routerConfig: router));
@@ -340,7 +340,7 @@ void main() {
       );
       await tester.pumpWidget(
         MaterialApp(
-          home: GroupHubScreen(groupId: 'g-priv', controller: hub),
+          home: GroupInfoScreen(groupId: 'g-priv', controller: hub),
         ),
       );
       await tester.pumpAndSettle();

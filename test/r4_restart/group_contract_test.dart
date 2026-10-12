@@ -16,7 +16,7 @@ void main() {
     expect(g.ownerId, 'u-owner');
     expect(g.logoUrl, isNull);
     expect(g.memberCount, 3);
-    expect(g.isLeader, isTrue);
+    expect(g.isAdmin, isTrue);
     expect(g.toJson().keys, [
       'id',
       'name',

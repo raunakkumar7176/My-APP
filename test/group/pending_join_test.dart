@@ -10,7 +10,7 @@ import 'package:my_praperation/core/errors/app_error.dart';
 import 'package:my_praperation/core/models/group.dart';
 import 'package:my_praperation/core/models/group_join_request.dart';
 import 'package:my_praperation/features/group/data/group_repository.dart';
-import 'package:my_praperation/features/group/screens/group_hub_screen.dart';
+import 'package:my_praperation/features/group/screens/group_info_screen.dart';
 import 'package:my_praperation/features/group/screens/group_list_screen.dart';
 import 'package:my_praperation/features/group/state/group_hub_controller.dart';
 import 'package:my_praperation/features/group/state/group_list_controller.dart';
@@ -302,7 +302,7 @@ void main() {
       );
       await tester.pumpWidget(
         MaterialApp(
-          home: GroupHubScreen(groupId: 'g-locked', controller: hub),
+          home: GroupInfoScreen(groupId: 'g-locked', controller: hub),
         ),
       );
       await tester.pumpAndSettle();
@@ -514,7 +514,7 @@ void main() {
     });
 
     testWidgets('H: confirmation required — UI shows dialog', (tester) async {
-      tester.view.physicalSize = const Size(800, 2200);
+      tester.view.physicalSize = const Size(800, 3100);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       final repo = _repo();

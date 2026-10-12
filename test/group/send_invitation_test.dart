@@ -10,7 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:my_praperation/core/errors/app_error.dart';
 import 'package:my_praperation/core/models/profile_match.dart';
-import 'package:my_praperation/features/group/screens/group_hub_screen.dart';
+import 'package:my_praperation/features/group/screens/group_info_screen.dart';
 import 'package:my_praperation/features/group/state/group_hub_controller.dart';
 import 'package:my_praperation/features/group/state/invite_member_controller.dart';
 import 'package:my_praperation/features/group/widgets/invite_member_sheet.dart';
@@ -317,13 +317,13 @@ void main() {
       InMemoryGroupRepository repo, {
       String user = 'u-me',
     }) async {
-      tester.view.physicalSize = const Size(800, 2200);
+      tester.view.physicalSize = const Size(800, 3100);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       final c = _hub(repo, user: user);
       await tester.pumpWidget(
         MaterialApp(
-          home: GroupHubScreen(groupId: 'g-1', controller: c),
+          home: GroupInfoScreen(groupId: 'g-1', controller: c),
         ),
       );
       await tester.pumpAndSettle();

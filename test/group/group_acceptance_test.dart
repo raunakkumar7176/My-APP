@@ -10,7 +10,7 @@ import 'package:my_praperation/core/errors/app_error.dart';
 import 'package:my_praperation/features/group/data/group_repository.dart';
 import 'package:my_praperation/features/group/data/notification_repository.dart';
 import 'package:my_praperation/features/group/domain/group_role.dart';
-import 'package:my_praperation/features/group/screens/group_hub_screen.dart';
+import 'package:my_praperation/features/group/screens/group_info_screen.dart';
 import 'package:my_praperation/features/group/state/group_hub_controller.dart';
 import 'package:my_praperation/features/group/state/group_list_controller.dart';
 import 'package:my_praperation/features/group/widgets/group_management_section.dart';
@@ -43,12 +43,12 @@ GroupHubController _ctl(
 );
 
 Future<void> _pumpHub(WidgetTester tester, GroupHubController c) async {
-  tester.view.physicalSize = const Size(800, 3600);
+  tester.view.physicalSize = const Size(800, 4500);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
   await tester.pumpWidget(
     MaterialApp(
-      home: GroupHubScreen(groupId: 'g-1', controller: c),
+      home: GroupInfoScreen(groupId: 'g-1', controller: c),
     ),
   );
   await tester.pumpAndSettle();
@@ -123,7 +123,7 @@ void main() {
       final repo = _repo(user: 'u-lead');
       final hub = _ctl(repo, user: 'u-lead');
       await hub.load();
-      expect(hub.myRole, GroupRole.leader);
+      expect(hub.myRole, GroupRole.admin);
       expect(hub.canManageMembers, isTrue);
       expect(hub.canManageRoles, isFalse);
       expect(hub.canEditBasics, isFalse);
@@ -147,7 +147,7 @@ void main() {
       final repo = _repo(user: 'u-mod');
       final hub = _ctl(repo, user: 'u-mod');
       await hub.load();
-      expect(hub.myRole, GroupRole.moderator);
+      expect(hub.myRole, GroupRole.admin);
       expect(hub.canManageMembers, isFalse);
       expect(hub.hasManagementControls, isFalse);
       expect(hub.canLeave, isTrue);
@@ -275,13 +275,13 @@ void main() {
       final repo = _repo(user: 'u-owner');
       final hub = _ctl(repo, user: 'u-owner');
       await hub.load();
-      final ok = await hub.changeRole('u-mem', GroupRole.leader);
+      final ok = await hub.changeRole('u-mem', GroupRole.admin);
       expect(ok, isTrue);
       expect(
         GroupRole.fromDb(
           hub.members.firstWhere((m) => m.userId == 'u-mem').role,
         ),
-        GroupRole.leader,
+        GroupRole.admin,
       );
       hub.dispose();
     });
@@ -306,7 +306,7 @@ void main() {
       final hub = _ctl(repo, user: 'u-lead');
       await hub.load();
       expect(hub.canManageRoles, isFalse);
-      expect(await hub.changeRole('u-mem', GroupRole.moderator), isFalse);
+      expect(await hub.changeRole('u-mem', GroupRole.admin), isFalse);
       expect(hub.error, contains('permission'));
       hub.dispose();
     });

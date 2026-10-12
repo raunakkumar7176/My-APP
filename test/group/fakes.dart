@@ -244,6 +244,14 @@ class InMemoryGroupRepository implements GroupRepository {
     if (!await canManageMembers(groupId)) {
       throw _notAuthorized(GroupErrorContext.removeMember);
     }
+    final targetRole = g.roles[userId];
+    if (targetRole == 'owner') {
+      throw const DataError(message: 'CANNOT_REMOVE_OWNER');
+    }
+    // Migration 0108: only the owner may remove an admin.
+    if (targetRole == 'admin' && g.roles[currentUser] != 'owner') {
+      throw const DataError(message: 'ONLY_OWNER_CAN_REMOVE_ADMIN');
+    }
     g.roles.remove(userId);
   }
 
@@ -313,7 +321,12 @@ class InMemoryGroupRepository implements GroupRepository {
   bool _roleRow(String groupId, String role, GroupPermission p) {
     final key = '$groupId:$role:${p.db}';
     if (roleGrants.contains(key)) return true;
-    if (role == 'leader' &&
+    // Migration 0108: role_permissions is seeded for 'leader' only, and
+    // fn_has_permission gives 'admin' an automatic fallback onto that same
+    // set. Mirrored here so a fixture member whose role is 'admin' (the
+    // merged role) gets exactly what a live admin gets — not zero, which
+    // is what a literal-string lookup would otherwise give them.
+    if ((role == 'leader' || role == 'admin') &&
         seededLeaderPermissions.contains(p) &&
         !roleRevokes.contains(key)) {
       return true;
@@ -331,7 +344,7 @@ class InMemoryGroupRepository implements GroupRepository {
       return GroupRolePermissions.empty;
     }
     return GroupRolePermissions.fromRows([
-      for (final role in ['leader', 'moderator', 'member'])
+      for (final role in ['admin', 'member'])
         for (final p in GroupPermission.live)
           if (_roleRow(groupId, role, p)) {'role': role, 'permission': p.db},
     ]);
@@ -378,16 +391,19 @@ class InMemoryGroupRepository implements GroupRepository {
       );
     }
     roleGrants.remove(key);
-    if (role == GroupRole.leader) roleRevokes.add(key);
+    if (role == GroupRole.admin) roleRevokes.add(key);
   }
 
-  /// Mirrors the LIVE "role changes" UPDATE policy as verified by the G3
-  /// audit (docs/G3_LIVE_AUDIT_AND_CLOSURE.md):
-  ///   USING  (role <> 'owner') AND fn_has_permission(group_id, uid, 'MANAGE_ROLES')
-  ///   CHECK  (role <> 'owner') AND fn_has_permission(group_id, uid, 'MANAGE_ROLES')
-  /// There is no self-update branch; owner rows cannot be targeted and no row
-  /// may become 'owner'. Under RLS a row that fails USING simply does not
-  /// match (0 rows updated); a new row failing CHECK raises.
+  /// Mirrors the live two-layer defense (migration 0108):
+  ///   RLS "role changes" USING: `user_id = auth.uid() OR MANAGE_ROLES` —
+  ///     a caller matching neither simply matches 0 rows, silently.
+  ///   trigger `fn_prevent_owner_removal`, which actually runs on any row
+  ///     RLS *did* let through: blocks demoting/removing the owner, and
+  ///     blocks ANY role change at all unless the actor is the owner —
+  ///     closing the self-promotion hole the bare RLS predicate leaves open
+  ///     (`user_id = auth.uid()` lets a member touch their own row for
+  ///     legitimate self-service fields; the trigger is what stops that
+  ///     same path from also rewriting `role`).
   @override
   Future<void> setMemberRole({
     required String groupId,
@@ -401,10 +417,17 @@ class InMemoryGroupRepository implements GroupRepository {
       // No row matches → PostgREST updates 0 rows silently.
       return;
     }
-    final manage = hasPermission(groupId, GroupPermission.manageRoles);
-    // USING: owner rows and non-managers never match → 0 rows, no change.
-    if (!manage || g.roles[userId] == 'owner') return;
-    // CHECK: the new row may not be 'owner'.
+    final isOwner = g.roles[currentUser] == 'owner';
+    final matchesUsing =
+        userId == currentUser || hasPermission(groupId, GroupPermission.manageRoles);
+    if (!matchesUsing) return; // RLS USING fails → 0 rows, silently.
+    // Past this point the trigger runs (RLS let the row through).
+    if (g.roles[userId] == 'owner' && role != GroupRole.owner) {
+      throw const DataError(message: 'CANNOT_DEMOTE_OWNER');
+    }
+    if (role.db != g.roles[userId] && !isOwner) {
+      throw const DataError(message: 'ONLY_OWNER_CAN_CHANGE_ROLES');
+    }
     if (role.isOwner) {
       throw const DataError(
         message: 'new row violates row-level security policy for table "group_members"',

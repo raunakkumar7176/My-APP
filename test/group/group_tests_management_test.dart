@@ -15,7 +15,7 @@ import 'package:my_praperation/core/errors/app_error.dart';
 import 'package:my_praperation/core/models/test.dart';
 import 'package:my_praperation/core/models/test_syllabus.dart';
 import 'package:my_praperation/features/group/domain/group_test_management.dart';
-import 'package:my_praperation/features/group/screens/group_hub_screen.dart';
+import 'package:my_praperation/features/group/screens/group_info_screen.dart';
 import 'package:my_praperation/features/group/screens/group_tests_screen.dart';
 import 'package:my_praperation/features/group/state/group_hub_controller.dart';
 import 'package:my_praperation/features/group/state/group_tests_controller.dart';
@@ -587,7 +587,7 @@ void main() {
       final repo = InMemoryGroupRepository(currentUser: 'u-me')
         ..seed(id: 'g-1', ownerId: 'u-owner', members: {'u-me': 'member'});
       final c = GroupHubController(groupId: 'g-1', repository: repo, currentUserId: 'u-me');
-      await tester.pumpWidget(MaterialApp(home: GroupHubScreen(groupId: 'g-1', controller: c)));
+      await tester.pumpWidget(MaterialApp(home: GroupInfoScreen(groupId: 'g-1', controller: c)));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('open_group_tests')), findsOneWidget);
       expect(find.byKey(const Key('leave_group_button')), findsOneWidget);

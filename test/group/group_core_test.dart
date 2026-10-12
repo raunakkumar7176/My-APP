@@ -22,7 +22,7 @@ import 'package:my_praperation/features/group/domain/group_permission.dart';
 import 'package:my_praperation/features/group/domain/group_privacy.dart';
 import 'package:my_praperation/features/group/domain/group_role.dart';
 import 'package:my_praperation/features/group/screens/group_create_screen.dart';
-import 'package:my_praperation/features/group/screens/group_hub_screen.dart';
+import 'package:my_praperation/features/group/screens/group_info_screen.dart';
 import 'package:my_praperation/features/group/screens/group_list_screen.dart';
 import 'package:my_praperation/features/group/state/group_hub_controller.dart';
 import 'package:my_praperation/features/group/state/group_list_controller.dart';
@@ -53,7 +53,7 @@ void main() {
       expect(g.id, 'g-1');
       expect(g.memberCount, 4);
       expect(g.userRole, 'leader');
-      expect(g.isLeader, isTrue);
+      expect(g.isAdmin, isTrue);
       expect(g.description, isNull);
       expect(g.privacy, isNull);
       expect(g.toJson().containsKey('invite_code'), isFalse);
@@ -96,7 +96,9 @@ void main() {
         'profiles': {'full_name': 'Asha', 'avatar_url': null},
       });
       expect(m.displayName, 'Asha');
-      expect(GroupRole.fromDb(m.role), GroupRole.moderator);
+      // Migration 0108 merged leader/moderator into admin; fromDb maps
+      // either legacy string to GroupRole.admin defensively.
+      expect(GroupRole.fromDb(m.role), GroupRole.admin);
       expect(
         m,
         GroupMember(
@@ -122,14 +124,18 @@ void main() {
   group('Roles and validation', () {
     test('unknown or null role degrades to member, never to a privilege', () {
       expect(GroupRole.fromDb(null), GroupRole.member);
-      expect(GroupRole.fromDb('admin'), GroupRole.member);
+      // Migration 0108: 'admin' is now a real, recognized role (not a
+      // degrade-to-member unknown value), and legacy 'leader'/'moderator'
+      // strings map onto it too.
+      expect(GroupRole.fromDb('admin'), GroupRole.admin);
+      expect(GroupRole.fromDb('leader'), GroupRole.admin);
+      expect(GroupRole.fromDb('moderator'), GroupRole.admin);
       expect(GroupRole.fromDb('OWNER'), GroupRole.owner);
       expect(GroupRole.owner.mayManageMembersByDefault, isTrue);
-      expect(GroupRole.leader.mayManageMembersByDefault, isTrue);
-      expect(GroupRole.moderator.mayManageMembersByDefault, isFalse);
+      expect(GroupRole.admin.mayManageMembersByDefault, isTrue);
       expect(GroupRole.member.mayManageMembersByDefault, isFalse);
       // Live: GROUP_SETTINGS is seeded for no role, so only the owner edits.
-      expect(GroupRole.leader.mayEditGroupByDefault, isFalse);
+      expect(GroupRole.admin.mayEditGroupByDefault, isFalse);
       expect(GroupRole.owner.mayEditGroupByDefault, isTrue);
     });
 
@@ -594,12 +600,12 @@ void main() {
       );
       // Tall viewport: the hub's lazy ListView must build the leave note
       // below the G6 rules section too.
-      tester.view.physicalSize = const Size(800, 2200);
+      tester.view.physicalSize = const Size(800, 3100);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       await tester.pumpWidget(
         MaterialApp(
-          home: GroupHubScreen(groupId: 'g-1', controller: c),
+          home: GroupInfoScreen(groupId: 'g-1', controller: c),
         ),
       );
       await tester.pumpAndSettle();
@@ -630,7 +636,7 @@ void main() {
       );
       await tester.pumpWidget(
         MaterialApp(
-          home: GroupHubScreen(groupId: 'g-1', controller: c),
+          home: GroupInfoScreen(groupId: 'g-1', controller: c),
         ),
       );
       await tester.pumpAndSettle();
@@ -653,12 +659,12 @@ void main() {
       );
       // Tall viewport: the leave button sits below the G6/G7/G8 sections in
       // the hub's lazy ListView.
-      tester.view.physicalSize = const Size(800, 3200);
+      tester.view.physicalSize = const Size(800, 4100);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       await tester.pumpWidget(
         MaterialApp(
-          home: GroupHubScreen(groupId: 'g-1', controller: c),
+          home: GroupInfoScreen(groupId: 'g-1', controller: c),
         ),
       );
       await tester.pumpAndSettle();

@@ -39,8 +39,10 @@ final class Group {
   final String? privacy;
 
   bool get isOwner => userRole == 'owner';
-  bool get isLeader => userRole == 'leader';
-  bool get isModerator => userRole == 'moderator';
+  // Migration 0108 merged leader/moderator into admin; both legacy strings
+  // still count as admin defensively (same mapping as GroupRole.fromDb).
+  bool get isAdmin =>
+      userRole == 'admin' || userRole == 'leader' || userRole == 'moderator';
   bool get isMember => userRole == 'member';
 
   factory Group.fromJson(Map<String, dynamic> json) {

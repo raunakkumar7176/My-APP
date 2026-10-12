@@ -89,7 +89,7 @@ class GroupManagementSection extends StatelessWidget {
                 dense: true,
                 leading: const Icon(Icons.admin_panel_settings_outlined),
                 title: const Text('Role permissions'),
-                subtitle: const Text('What leaders and moderators may do'),
+                subtitle: const Text('What admins may do'),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: busy ? null : onOpenRolePermissions,
               ),

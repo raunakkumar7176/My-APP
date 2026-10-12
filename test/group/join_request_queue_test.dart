@@ -8,7 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:my_praperation/core/errors/app_error.dart';
 import 'package:my_praperation/core/models/group_join_request.dart';
-import 'package:my_praperation/features/group/screens/group_hub_screen.dart';
+import 'package:my_praperation/features/group/screens/group_info_screen.dart';
 import 'package:my_praperation/features/group/state/group_hub_controller.dart';
 
 import 'fakes.dart';
@@ -224,13 +224,13 @@ void main() {
       InMemoryGroupRepository repo, {
       String user = 'u-me',
     }) async {
-      tester.view.physicalSize = const Size(800, 1800);
+      tester.view.physicalSize = const Size(800, 2700);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       final c = _hub(repo, user: user);
       await tester.pumpWidget(
         MaterialApp(
-          home: GroupHubScreen(groupId: 'g-1', controller: c),
+          home: GroupInfoScreen(groupId: 'g-1', controller: c),
         ),
       );
       await tester.pumpAndSettle();
@@ -243,13 +243,13 @@ void main() {
         final repo = _SlowQueueRepository();
         repo.seed(id: 'g-1', ownerId: 'u-me', privacy: 'restricted');
         final id = repo.seedJoinRequest(groupId: 'g-1', userId: 'u-req');
-        tester.view.physicalSize = const Size(800, 1800);
+        tester.view.physicalSize = const Size(800, 2700);
         tester.view.devicePixelRatio = 1;
         addTearDown(tester.view.reset);
         final c = _hub(repo);
         await tester.pumpWidget(
           MaterialApp(
-            home: GroupHubScreen(groupId: 'g-1', controller: c),
+            home: GroupInfoScreen(groupId: 'g-1', controller: c),
           ),
         );
         await tester.pump();

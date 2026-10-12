@@ -595,8 +595,7 @@ class GroupHubController extends DisposableNotifier {
   /// `owner` is never assignable here: it is an invariant, not a permission
   /// (no ownership-transfer mechanism exists live).
   static const assignableRoles = [
-    GroupRole.leader,
-    GroupRole.moderator,
+    GroupRole.admin,
     GroupRole.member,
   ];
 
@@ -886,14 +885,17 @@ class GroupHubController extends DisposableNotifier {
     return ok;
   }
 
-  /// Changes another member's role. Client invariants (each also enforced by
-  /// the live "role changes" policy / trg_owner_guard, verified in the G3
-  /// audit): never yourself, never the owner, never *to* owner, only a live
-  /// assignable role, and only a user who is in this group's roster.
-  /// `MANAGE_ROLES` is enforced server-side; the client merely does not offer
-  /// the action without it.
+  /// Changes another member's role. Client invariants (each also enforced
+  /// server-side by `trg_owner_guard`, migration 0108): never yourself,
+  /// never the owner, never *to* owner, only a live assignable role, and
+  /// only a user who is in this group's roster. Per product decision, only
+  /// the group owner may change anyone's role at all — an admin (even one
+  /// holding `MANAGE_ROLES`) cannot promote, demote, or touch another
+  /// admin; the trigger rejects it regardless of what the client offers,
+  /// but the client is owner-gated too so this never looks available and
+  /// then silently fails.
   Future<bool> changeRole(String userId, GroupRole role) async {
-    if (!canManageRoles) {
+    if (!isOwner) {
       _error = GroupErrors.map(
         'NOT_AUTHORIZED',
         context: GroupErrorContext.changeRole,
@@ -943,6 +945,13 @@ class GroupHubController extends DisposableNotifier {
     final target = _members.where((m) => m.userId == userId).firstOrNull;
     if (target != null && GroupRole.fromDb(target.role).isOwner) {
       _error = 'The group owner cannot be removed.';
+      notifyListeners();
+      return false;
+    }
+    // Server-enforced too (trg_owner_guard, migration 0108): only the
+    // owner may remove an admin.
+    if (target != null && GroupRole.fromDb(target.role).isAdmin && !isOwner) {
+      _error = 'Only the group owner can remove an admin.';
       notifyListeners();
       return false;
     }

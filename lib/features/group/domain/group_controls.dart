@@ -71,7 +71,7 @@ final class GroupControls {
 final class RolePermissionRules {
   const RolePermissionRules._();
 
-  static const editableRoles = [GroupRole.leader, GroupRole.moderator];
+  static const editableRoles = [GroupRole.admin];
 
   static bool canEditRole(GroupRole role) => editableRoles.contains(role);
 

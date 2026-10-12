@@ -14,7 +14,6 @@ import '../features/auth/splash_screen.dart';
 import '../features/group/screens/group_create_screen.dart';
 import '../features/group/screens/group_chat_screen.dart';
 import '../features/group/screens/group_discussion_screen.dart';
-import '../features/group/screens/group_hub_screen.dart';
 import '../features/group/screens/group_info_screen.dart';
 import '../features/group/state/group_hub_controller.dart';
 import '../features/group/screens/group_leaderboard_screen.dart';

@@ -8,14 +8,14 @@ import 'package:go_router/go_router.dart';
 import 'package:my_praperation/core/errors/app_error.dart';
 import 'package:my_praperation/features/group/data/group_repository.dart';
 import 'package:my_praperation/features/group/domain/group_role.dart';
-import 'package:my_praperation/features/group/screens/group_hub_screen.dart';
+import 'package:my_praperation/features/group/screens/group_info_screen.dart';
 import 'package:my_praperation/features/group/state/group_hub_controller.dart';
 import 'package:my_praperation/features/group/state/group_list_controller.dart';
 
 import 'fakes.dart';
 
 void _tallView(WidgetTester tester) {
-  tester.view.physicalSize = const Size(800, 3200);
+  tester.view.physicalSize = const Size(800, 4100);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
 }
@@ -42,7 +42,7 @@ GoRouter _router({
     GoRoute(
       path: '/groups/:groupId',
       builder: (_, _) =>
-          GroupHubScreen(groupId: 'g-1', controller: controller),
+          GroupInfoScreen(groupId: 'g-1', controller: controller),
     ),
   ],
 );
@@ -97,7 +97,7 @@ void main() {
         ..seed(id: 'g-1', ownerId: 'u-owner', members: {'u-me': 'member'});
       final c = _hub(repo);
       await tester.pumpWidget(
-        MaterialApp(home: GroupHubScreen(groupId: 'g-1', controller: c)),
+        MaterialApp(home: GroupInfoScreen(groupId: 'g-1', controller: c)),
       );
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('leave_group_button')));
@@ -144,7 +144,7 @@ void main() {
             members: {'u-me': 'leader', 'u-2': 'member'});
       final c = _hub(repo);
       await c.load();
-      expect(c.myRole, GroupRole.leader);
+      expect(c.myRole, GroupRole.admin);
       expect(c.canManageMembers, isTrue);
       expect(c.canLeave, isTrue);
       expect(await c.leave(), isTrue);
@@ -182,7 +182,7 @@ void main() {
             members: {'u-me': 'moderator', 'u-2': 'member'});
       final c = _hub(repo);
       await c.load();
-      expect(c.myRole, GroupRole.moderator);
+      expect(c.myRole, GroupRole.admin);
       expect(c.canLeave, isTrue);
       expect(await c.leave(), isTrue);
       expect(c.hasLeft, isTrue);
@@ -210,7 +210,7 @@ void main() {
         ..seed(id: 'g-1', ownerId: 'u-me', members: {'u-2': 'member'});
       final c = _hub(repo);
       await tester.pumpWidget(
-        MaterialApp(home: GroupHubScreen(groupId: 'g-1', controller: c)),
+        MaterialApp(home: GroupInfoScreen(groupId: 'g-1', controller: c)),
       );
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('leave_group_button')), findsNothing);
@@ -231,7 +231,7 @@ void main() {
           ..seed(id: 'g-1', ownerId: 'u-me', members: {'u-2': 'member'});
         final c = _hub(repo);
         await tester.pumpWidget(
-          MaterialApp(home: GroupHubScreen(groupId: 'g-1', controller: c)),
+          MaterialApp(home: GroupInfoScreen(groupId: 'g-1', controller: c)),
         );
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('group_menu')));
@@ -321,7 +321,7 @@ void main() {
       repo.profileNames['u-2'] = 'Ravi Kumar';
       final c = _hub(repo);
       await tester.pumpWidget(
-        MaterialApp(home: GroupHubScreen(groupId: 'g-1', controller: c)),
+        MaterialApp(home: GroupInfoScreen(groupId: 'g-1', controller: c)),
       );
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('remove_u-2')), findsOneWidget);
@@ -343,7 +343,7 @@ void main() {
         ..seed(id: 'g-1', ownerId: 'u-me', members: {'u-2': 'member'});
       final c = _hub(repo);
       await tester.pumpWidget(
-        MaterialApp(home: GroupHubScreen(groupId: 'g-1', controller: c)),
+        MaterialApp(home: GroupInfoScreen(groupId: 'g-1', controller: c)),
       );
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('remove_u-2')));
@@ -362,7 +362,7 @@ void main() {
             members: {'u-me': 'member', 'u-2': 'member'});
       final c = _hub(repo);
       await tester.pumpWidget(
-        MaterialApp(home: GroupHubScreen(groupId: 'g-1', controller: c)),
+        MaterialApp(home: GroupInfoScreen(groupId: 'g-1', controller: c)),
       );
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('remove_u-2')), findsNothing);

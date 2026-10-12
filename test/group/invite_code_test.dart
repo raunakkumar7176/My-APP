@@ -7,7 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:my_praperation/core/errors/app_error.dart';
 import 'package:my_praperation/core/models/group.dart';
-import 'package:my_praperation/features/group/screens/group_hub_screen.dart';
+import 'package:my_praperation/features/group/screens/group_info_screen.dart';
 import 'package:my_praperation/features/group/screens/group_list_screen.dart';
 import 'package:my_praperation/features/group/screens/group_members_screen.dart';
 import 'package:my_praperation/features/group/screens/group_settings_screen.dart';
@@ -129,7 +129,7 @@ void main() {
 
   group('Where the code is (not) requested', () {
     Future<void> pumpTall(WidgetTester tester, Widget home) async {
-      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.physicalSize = const Size(800, 3300);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       await tester.pumpWidget(MaterialApp(home: home));
@@ -145,7 +145,7 @@ void main() {
       list.dispose();
 
       final hub = _hub(repo);
-      await pumpTall(tester, GroupHubScreen(groupId: 'g-1', controller: hub));
+      await pumpTall(tester, GroupInfoScreen(groupId: 'g-1', controller: hub));
       await tester.pumpWidget(const SizedBox());
       hub.dispose();
 

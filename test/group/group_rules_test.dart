@@ -8,7 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:my_praperation/core/errors/app_error.dart';
 import 'package:my_praperation/core/models/group_rule.dart';
-import 'package:my_praperation/features/group/screens/group_hub_screen.dart';
+import 'package:my_praperation/features/group/screens/group_info_screen.dart';
 import 'package:my_praperation/features/group/state/group_hub_controller.dart';
 import 'package:my_praperation/features/group/widgets/group_rules_section.dart';
 
@@ -296,12 +296,12 @@ void main() {
       InMemoryGroupRepository repo, {
       String user = 'u-me',
     }) async {
-      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.physicalSize = const Size(800, 3300);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       final c = _hub(repo, user: user);
       await tester.pumpWidget(
-        MaterialApp(home: GroupHubScreen(groupId: 'g-1', controller: c)),
+        MaterialApp(home: GroupInfoScreen(groupId: 'g-1', controller: c)),
       );
       await tester.pumpAndSettle();
       return c;

@@ -8,7 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:my_praperation/core/models/test.dart';
-import 'package:my_praperation/features/group/screens/group_hub_screen.dart';
+import 'package:my_praperation/features/group/screens/group_info_screen.dart';
 import 'package:my_praperation/features/group/state/group_hub_controller.dart';
 
 import '../r4_restart/fakes.dart';
@@ -170,7 +170,7 @@ void main() {
       );
       final c = _hub(f, 'u-me');
 
-      await tester.pumpWidget(MaterialApp(home: GroupHubScreen(groupId: 'g-1', controller: c)));
+      await tester.pumpWidget(MaterialApp(home: GroupInfoScreen(groupId: 'g-1', controller: c)));
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('overview_stats_row')), findsOneWidget);
@@ -185,7 +185,7 @@ void main() {
       final f = _fixture();
       final c = _hub(f, 'u-me');
 
-      await tester.pumpWidget(MaterialApp(home: GroupHubScreen(groupId: 'g-1', controller: c)));
+      await tester.pumpWidget(MaterialApp(home: GroupInfoScreen(groupId: 'g-1', controller: c)));
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('overview_no_upcoming_test')), findsOneWidget);
@@ -209,7 +209,7 @@ void main() {
         routes: [
           GoRoute(
             path: '/groups/:groupId',
-            builder: (_, _) => GroupHubScreen(groupId: 'g-1', controller: c),
+            builder: (_, _) => GroupInfoScreen(groupId: 'g-1', controller: c),
           ),
           GoRoute(
             path: '/tests/:testId',

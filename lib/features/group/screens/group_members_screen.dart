@@ -232,8 +232,7 @@ class _GroupMembersScreenState extends State<GroupMembersScreen> {
     final widgets = <Widget>[];
     for (final role in [
       GroupRole.owner,
-      GroupRole.leader,
-      GroupRole.moderator,
+      GroupRole.admin,
       GroupRole.member,
     ]) {
       final roleMembers = sections[role];

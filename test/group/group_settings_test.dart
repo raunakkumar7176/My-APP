@@ -8,7 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:my_praperation/core/errors/app_error.dart';
 import 'package:my_praperation/core/models/group_rule.dart';
 import 'package:my_praperation/features/group/domain/group_privacy.dart';
-import 'package:my_praperation/features/group/screens/group_hub_screen.dart';
+import 'package:my_praperation/features/group/screens/group_info_screen.dart';
 import 'package:my_praperation/features/group/screens/group_settings_screen.dart';
 import 'package:my_praperation/features/group/state/group_hub_controller.dart';
 import 'package:my_praperation/features/group/widgets/group_avatar.dart';
@@ -19,7 +19,7 @@ import 'fakes.dart';
 /// ListView never builds the Save button there, so widget tests use a taller
 /// phone-sized view.
 void _tallView(WidgetTester tester) {
-  tester.view.physicalSize = const Size(800, 2000);
+  tester.view.physicalSize = const Size(800, 2900);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
 }
@@ -354,7 +354,7 @@ void main() {
         routes: [
           GoRoute(
             path: '/groups/:groupId',
-            builder: (_, _) => GroupHubScreen(groupId: 'g-1', controller: c),
+            builder: (_, _) => GroupInfoScreen(groupId: 'g-1', controller: c),
             routes: [
               GoRoute(
                 path: 'settings',
@@ -401,7 +401,7 @@ void main() {
       final c = _hub(repo);
       await tester.pumpWidget(
         MaterialApp(
-          home: GroupHubScreen(groupId: 'g-1', controller: c),
+          home: GroupInfoScreen(groupId: 'g-1', controller: c),
         ),
       );
       await tester.pumpAndSettle();

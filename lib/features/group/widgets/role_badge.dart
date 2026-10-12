@@ -13,10 +13,8 @@ class RoleBadge extends StatelessWidget {
     switch (role) {
       case GroupRole.owner:
         return AppColors.primaryLight;
-      case GroupRole.leader:
+      case GroupRole.admin:
         return AppColors.success;
-      case GroupRole.moderator:
-        return AppColors.warning;
       case GroupRole.member:
         return Theme.of(context).colorScheme.outline;
     }

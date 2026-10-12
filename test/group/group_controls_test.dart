@@ -15,7 +15,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:my_praperation/features/group/domain/group_controls.dart';
 import 'package:my_praperation/features/group/domain/group_permission.dart';
 import 'package:my_praperation/features/group/domain/group_role.dart';
-import 'package:my_praperation/features/group/screens/group_hub_screen.dart';
+import 'package:my_praperation/features/group/screens/group_info_screen.dart';
 import 'package:my_praperation/features/group/state/group_hub_controller.dart';
 import 'package:my_praperation/features/group/widgets/group_management_section.dart';
 import 'package:my_praperation/features/group/widgets/role_permissions_sheet.dart';
@@ -44,10 +44,10 @@ Future<GroupHubController> _loaded(String user, {InMemoryGroupRepository? repo})
 }
 
 Future<void> _pumpHub(WidgetTester tester, GroupHubController c) async {
-  tester.view.physicalSize = const Size(800, 3600);
+  tester.view.physicalSize = const Size(800, 4500);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
-  await tester.pumpWidget(MaterialApp(home: GroupHubScreen(groupId: 'g-1', controller: c)));
+  await tester.pumpWidget(MaterialApp(home: GroupInfoScreen(groupId: 'g-1', controller: c)));
   await tester.pumpAndSettle();
 }
 
@@ -84,8 +84,8 @@ void main() {
       expect(some.testCapabilities, ['publish']);
     });
 
-    test('RolePermissionRules: leader/moderator editable; owner and member never', () {
-      expect(RolePermissionRules.editableRoles, [GroupRole.leader, GroupRole.moderator]);
+    test('RolePermissionRules: admin editable; owner and member never (migration 0108)', () {
+      expect(RolePermissionRules.editableRoles, [GroupRole.admin]);
       expect(RolePermissionRules.canEditRole(GroupRole.owner), isFalse);
       expect(RolePermissionRules.canEditRole(GroupRole.member), isFalse);
       expect(RolePermissionRules.canEditPermission(GroupPermission.unknown), isFalse);
@@ -93,16 +93,19 @@ void main() {
     });
 
     test('GroupRolePermissions parses rows and drops unknown labels', () {
+      // Legacy 'leader'/'moderator' row labels both collapse onto the same
+      // GroupRole.admin bucket (GroupRole.fromDb, migration 0108) — this is
+      // intentional: the server-side fallback already gives admin every
+      // leader-seeded permission, so the client reads them as one set.
       final m = GroupRolePermissions.fromRows([
         {'role': 'leader', 'permission': 'CREATE_TEST'},
         {'role': 'moderator', 'permission': 'SEND_ANNOUNCEMENT'},
         {'role': 'moderator', 'permission': 'NOT_A_PERMISSION'},
       ]);
-      expect(m.has(GroupRole.leader, GroupPermission.createTest), isTrue);
-      expect(m.has(GroupRole.moderator, GroupPermission.sendAnnouncement), isTrue);
-      expect(m.has(GroupRole.moderator, GroupPermission.createTest), isFalse);
+      expect(m.has(GroupRole.admin, GroupPermission.createTest), isTrue);
+      expect(m.has(GroupRole.admin, GroupPermission.sendAnnouncement), isTrue);
       expect(m.rowCount, 2);
-      expect(GroupRolePermissions.empty.of(GroupRole.leader), isEmpty);
+      expect(GroupRolePermissions.empty.of(GroupRole.admin), isEmpty);
     });
   });
 
@@ -127,15 +130,25 @@ void main() {
     });
 
     test('owner cannot be demoted or removed through the controller', () async {
-      final repo = _repo('u-lead');
-      repo.roleGrants.add('g-1:leader:MANAGE_ROLES');
-      final c = _ctl(repo, 'u-lead');
+      // removeMember's owner-row protection is target-based — any manager
+      // actor reaches it.
+      final leadRepo = _repo('u-lead');
+      final leadC = _ctl(leadRepo, 'u-lead');
+      await leadC.load();
+      expect(await leadC.removeMember('u-owner'), isFalse);
+      expect(leadC.error, contains('owner cannot be removed'));
+      expect(leadRepo.calls.where((x) => x.startsWith('remove:')), isEmpty);
+      leadC.dispose();
+
+      // changeRole is owner-only (migration 0108) — the owner-row and
+      // assign-owner invariants are only reachable for an owner actor, and
+      // the owner can't demote themself (there's no self-branch).
+      final repo = _repo('u-owner');
+      final c = _ctl(repo, 'u-owner');
       await c.load();
       expect(await c.changeRole('u-owner', GroupRole.member), isFalse);
-      expect(c.error, contains('owner cannot be demoted'));
-      expect(await c.removeMember('u-owner'), isFalse);
-      expect(c.error, contains('owner cannot be removed'));
-      expect(repo.calls.where((x) => x.startsWith('setRole:') || x.startsWith('remove:')), isEmpty);
+      expect(c.error, contains('own role'));
+      expect(repo.calls.where((x) => x.startsWith('setRole:')), isEmpty);
       expect(repo.groups['g-1']!.roles['u-owner'], 'owner');
       // No role may become owner either (live CHECK / trigger).
       expect(await c.changeRole('u-mem', GroupRole.owner), isFalse);
@@ -187,9 +200,9 @@ void main() {
       final c = _ctl(repo, 'u-lead');
       await c.load();
       expect(c.canManageRoles, isFalse);
-      expect(await c.changeRole('u-mem', GroupRole.moderator), isFalse);
+      expect(await c.changeRole('u-mem', GroupRole.admin), isFalse);
       expect(c.error, contains('permission to change roles'));
-      expect(await c.setRolePermission(GroupRole.moderator, GroupPermission.createTest, granted: true), isFalse);
+      expect(await c.setRolePermission(GroupRole.admin, GroupPermission.createTest, granted: true), isFalse);
       expect(c.error, contains('manage-roles permission'));
       expect(repo.calls.where((x) => x.startsWith('setRole') || x.startsWith('setRolePermission')), isEmpty);
       expect(repo.groups['g-1']!.roles['u-mem'], 'member');
@@ -284,7 +297,7 @@ void main() {
       final own = _ctl(repo, 'u-owner');
       await own.load();
       // u-x is in g-2 only: not in this roster → refused before any call.
-      expect(await own.changeRole('u-x', GroupRole.leader), isFalse);
+      expect(await own.changeRole('u-x', GroupRole.admin), isFalse);
       expect(own.error, contains('not a member of this group'));
       expect(repo.calls.where((x) => x.startsWith('setRole:')), isEmpty);
       expect(repo.groups['g-2']!.roles['u-x'], 'member');
@@ -310,8 +323,10 @@ void main() {
         repo.roleGrants.add('g-1:moderator:MANAGE_ROLES');
         final c = _ctl(repo, u);
         await c.load();
-        expect(await c.changeRole(u, GroupRole.leader), isFalse, reason: u);
-        expect(c.error, contains(c.canManageRoles ? 'own role' : 'permission to change roles'));
+        expect(await c.changeRole(u, GroupRole.admin), isFalse, reason: u);
+        // Role changes are owner-only (migration 0108): only the real
+        // owner reaches the self-targeting check at all.
+        expect(c.error, contains(c.isOwner ? 'own role' : 'permission to change roles'));
         expect(repo.calls.where((x) => x.startsWith('setRole:')), isEmpty);
         c.dispose();
       }
@@ -333,7 +348,7 @@ void main() {
       await c.load();
       expect(c.canManageRolePermissions, isTrue);
       expect(await c.changeRole('u-mod', GroupRole.owner), isFalse);
-      expect(await c.changeRole('u-owner', GroupRole.moderator), isFalse);
+      expect(await c.changeRole('u-owner', GroupRole.admin), isFalse);
       expect(repo.calls.where((x) => x.startsWith('setRole:')), isEmpty);
       c.dispose();
     });
@@ -350,7 +365,7 @@ void main() {
       expect(c.accessDenied, isTrue);
       expect(c.hasManagementControls, isFalse);
       expect(c.canManageRolePermissions, isFalse);
-      expect(await c.setRolePermission(GroupRole.moderator, GroupPermission.createTest, granted: true), isFalse);
+      expect(await c.setRolePermission(GroupRole.admin, GroupPermission.createTest, granted: true), isFalse);
       expect(repo.calls.where((x) => x.startsWith('setRolePermission')), isEmpty);
       c.dispose();
     });
@@ -362,15 +377,15 @@ void main() {
       final c = _ctl(repo, 'u-owner');
       await c.load();
       await c.loadRolePermissions();
-      expect(c.rolePermissions.of(GroupRole.leader).length, 10);
-      expect(c.rolePermissions.of(GroupRole.moderator), isEmpty);
+      expect(c.rolePermissions.of(GroupRole.admin).length, 10);
+      expect(c.rolePermissions.of(GroupRole.admin), isEmpty);
       final before = repo.calls.length;
-      expect(await c.setRolePermission(GroupRole.moderator, GroupPermission.sendAnnouncement, granted: true), isTrue);
+      expect(await c.setRolePermission(GroupRole.admin, GroupPermission.sendAnnouncement, granted: true), isTrue);
       final after = repo.calls.sublist(before);
       expect(after.first, 'setRolePermission:g-1:moderator:SEND_ANNOUNCEMENT:true');
       expect(after.where((x) => x == 'rolePermissions:g-1').length, 1);
       expect(after.where((x) => x == 'permissionsFor:g-1').length, 1); // load()
-      expect(c.rolePermissions.has(GroupRole.moderator, GroupPermission.sendAnnouncement), isTrue);
+      expect(c.rolePermissions.has(GroupRole.admin, GroupPermission.sendAnnouncement), isTrue);
       // The moderator now really holds it (fake mirrors fn_has_permission).
       repo.currentUser = 'u-mod';
       final mod = _ctl(repo, 'u-mod');
@@ -380,8 +395,8 @@ void main() {
       mod.dispose();
       repo.currentUser = 'u-owner';
       // Revoke, then the moderator loses it.
-      expect(await c.setRolePermission(GroupRole.moderator, GroupPermission.sendAnnouncement, granted: false), isTrue);
-      expect(c.rolePermissions.has(GroupRole.moderator, GroupPermission.sendAnnouncement), isFalse);
+      expect(await c.setRolePermission(GroupRole.admin, GroupPermission.sendAnnouncement, granted: false), isTrue);
+      expect(c.rolePermissions.has(GroupRole.admin, GroupPermission.sendAnnouncement), isFalse);
       repo.currentUser = 'u-mod';
       final mod2 = _ctl(repo, 'u-mod');
       await mod2.load();
@@ -396,10 +411,10 @@ void main() {
       await c.load();
       await c.loadRolePermissions();
       final n = repo.calls.length;
-      expect(await c.setRolePermission(GroupRole.leader, GroupPermission.createTest, granted: true), isTrue);
+      expect(await c.setRolePermission(GroupRole.admin, GroupPermission.createTest, granted: true), isTrue);
       expect(repo.calls.length, n); // already granted
-      expect(await c.setRolePermission(GroupRole.leader, GroupPermission.createTest, granted: false), isTrue);
-      expect(c.rolePermissions.has(GroupRole.leader, GroupPermission.createTest), isFalse);
+      expect(await c.setRolePermission(GroupRole.admin, GroupPermission.createTest, granted: false), isTrue);
+      expect(c.rolePermissions.has(GroupRole.admin, GroupPermission.createTest), isFalse);
       repo.currentUser = 'u-lead';
       final lead = _ctl(repo, 'u-lead');
       await lead.load();
@@ -415,9 +430,9 @@ void main() {
       await c.load();
       await c.loadRolePermissions();
       repo.failNextWith = const _Boom();
-      expect(await c.setRolePermission(GroupRole.moderator, GroupPermission.createTest, granted: true), isFalse);
+      expect(await c.setRolePermission(GroupRole.admin, GroupPermission.createTest, granted: true), isFalse);
       expect(c.error, isNotNull);
-      expect(c.rolePermissions.has(GroupRole.moderator, GroupPermission.createTest), isFalse);
+      expect(c.rolePermissions.has(GroupRole.admin, GroupPermission.createTest), isFalse);
       expect(repo.calls.last, 'rolePermissions:g-1');
       c.dispose();
     });
@@ -442,8 +457,8 @@ void main() {
       final c = _ctl(repo, 'u-owner');
       await c.load();
       await c.loadRolePermissions();
-      final first = c.setRolePermission(GroupRole.moderator, GroupPermission.createTest, granted: true);
-      final second = c.setRolePermission(GroupRole.moderator, GroupPermission.editTest, granted: true);
+      final first = c.setRolePermission(GroupRole.admin, GroupPermission.createTest, granted: true);
+      final second = c.setRolePermission(GroupRole.admin, GroupPermission.editTest, granted: true);
       expect(await second, isFalse);
       expect(await first, isTrue);
       expect(repo.calls.where((x) => x.startsWith('setRolePermission')).length, 1);
@@ -480,7 +495,7 @@ void main() {
     testWidgets('section rows route to the existing screens (settings / members / tests)', (tester) async {
       final c = await _loaded('u-owner');
       final taps = <String>[];
-      tester.view.physicalSize = const Size(800, 1200);
+      tester.view.physicalSize = const Size(800, 2100);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       await tester.pumpWidget(

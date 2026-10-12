@@ -8,7 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:my_praperation/core/errors/app_error.dart';
 import 'package:my_praperation/features/group/domain/group_permission.dart';
 import 'package:my_praperation/features/group/domain/group_role.dart';
-import 'package:my_praperation/features/group/screens/group_hub_screen.dart';
+import 'package:my_praperation/features/group/screens/group_info_screen.dart';
 import 'package:my_praperation/features/group/state/group_hub_controller.dart';
 
 import 'fakes.dart';
@@ -108,9 +108,9 @@ void main() {
         ..seed(id: 'g-1', ownerId: 'u-me', members: {'u-2': 'member'});
       final c = _hub(repo);
       await c.load();
-      expect(await c.changeRole('u-2', GroupRole.leader), isTrue);
-      expect(c.members.firstWhere((m) => m.userId == 'u-2').role, 'leader');
-      expect(repo.calls, contains('setRole:g-1:u-2:leader'));
+      expect(await c.changeRole('u-2', GroupRole.admin), isTrue);
+      expect(c.members.firstWhere((m) => m.userId == 'u-2').role, 'admin');
+      expect(repo.calls, contains('setRole:g-1:u-2:admin'));
       expect(c.error, isNull);
       c.dispose();
     });
@@ -127,7 +127,7 @@ void main() {
         final c = _hub(repo);
         await c.load();
         expect(c.canManageRoles, isFalse);
-        expect(await c.changeRole('u-2', GroupRole.moderator), isFalse);
+        expect(await c.changeRole('u-2', GroupRole.admin), isFalse);
         expect(c.error, contains('permission'));
         expect(repo.calls.where((x) => x.startsWith('setRole')), isEmpty);
         expect(repo.groups['g-1']!.roles['u-2'], 'member');
@@ -149,7 +149,7 @@ void main() {
         await repo.setMemberRole(
           groupId: 'g-1',
           userId: 'u-2',
-          role: GroupRole.leader,
+          role: GroupRole.admin,
         );
         expect(repo.groups['g-1']!.roles['u-2'], 'member');
       },
@@ -165,23 +165,28 @@ void main() {
         ); // even with the permission
         final c = _hub(repo);
         await c.load();
-        expect(await c.changeRole('u-me', GroupRole.leader), isFalse);
-        expect(c.error, contains('own role'));
+        // Role changes are owner-only (migration 0108) — a plain member is
+        // refused before the self-targeting check is even reached.
+        expect(await c.changeRole('u-me', GroupRole.admin), isFalse);
+        expect(c.error, contains('permission to change roles'));
         expect(repo.calls.where((x) => x.startsWith('setRole')), isEmpty);
 
-        // LIVE (G3 audit): the "role changes" policy has no self-update
-        // branch — USING/CHECK are (role <> 'owner') AND MANAGE_ROLES — so
-        // a direct table update by a member matches 0 rows.
+        // LIVE: the "role changes" RLS USING clause actually IS
+        // `MANAGE_ROLES OR user_id = auth.uid()` — a bare self-update row
+        // DOES match (that's the real self-promotion hole this session
+        // found and closed). What actually stops it is the
+        // `fn_prevent_owner_removal` trigger (migration 0108), which runs
+        // on any row RLS lets through and rejects any role change from a
+        // non-owner — so the bypass now throws, it doesn't silently no-op.
         repo.roleGrants.clear();
-        await repo.setMemberRole(
-          groupId: 'g-1',
-          userId: 'u-me',
-          role: GroupRole.leader,
+        await expectLater(
+          repo.setMemberRole(groupId: 'g-1', userId: 'u-me', role: GroupRole.admin),
+          throwsA(isA<DataError>()),
         );
         expect(
           repo.groups['g-1']!.roles['u-me'],
           'member',
-          reason: 'live policy blocks self-role escalation',
+          reason: 'trigger blocks self-role escalation',
         );
         c.dispose();
       },
@@ -190,19 +195,24 @@ void main() {
     test(
       'owner protection: cannot demote the owner, cannot assign owner',
       () async {
+        // Role changes are owner-only (migration 0108) — these invariants
+        // (can't demote yourself out of being owner, can't hand 'owner' to
+        // anyone) are checked regardless of who's acting, so the actor here
+        // must actually be the owner to reach them.
         final repo = InMemoryGroupRepository()
           ..seed(
             id: 'g-1',
-            ownerId: 'u-owner',
-            members: {'u-me': 'leader', 'u-2': 'member'},
+            ownerId: 'u-me',
+            members: {'u-2': 'member'},
           );
-        repo.roleGrants.add('g-1:leader:MANAGE_ROLES');
         final c = _hub(repo);
         await c.load();
-        expect(c.canManageRoles, isTrue);
 
-        expect(await c.changeRole('u-owner', GroupRole.member), isFalse);
-        expect(c.error, contains('owner'));
+        // The owner can't demote themself via this action (the only way
+        // to stop being owner is role changes, which have no self-branch).
+        expect(await c.changeRole('u-me', GroupRole.member), isFalse);
+        expect(c.error, contains('own role'));
+        // 'owner' is never an assignable target, even for the owner.
         expect(await c.changeRole('u-2', GroupRole.owner), isFalse);
         expect(c.error, contains('cannot be assigned'));
         expect(repo.calls.where((x) => x.startsWith('setRole')), isEmpty);
@@ -211,15 +221,14 @@ void main() {
           isNot(contains(GroupRole.owner)),
         );
 
-        // Server side (live): owner rows never match USING, and CHECK
-        // forbids a row becoming 'owner' — so bypassing the client changes
-        // nothing / raises.
-        await repo.setMemberRole(
-          groupId: 'g-1',
-          userId: 'u-owner',
-          role: GroupRole.member,
+        // Server side (live): the trigger blocks demoting the owner row
+        // regardless of actor — bypassing the client raises, it doesn't
+        // silently no-op.
+        await expectLater(
+          repo.setMemberRole(groupId: 'g-1', userId: 'u-me', role: GroupRole.member),
+          throwsA(isA<DataError>()),
         );
-        expect(repo.groups['g-1']!.roles['u-owner'], 'owner');
+        expect(repo.groups['g-1']!.roles['u-me'], 'owner');
         await expectLater(
           repo.setMemberRole(
             groupId: 'g-1',
@@ -243,7 +252,7 @@ void main() {
         );
       final c = _hub(repo);
       await c.load();
-      expect(await c.changeRole('u-elsewhere', GroupRole.leader), isFalse);
+      expect(await c.changeRole('u-elsewhere', GroupRole.admin), isFalse);
       expect(c.error, contains('not a member'));
       expect(repo.calls.where((x) => x.startsWith('setRole')), isEmpty);
       expect(
@@ -262,7 +271,7 @@ void main() {
       repo.failNextWith = const DataError(
         message: 'invalid input value for enum group_role: "admin"',
       );
-      expect(await c.changeRole('u-2', GroupRole.leader), isFalse);
+      expect(await c.changeRole('u-2', GroupRole.admin), isFalse);
       expect(c.error, contains('enum'));
       c.dispose();
     });
@@ -275,12 +284,12 @@ void main() {
       expect(await c.changeRole('u-2', GroupRole.member), isTrue);
       expect(repo.roleCalls, 0);
 
-      final first = c.changeRole('u-2', GroupRole.leader);
-      final second = c.changeRole('u-2', GroupRole.moderator);
+      final first = c.changeRole('u-2', GroupRole.admin);
+      final second = c.changeRole('u-2', GroupRole.admin);
       expect(await second, isFalse);
       expect(await first, isTrue);
       expect(repo.roleCalls, 1);
-      expect(repo.groups['g-1']!.roles['u-2'], 'leader');
+      expect(repo.groups['g-1']!.roles['u-2'], 'admin');
       c.dispose();
     });
 
@@ -290,7 +299,7 @@ void main() {
       final c = _hub(repo);
       await c.load();
       repo.failNextWith = const DataError(message: 'Network error.');
-      expect(await c.changeRole('u-2', GroupRole.leader), isFalse);
+      expect(await c.changeRole('u-2', GroupRole.admin), isFalse);
       expect(c.error, 'Network error.');
       expect(c.members.firstWhere((m) => m.userId == 'u-2').role, 'member');
       expect(c.isBusy, isFalse);
@@ -305,13 +314,13 @@ void main() {
     ) async {
       // Tall viewport: the hub's lazy ListView must build the roster below
       // the G6 rules and G7 announcements sections too.
-      tester.view.physicalSize = const Size(800, 2800);
+      tester.view.physicalSize = const Size(800, 3700);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       final c = _hub(repo);
       await tester.pumpWidget(
         MaterialApp(
-          home: GroupHubScreen(groupId: 'g-1', controller: c),
+          home: GroupInfoScreen(groupId: 'g-1', controller: c),
         ),
       );
       await tester.pumpAndSettle();
@@ -332,13 +341,13 @@ void main() {
       await tester.tap(find.byKey(const Key('role_menu_u-2')));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('role_option_u-2_owner')), findsNothing);
-      await tester.tap(find.byKey(const Key('role_option_u-2_leader')));
+      await tester.tap(find.byKey(const Key('role_option_u-2_admin')));
       await tester.pumpAndSettle();
       expect(find.text('Change role?'), findsOneWidget);
       await tester.tap(find.byKey(const Key('confirm_role_change')));
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('role_badge_leader')), findsOneWidget);
-      expect(repo.groups['g-1']!.roles['u-2'], 'leader');
+      expect(find.byKey(const Key('role_badge_admin')), findsOneWidget);
+      expect(repo.groups['g-1']!.roles['u-2'], 'admin');
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();

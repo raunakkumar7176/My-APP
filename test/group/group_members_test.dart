@@ -7,7 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:my_praperation/core/errors/app_error.dart';
 import 'package:my_praperation/core/models/group_member.dart';
 import 'package:my_praperation/features/group/domain/group_role.dart';
-import 'package:my_praperation/features/group/screens/group_hub_screen.dart';
+import 'package:my_praperation/features/group/screens/group_info_screen.dart';
 import 'package:my_praperation/features/group/screens/group_members_screen.dart';
 import 'package:my_praperation/features/group/state/group_hub_controller.dart';
 
@@ -101,7 +101,7 @@ void main() {
       expect(c.filteredMembers.map((m) => m.userId), ['u-neha']);
       c.setMemberQuery('asha'); // leader, not member → nothing
       expect(c.filteredMembers, isEmpty);
-      c.setRoleFilter(GroupRole.leader);
+      c.setRoleFilter(GroupRole.admin);
       expect(c.filteredMembers.map((m) => m.userId), ['u-asha']);
 
       c.clearMemberFilters();
@@ -152,7 +152,7 @@ void main() {
       InMemoryGroupRepository repo, {
       String user = 'u-me',
     }) async {
-      tester.view.physicalSize = const Size(800, 1600);
+      tester.view.physicalSize = const Size(800, 2500);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       final c = _hub(repo, user: user);
@@ -176,7 +176,7 @@ void main() {
       expect(find.byKey(const Key('member_code_u-asha')), findsOneWidget);
       expect(find.byKey(const Key('member_code_u-ravi')), findsNothing);
       expect(find.byKey(const Key('role_badge_owner')), findsOneWidget);
-      expect(find.byKey(const Key('role_badge_leader')), findsOneWidget);
+      expect(find.byKey(const Key('role_badge_admin')), findsOneWidget);
       await tester.pumpWidget(const SizedBox());
       c.dispose();
     });
@@ -253,13 +253,13 @@ void main() {
 
         await tester.tap(find.byKey(const Key('role_menu_u-neha')));
         await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('role_option_u-neha_moderator')));
+        await tester.tap(find.byKey(const Key('role_option_u-neha_admin')));
         await tester.pumpAndSettle();
-        expect(find.text('Neha Singh: Member → Moderator'), findsOneWidget);
+        expect(find.text('Neha Singh: Member → Admin'), findsOneWidget);
         await tester.tap(find.byKey(const Key('confirm_role_change')));
         await tester.pumpAndSettle();
-        expect(repo.groups['g-1']!.roles['u-neha'], 'moderator');
-        expect(find.text('Neha Singh is now Moderator.'), findsOneWidget);
+        expect(repo.groups['g-1']!.roles['u-neha'], 'admin');
+        expect(find.text('Neha Singh is now Admin.'), findsOneWidget);
         await tester.pumpWidget(const SizedBox());
         c.dispose();
       },
@@ -312,12 +312,12 @@ void main() {
       final c = _hub(repo);
       // Tall viewport: the roster sits below the G6/G7 sections in the
       // hub's lazy ListView.
-      tester.view.physicalSize = const Size(800, 2800);
+      tester.view.physicalSize = const Size(800, 3700);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       await tester.pumpWidget(
         MaterialApp(
-          home: GroupHubScreen(groupId: 'g-1', controller: c),
+          home: GroupInfoScreen(groupId: 'g-1', controller: c),
         ),
       );
       await tester.pumpAndSettle();

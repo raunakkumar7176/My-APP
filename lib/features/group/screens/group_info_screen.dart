@@ -7,27 +7,25 @@ import '../../../core/constants/theme/app_colors.dart';
 import '../../../core/theme/app_colors.dart' as premium;
 import '../../../core/theme/app_radius.dart';
 import '../../../core/models/group.dart';
-import '../../../core/models/group_member.dart';
 import '../../../core/services/supabase_service.dart';
 import '../../test/data/test_repository.dart';
+import '../../test/domain/test_lifecycle.dart';
+import '../../test/widgets/test_formatters.dart';
 import '../data/notification_repository.dart';
-import '../domain/group_role.dart';
 import '../state/group_hub_controller.dart';
 import '../widgets/group_announcements_section.dart';
 import '../widgets/group_avatar.dart';
+import '../widgets/group_management_section.dart';
 import '../widgets/group_rules_section.dart';
 import '../widgets/invite_member_sheet.dart';
 import '../widgets/join_request_queue.dart';
+import '../widgets/member_tile.dart';
 import '../widgets/outgoing_invitations_section.dart';
 import '../widgets/role_permissions_sheet.dart';
 
 /// Dedicated WhatsApp/Telegram-style Group Info & Management Screen.
 class GroupInfoScreen extends StatefulWidget {
-  const GroupInfoScreen({
-    required this.groupId,
-    this.controller,
-    super.key,
-  });
+  const GroupInfoScreen({required this.groupId, this.controller, super.key});
 
   final String groupId;
   final GroupHubController? controller;
@@ -44,16 +42,20 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
   void initState() {
     super.initState();
     _owns = widget.controller == null;
-    _c = widget.controller ??
+    _c =
+        widget.controller ??
         GroupHubController(
           groupId: widget.groupId,
           notifications: const SupabaseNotificationRepository(),
           tests: const SupabaseTestRepository(),
         );
     _c.addListener(_onChanged);
-    if (_owns) {
-      _c.load();
-    }
+    // Unconditional, even for an injected controller: a caller that hands
+    // in a controller it hasn't loaded yet must still see real data, not
+    // this screen's "could not load" fallback. load() is cheap to call on
+    // an already-loaded controller (guarded against re-entrancy) — this
+    // matches the previous GroupHubScreen's behavior exactly.
+    _c.load();
   }
 
   void _onChanged() {
@@ -83,6 +85,16 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
 
   Future<void> _openTests() async {
     await context.push('/groups/${widget.groupId}/tests');
+    if (mounted) await _c.refresh();
+  }
+
+  Future<void> _openMembers() async {
+    await context.push('/groups/${widget.groupId}/members');
+    if (mounted) await _c.refresh();
+  }
+
+  Future<void> _openNotifications() async {
+    await context.push('/groups/${widget.groupId}/notifications');
     if (mounted) await _c.refresh();
   }
 
@@ -182,7 +194,9 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
           '${widget.groupId}/avatar_${DateTime.now().millisecondsSinceEpoch}.jpg';
       String? publicUrl;
       try {
-        await client.storage.from('group-avatars').uploadBinary(
+        await client.storage
+            .from('group-avatars')
+            .uploadBinary(
               path,
               bytes,
               fileOptions: const FileOptions(
@@ -193,7 +207,9 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
         publicUrl = client.storage.from('group-avatars').getPublicUrl(path);
       } catch (_) {
         final fallbackPath = 'groups/${widget.groupId}/avatar.jpg';
-        await client.storage.from('avatars').uploadBinary(
+        await client.storage
+            .from('avatars')
+            .uploadBinary(
               fallbackPath,
               bytes,
               fileOptions: const FileOptions(
@@ -296,7 +312,11 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.lock_outline, size: 56, color: AppColors.error),
+                const Icon(
+                  Icons.lock_outline,
+                  size: 56,
+                  color: AppColors.error,
+                ),
                 const SizedBox(height: 16),
                 Text(
                   _c.hasLeft ? 'You left this group' : 'Group not available',
@@ -311,7 +331,9 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                       : 'This group does not exist, or you are not a member.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                    color: isDark
+                        ? const Color(0xFF94A3B8)
+                        : const Color(0xFF64748B),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -344,11 +366,25 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
     }
 
     return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+      backgroundColor: isDark
+          ? const Color(0xFF0F172A)
+          : const Color(0xFFF8FAFC),
       appBar: AppBar(
         title: const Text('Group Info'),
         elevation: 0.5,
         actions: [
+          if (_c.hasNotifications)
+            IconButton(
+              key: const Key('group_notifications_action'),
+              tooltip: 'Notifications',
+              icon: Badge.count(
+                key: const Key('group_notifications_badge'),
+                count: _c.unreadNotifications ?? 0,
+                isLabelVisible: _c.hasUnreadNotifications,
+                child: const Icon(Icons.notifications_outlined),
+              ),
+              onPressed: _openNotifications,
+            ),
           if (_c.canEditBasics)
             IconButton(
               key: const Key('group_settings_action'),
@@ -370,6 +406,25 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
             // Section 1: Quick Stats (Tests hosted, Total members)
             _buildStatsSection(context, group, isDark),
             const SizedBox(height: 20),
+
+            // "What's happening" — live/upcoming/completed test counts, the
+            // next scheduled test, and the caller's own recent activity.
+            _overviewSection(context),
+            const SizedBox(height: 20),
+
+            // One surface routing to every management screen this caller's
+            // server-reported permissions unlock; renders nothing for a
+            // plain member.
+            if (_c.hasManagementControls) ...[
+              GroupManagementSection(
+                controller: _c,
+                onOpenSettings: _openSettings,
+                onOpenMembers: _openMembers,
+                onOpenTests: _openTests,
+                onOpenRolePermissions: _openRolePermissions,
+              ),
+              const SizedBox(height: 20),
+            ],
 
             // Section 2: Member List with Role Badges
             _buildMembersSection(context, isDark),
@@ -435,7 +490,8 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
         borderRadius: AppRadius.xlBorder,
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF2563EB).withValues(alpha: isDark ? 0.25 : 0.3),
+            color: const Color(0xFF2563EB)
+                .withValues(alpha: isDark ? 0.25 : 0.3),
             blurRadius: 24,
             offset: const Offset(0, 10),
           ),
@@ -502,6 +558,16 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
               color: Colors.white,
             ),
           ),
+          const SizedBox(height: 4),
+          Text(
+            '${_c.memberCount} ${_c.memberCount == 1 ? 'member' : 'members'} · '
+            '${_c.myRole.label} · ${_c.privacy.label}',
+            key: const Key('group_header_meta'),
+            style: TextStyle(
+              fontSize: 12.5,
+              color: Colors.white.withValues(alpha: 0.8),
+            ),
+          ),
           const SizedBox(height: 6),
 
           // Privacy Pill Badge
@@ -518,8 +584,8 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                   group.privacy == 'public'
                       ? Icons.public
                       : (group.privacy == 'restricted'
-                          ? Icons.shield_outlined
-                          : Icons.lock_outline),
+                            ? Icons.shield_outlined
+                            : Icons.lock_outline),
                   size: 13,
                   color: Colors.white,
                 ),
@@ -551,6 +617,179 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// "What's happening in my study group?" — active/upcoming/completed test
+  /// counts, the next upcoming test (if any), and the caller's own recent
+  /// notifications for this group. Every count/row is real data already
+  /// loaded by the hub controller — nothing here is invented or guessed.
+  Widget _overviewSection(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Overview', style: theme.textTheme.titleMedium),
+        const SizedBox(height: 8),
+        Row(
+          key: const Key('overview_stats_row'),
+          children: [
+            Expanded(
+              child: _overviewStatCard(
+                theme,
+                'Live',
+                _c.liveTestCount,
+                Icons.podcasts_outlined,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _overviewStatCard(
+                theme,
+                'Upcoming',
+                _c.upcomingTestCount,
+                Icons.event_outlined,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _overviewStatCard(
+                theme,
+                'Completed',
+                _c.previousTestCount,
+                Icons.check_circle_outline,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        _upcomingTestCard(context),
+        const SizedBox(height: 12),
+        _recentActivityCard(context),
+      ],
+    );
+  }
+
+  Widget _overviewStatCard(
+    ThemeData theme,
+    String label,
+    int count,
+    IconData icon,
+  ) {
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+        child: Column(
+          children: [
+            Icon(icon, size: 18, color: theme.colorScheme.primary),
+            const SizedBox(height: 6),
+            Text('$count', style: theme.textTheme.titleLarge),
+            Text(label, style: theme.textTheme.bodySmall),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _upcomingTestCard(BuildContext context) {
+    final theme = Theme.of(context);
+    final test = _c.upcomingTest;
+    if (test == null) {
+      return Card(
+        key: const Key('overview_no_upcoming_test'),
+        margin: EdgeInsets.zero,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Text(
+            "No tests yet\nYour group hasn't scheduled an upcoming test.",
+            style: theme.textTheme.bodySmall,
+          ),
+        ),
+      );
+    }
+    return Card(
+      key: Key('overview_upcoming_test_${test.id}'),
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Upcoming test', style: theme.textTheme.labelMedium),
+            const SizedBox(height: 4),
+            Text(test.title, style: theme.textTheme.titleSmall),
+            const SizedBox(height: 4),
+            Text(
+              '${TestLifecycle.statusLabel(test.status)} · '
+              '${TestFormatters.duration(test.durationSec)}'
+              '${test.startsAt != null ? ' · starts ${TestFormatters.dateTime(test.startsAt)}' : ''}',
+              style: theme.textTheme.bodySmall,
+            ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                key: Key('overview_view_test_${test.id}'),
+                onPressed: () => context.push('/tests/${test.id}'),
+                child: const Text('View Test'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// The caller's own recent notifications for this group. Labelled
+  /// honestly as personal activity — there is no member-readable,
+  /// cross-user activity log for group events, so this can never be a
+  /// shared "Alice joined / Bob completed a test" timeline without new
+  /// backend work.
+  Widget _recentActivityCard(BuildContext context) {
+    final theme = Theme.of(context);
+    final activity = _c.recentActivity;
+    if (activity == null) {
+      // Not loaded / failed — never worth a red error state on Overview.
+      return const SizedBox.shrink();
+    }
+    return Card(
+      key: const Key('overview_recent_activity'),
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Recent activity', style: theme.textTheme.labelMedium),
+            const SizedBox(height: 8),
+            if (activity.isEmpty)
+              Text(
+                'No recent activity',
+                key: const Key('overview_activity_empty'),
+                style: theme.textTheme.bodySmall,
+              )
+            else
+              for (final n in activity)
+                Padding(
+                  key: Key('overview_activity_${n.id}'),
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(n.title, style: theme.textTheme.bodyMedium),
+                      Text(
+                        n.body,
+                        style: theme.textTheme.bodySmall,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+          ],
+        ),
       ),
     );
   }
@@ -644,14 +883,19 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                     children: [
                       Text(
                         title,
-                        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14.5),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14.5,
+                        ),
                       ),
                       const SizedBox(height: 2),
                       Text(
                         subtitle,
                         style: TextStyle(
                           fontSize: 12.5,
-                          color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                          color: isDark
+                              ? const Color(0xFF94A3B8)
+                              : const Color(0xFF64748B),
                         ),
                       ),
                     ],
@@ -659,7 +903,9 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                 ),
                 Icon(
                   Icons.chevron_right,
-                  color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
+                  color: isDark
+                      ? const Color(0xFF64748B)
+                      : const Color(0xFF94A3B8),
                 ),
               ],
             ),
@@ -670,7 +916,8 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
   }
 
   Widget _buildStatsSection(BuildContext context, Group group, bool isDark) {
-    final testsCount = _c.liveTestCount + _c.upcomingTestCount + _c.previousTestCount;
+    final testsCount =
+        _c.liveTestCount + _c.upcomingTestCount + _c.previousTestCount;
     final membersCount = _c.memberCount;
 
     return Row(
@@ -688,6 +935,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
         const SizedBox(width: 12),
         Expanded(
           child: InkWell(
+            key: const Key('open_group_tests'),
             onTap: _openTests,
             borderRadius: AppRadius.xlBorder,
             child: _statCard(
@@ -745,7 +993,9 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                   style: TextStyle(
                     fontSize: 12.5,
                     fontWeight: FontWeight.w600,
-                    color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                    color: isDark
+                        ? const Color(0xFF94A3B8)
+                        : const Color(0xFF64748B),
                   ),
                 ),
               ),
@@ -786,186 +1036,87 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
           color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
         ),
       ),
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      clipBehavior: Clip.antiAlias,
+      // MemberTile's ListTile paints its background/ink on the nearest
+      // Material ancestor — without this, Flutter asserts.
+      child: Material(
+        color: Colors.transparent,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Members (${members.length})',
-                key: const Key('hub_members_heading'),
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
               Row(
-                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  if (_c.canManageRoles)
-                    IconButton(
-                      tooltip: 'Role permissions',
-                      icon: const Icon(Icons.admin_panel_settings_outlined, size: 20),
-                      onPressed: _openRolePermissions,
+                  Text(
+                    'Members (${members.length})',
+                    key: const Key('hub_members_heading'),
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
                     ),
-                  if (canManage)
-                    TextButton.icon(
-                      key: const Key('invite_member_action'),
-                      onPressed: _inviteMember,
-                      icon: const Icon(Icons.person_add_alt, size: 16),
-                      label: const Text('Invite'),
-                    ),
+                  ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (_c.canManageRoles)
+                        IconButton(
+                          tooltip: 'Role permissions',
+                          icon: const Icon(
+                            Icons.admin_panel_settings_outlined,
+                            size: 20,
+                          ),
+                          onPressed: _openRolePermissions,
+                        ),
+                      if (canManage)
+                        TextButton.icon(
+                          key: const Key('invite_member_action'),
+                          onPressed: _inviteMember,
+                          icon: const Icon(Icons.person_add_alt, size: 16),
+                          label: const Text('Invite'),
+                        ),
+                    ],
+                  ),
                 ],
               ),
+              const SizedBox(height: 8),
+              if (members.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: Text('No members found.'),
+                )
+              else
+                ListView.separated(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: members.length,
+                  separatorBuilder: (_, _) => Divider(
+                    height: 1,
+                    color: isDark
+                        ? const Color(0xFF334155)
+                        : const Color(0xFFF1F5F9),
+                  ),
+                  itemBuilder: (context, index) {
+                    final m = members[index];
+                    return _FadeInListItem(
+                      index: index,
+                      child: MemberTile(
+                        key: ValueKey('member_tile_${m.userId}'),
+                        member: m,
+                        controller: _c,
+                        onTap: () => MemberDetailSheet.show(
+                          context,
+                          member: m,
+                          groupName: _c.group?.name ?? '',
+                          isMe: m.userId == _c.currentUserId,
+                        ),
+                      ),
+                    );
+                  },
+                ),
             ],
           ),
-          const SizedBox(height: 8),
-          if (members.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 12),
-              child: Text('No members found.'),
-            )
-          else
-            ListView.separated(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: members.length,
-              separatorBuilder: (_, _) => Divider(
-                height: 1,
-                color: isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9),
-              ),
-              itemBuilder: (context, index) {
-                final m = members[index];
-                return _FadeInListItem(
-                  index: index,
-                  child: _memberTile(context, m, isDark),
-                );
-              },
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _memberTile(BuildContext context, GroupMember m, bool isDark) {
-    final isMe = m.userId == _c.currentUserId;
-    final role = GroupRole.fromDb(m.role);
-
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      leading: CircleAvatar(
-        radius: 18,
-        backgroundColor: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
-        child: Text(
-          m.displayName.isNotEmpty ? m.displayName[0].toUpperCase() : 'U',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            color: isDark ? Colors.white : Colors.black87,
-          ),
-        ),
-      ),
-      title: Row(
-        children: [
-          Flexible(
-            child: Text(
-              m.displayName + (isMe ? ' (You)' : ''),
-              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          const SizedBox(width: 8),
-          _roleBadge(role, isDark),
-        ],
-      ),
-      subtitle: m.studentCode != null && m.studentCode!.isNotEmpty
-          ? Text(
-              m.studentCode!,
-              style: TextStyle(
-                fontSize: 12,
-                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-              ),
-            )
-          : null,
-      trailing: _c.canManageRoles && !isMe && !role.isOwner
-          ? PopupMenuButton<String>(
-              icon: const Icon(Icons.more_vert, size: 18),
-              onSelected: (val) async {
-                if (val == 'remove') {
-                  final ok = await _c.removeMember(m.userId);
-                  if (ok && mounted) _snack('Member removed');
-                } else if (val == 'make_leader') {
-                  final ok = await _c.changeRole(m.userId, GroupRole.leader);
-                  if (ok && mounted) _snack('Role updated to Leader');
-                } else if (val == 'make_mod') {
-                  final ok = await _c.changeRole(m.userId, GroupRole.moderator);
-                  if (ok && mounted) _snack('Role updated to Moderator');
-                } else if (val == 'make_member') {
-                  final ok = await _c.changeRole(m.userId, GroupRole.member);
-                  if (ok && mounted) _snack('Role updated to Member');
-                }
-              },
-              itemBuilder: (_) => [
-                const PopupMenuItem(
-                  value: 'make_leader',
-                  child: Text('Promote to Leader'),
-                ),
-                const PopupMenuItem(
-                  value: 'make_mod',
-                  child: Text('Promote to Moderator'),
-                ),
-                const PopupMenuItem(
-                  value: 'make_member',
-                  child: Text('Set as Member'),
-                ),
-                const PopupMenuItem(
-                  value: 'remove',
-                  child: Text('Remove from Group', style: TextStyle(color: AppColors.error)),
-                ),
-              ],
-            )
-          : null,
-    );
-  }
-
-  Widget _roleBadge(GroupRole role, bool isDark) {
-    String label;
-    Color bg;
-    Color text;
-
-    switch (role) {
-      case GroupRole.owner:
-        label = '👑 Owner';
-        bg = isDark ? const Color(0xFF3B2814) : const Color(0xFFFEF3C7);
-        text = isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309);
-        break;
-      case GroupRole.leader:
-        label = '⭐ Leader';
-        bg = isDark ? const Color(0xFF143026) : const Color(0xFFDCFCE7);
-        text = isDark ? const Color(0xFF34D399) : const Color(0xFF15803D);
-        break;
-      case GroupRole.moderator:
-        label = '🛡️ Mod';
-        bg = isDark ? const Color(0xFF2E1C40) : const Color(0xFFF3E8FF);
-        text = isDark ? const Color(0xFFC084FC) : const Color(0xFF7E22CE);
-        break;
-      case GroupRole.member:
-        return const SizedBox.shrink();
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 10,
-          fontWeight: FontWeight.w700,
-          color: text,
         ),
       ),
     );
@@ -988,7 +1139,11 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
         children: [
           const Row(
             children: [
-              Icon(Icons.warning_amber_rounded, color: AppColors.error, size: 20),
+              Icon(
+                Icons.warning_amber_rounded,
+                color: AppColors.error,
+                size: 20,
+              ),
               SizedBox(width: 8),
               Text(
                 'Danger Zone',
@@ -1011,25 +1166,10 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
             ),
           ),
           const SizedBox(height: 14),
-          if (isOwner)
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                key: const Key('delete_group_button'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.error,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-                onPressed: _deleteGroup,
-                icon: const Icon(Icons.delete_forever, size: 18),
-                label: const Text(
-                  'Delete Group',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ),
-            )
-          else
+          // Leave and Delete are independent actions (an owner who can
+          // always delete still can't leave without transferring
+          // ownership first) — rendered separately, not else-if.
+          if (_c.canLeave)
             SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
@@ -1046,7 +1186,38 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                   style: TextStyle(fontWeight: FontWeight.bold),
                 ),
               ),
+            )
+          else
+            Text(
+              _c.leaveBlockedReason,
+              key: const Key('leave_blocked_note'),
+              style: TextStyle(
+                fontSize: 12.5,
+                color: isDark
+                    ? const Color(0xFFFCA5A5)
+                    : const Color(0xFF991B1B),
+              ),
             ),
+          if (_c.canDeleteGroup) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                key: const Key('delete_group_button'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.error,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+                onPressed: _deleteGroup,
+                icon: const Icon(Icons.delete_forever, size: 18),
+                label: const Text(
+                  'Delete Group',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );

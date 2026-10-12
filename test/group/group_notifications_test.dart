@@ -12,7 +12,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:my_praperation/core/errors/app_error.dart';
 import 'package:my_praperation/core/models/app_notification.dart';
 import 'package:my_praperation/features/group/data/notification_repository.dart';
-import 'package:my_praperation/features/group/screens/group_hub_screen.dart';
+import 'package:my_praperation/features/group/screens/group_info_screen.dart';
 import 'package:my_praperation/features/group/screens/group_notifications_screen.dart';
 import 'package:my_praperation/features/group/state/group_hub_controller.dart';
 import 'package:my_praperation/features/group/state/group_notifications_controller.dart';
@@ -420,7 +420,7 @@ void main() {
         );
         await _pump(
           tester,
-          GroupHubScreen(groupId: 'g-1', controller: hub),
+          GroupInfoScreen(groupId: 'g-1', controller: hub),
           height: 3600,
         );
         expect(hub.unreadNotifications, 2);
@@ -463,7 +463,7 @@ void main() {
         );
         await _pump(
           tester,
-          GroupHubScreen(groupId: 'g-1', controller: hub),
+          GroupInfoScreen(groupId: 'g-1', controller: hub),
           height: 3600,
         );
         expect(hub.hasNotifications, isFalse);
