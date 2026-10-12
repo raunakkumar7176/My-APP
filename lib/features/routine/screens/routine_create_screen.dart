@@ -84,6 +84,8 @@ class _RoutineCreateScreenState extends State<RoutineCreateScreen> {
 
   bool get _isEditMode => widget.routineId != null;
 
+  bool get _isAcademicType => Routine.isAcademicType(_sessionType);
+
   @override
   void initState() {
     super.initState();
@@ -277,7 +279,9 @@ class _RoutineCreateScreenState extends State<RoutineCreateScreen> {
       }
 
       final title = RoutineSchedule.composeTitle(
-        base: _titleController.text,
+        base: _titleController.text.trim().isEmpty && !_isAcademicType
+            ? Routine.labelForSessionType(_sessionType)
+            : _titleController.text,
         topic: _selectedTopic,
         activity: _selectedActivity,
       );
@@ -367,14 +371,18 @@ class _RoutineCreateScreenState extends State<RoutineCreateScreen> {
           padding: const EdgeInsets.all(16),
           children: [
             if (_error != null) _buildErrorBanner(),
-            _buildSubjectDropdown(),
+            _buildSessionTypePicker(),
             const SizedBox(height: 16),
-            if (_selectedSubjectId != null) ...[
-              _buildTopicDropdown(),
+            if (_isAcademicType) ...[
+              _buildSubjectDropdown(),
+              const SizedBox(height: 16),
+              if (_selectedSubjectId != null) ...[
+                _buildTopicDropdown(),
+                const SizedBox(height: 16),
+              ],
+              _buildActivityDropdown(),
               const SizedBox(height: 16),
             ],
-            _buildActivityDropdown(),
-            const SizedBox(height: 16),
             _buildTitleField(),
             const SizedBox(height: 16),
             _buildTimeRow(),
@@ -382,8 +390,6 @@ class _RoutineCreateScreenState extends State<RoutineCreateScreen> {
             _buildDurationField(),
             const SizedBox(height: 16),
             _buildWeekdayPicker(),
-            const SizedBox(height: 16),
-            _buildSessionTypePicker(),
             const SizedBox(height: 16),
             _buildReminderSwitch(),
             const SizedBox(height: 16),
@@ -428,7 +434,7 @@ class _RoutineCreateScreenState extends State<RoutineCreateScreen> {
       controller: _titleController,
       decoration: InputDecoration(
         labelText: 'Title (optional)',
-        hintText: 'e.g. Morning study',
+        hintText: _isAcademicType ? 'e.g. Morning study' : 'e.g. Evening walk',
         helperText: 'Shown as: $preview',
         border: const OutlineInputBorder(),
       ),
@@ -659,9 +665,18 @@ class _RoutineCreateScreenState extends State<RoutineCreateScreen> {
             for (final type in Routine.sessionTypes)
               ChoiceChip(
                 key: Key('routine_session_type_$type'),
+                avatar: Icon(Routine.iconForSessionType(type), size: 16),
                 label: Text(Routine.labelForSessionType(type)),
                 selected: _sessionType == type,
-                onSelected: (_) => setState(() => _sessionType = type),
+                onSelected: (_) => setState(() {
+                  _sessionType = type;
+                  if (!Routine.isAcademicType(type)) {
+                    _selectedSubjectId = null;
+                    _selectedTopic = null;
+                    _selectedActivity = null;
+                    _topics = [];
+                  }
+                }),
               ),
           ],
         ),

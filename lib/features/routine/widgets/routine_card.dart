@@ -39,7 +39,7 @@ class RoutineCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(
-                  isCompleted ? Icons.check_circle : Icons.schedule,
+                  isCompleted ? Icons.check_circle : routine.sessionTypeIcon,
                   color: isCompleted ? AppColors.success : AppColors.primaryLight,
                 ),
               ),

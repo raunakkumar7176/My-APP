@@ -6,7 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../core/logging/app_logger.dart';
 import '../core/models/referral_status.dart';
-import '../core/services/academic_alarm_service.dart';
+import '../core/services/notifications/routine_scheduler_service.dart';
 import '../core/services/profile_service.dart';
 import '../core/services/push_notification_service.dart';
 import '../core/services/settings/library_mode_controller.dart';
@@ -195,7 +195,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   Future<void> _resyncRoutineAlarms() async {
     try {
       final routines = await const SupabaseRoutineRepository().list();
-      await AcademicAlarmService.resyncAlarms(routines);
+      await RoutineSchedulerService.instance.rescheduleAllActive(routines);
     } catch (e) {
       AppLogger.warning('AppShell: routine alarm resync failed: $e');
     }

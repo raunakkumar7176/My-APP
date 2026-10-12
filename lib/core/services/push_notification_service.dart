@@ -18,6 +18,7 @@ import '../models/app_notification.dart';
 import 'auth_service.dart';
 import 'device_identity.dart';
 import 'device_token_service.dart';
+import 'notifications/routine_scheduler_service.dart';
 import 'single_device_enforcer.dart';
 
 /// One Android notification channel per notification "family" (Phase 9) —
@@ -135,6 +136,7 @@ class PushNotificationService implements PushPermissionGateway {
   static const _prefsAskedKey = 'push_permission_asked_at';
 
   final FlutterLocalNotificationsPlugin _local = FlutterLocalNotificationsPlugin();
+  FlutterLocalNotificationsPlugin get local => _local;
   DeviceTokenService _tokenService = SupabaseDeviceTokenService();
   bool _initialized = false;
   Future<void>? _initFuture;
@@ -209,6 +211,14 @@ class PushNotificationService implements PushPermissionGateway {
     await _local.initialize(
       const InitializationSettings(android: androidInit),
       onDidReceiveNotificationResponse: (details) {
+        if (details.actionId == RoutineSchedulerService.actionDone) {
+          RoutineSchedulerService.handleDoneAction(details.payload ?? '');
+          return;
+        }
+        if (details.actionId == RoutineSchedulerService.actionSnooze) {
+          RoutineSchedulerService.handleSnoozeAction(details.payload ?? '');
+          return;
+        }
         if (details.actionId == _snoozeActionId) {
           _handleSnooze(details);
           return;
@@ -227,6 +237,8 @@ class PushNotificationService implements PushPermissionGateway {
           _navigateToPath(payload);
         }
       },
+      onDidReceiveBackgroundNotificationResponse:
+          routineBackgroundNotificationResponseHandler,
     );
   }
 
@@ -316,6 +328,20 @@ class PushNotificationService implements PushPermissionGateway {
         playSound: false,
         enableVibration: true,
         vibrationPattern: Int64List.fromList(const [0, 150, 100, 150]),
+      ),
+    );
+
+    // Register Google Tasks style exact routine start channel:
+    await androidPlugin.createNotificationChannel(
+      AndroidNotificationChannel(
+        RoutineSchedulerService.channelId,
+        RoutineSchedulerService.channelName,
+        description: RoutineSchedulerService.channelDesc,
+        importance: Importance.max,
+        playSound: !libraryMode,
+        sound: const RawResourceAndroidNotificationSound('routine_start'),
+        enableVibration: true,
+        vibrationPattern: Int64List.fromList(const [0, 1000, 500, 1000]),
       ),
     );
 
@@ -440,15 +466,16 @@ class PushNotificationService implements PushPermissionGateway {
     );
   }
 
-  // ── Academic routine alarms (exact-time local notifications) ──
+  // ── Exact-time local alarms (test schedules, etc.) ──
   //
   // Deliberately built on the SAME `_local` plugin instance and the SAME
   // `onDidReceiveNotificationResponse` handler already wired above, instead
   // of a second `FlutterLocalNotificationsPlugin()` in a standalone alarm
   // service — a second instance would either double-register the tap
   // callback or silently not receive taps at all, depending on platform.
-  // `AcademicAlarmService` calls these; it owns the "which routines need an
-  // alarm in the next N days" logic, this owns "how to actually alarm".
+  // Routine alarms are owned solely by `RoutineSchedulerService`, which
+  // also builds on this same instance — never add a second routine-alarm
+  // scheduler, it will double-fire every notification.
 
   /// Schedules one exact-time local notification. [payload] is the deep-link
   /// path opened on tap (or after a snooze), exactly like a push

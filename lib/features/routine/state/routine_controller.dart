@@ -6,7 +6,7 @@ import '../../../core/errors/app_error.dart';
 import '../../../core/logging/app_logger.dart';
 import '../../../core/models/routine.dart';
 import '../../../core/models/routine_log.dart';
-import '../../../core/services/academic_alarm_service.dart';
+import '../../../core/services/notifications/routine_scheduler_service.dart';
 import '../../../core/services/profile_service.dart';
 import '../../calendar/domain/calendar_clock.dart';
 import '../../gamification/data/gamification_repository.dart';
@@ -292,6 +292,8 @@ class RoutineController extends DisposableNotifier {
     notifyListeners();
     try {
       _allRoutines = await _repository.list();
+      unawaited(RoutineSchedulerService.syncPendingCompletions());
+      unawaited(RoutineSchedulerService.instance.rescheduleAllActive(_allRoutines));
     } on AppError catch (e) {
       _error = e.message;
       AppLogger.error('RoutineController.loadAll: $e');
@@ -510,8 +512,9 @@ class RoutineController extends DisposableNotifier {
     revision.value++;
     await loadAll();
     // Best-effort: a failed resync must never block the routine save the
-    // user is actually waiting on.
-    unawaited(AcademicAlarmService.resyncAlarms(_allRoutines));
+    // user is actually waiting on. RoutineSchedulerService is the sole
+    // alarm authority (see its doc comment) — do not add a second one back.
+    unawaited(RoutineSchedulerService.instance.rescheduleAllActive(_allRoutines));
   }
 
   static String _iso(DateTime d) =>

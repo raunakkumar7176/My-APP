@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart' show IconData, Icons;
+
 /// A daily study routine task (maps to `routines` table).
 ///
 /// RLS ensures users can only access their own routines.
@@ -50,8 +52,8 @@ final class Routine {
   /// 'study' | 'revision' | 'memorization' | 'practice' | 'test' | 'break' | 'chore'.
   final String sessionType;
 
-  /// Whether [AcademicAlarmService] should schedule a local alarm for this
-  /// session's start time.
+  /// Whether [RoutineSchedulerService] should schedule a local alarm for
+  /// this session's start time.
   final bool hasAlarm;
 
   /// 0 = alarm at the exact start time; >0 = that many minutes before.
@@ -171,7 +173,35 @@ final class Routine {
     return diff;
   }
 
-  static const sessionTypes = ['study', 'revision', 'memorization', 'practice', 'test', 'break', 'chore'];
+  static const sessionTypes = [
+    'study',
+    'revision',
+    'memorization',
+    'practice',
+    'test',
+    'break',
+    'chore',
+    'yoga',
+    'sports',
+    'cooking',
+    'hydration',
+    'sleep',
+    'other',
+  ];
+
+  /// Session types that are not academic study — Subject/Chapter/Topic/
+  /// Study-Activity are irrelevant for these, so the create form hides
+  /// them. True for 'study'/'revision'/'memorization'/'practice'/'test',
+  /// since those are the ones a subject actually applies to.
+  bool get isAcademic => isAcademicType(sessionType);
+
+  static bool isAcademicType(String type) => const {
+        'study',
+        'revision',
+        'memorization',
+        'practice',
+        'test',
+      }.contains(type);
 
   String get sessionTypeLabel => labelForSessionType(sessionType);
 
@@ -189,9 +219,57 @@ final class Routine {
         return 'Break';
       case 'chore':
         return 'Chore';
+      case 'yoga':
+        return 'Yoga';
+      case 'sports':
+        return 'Sports';
+      case 'cooking':
+        return 'Cooking';
+      case 'hydration':
+        return 'Drink Water';
+      case 'sleep':
+        return 'Sleep';
+      case 'other':
+        return 'Other Activity';
       case 'study':
       default:
         return 'Study';
+    }
+  }
+
+  /// Icon for this session's type — used by the routine list/cards so a
+  /// Yoga slot doesn't look like a Study slot at a glance.
+  IconData get sessionTypeIcon => iconForSessionType(sessionType);
+
+  static IconData iconForSessionType(String type) {
+    switch (type) {
+      case 'revision':
+        return Icons.replay_outlined;
+      case 'memorization':
+        return Icons.psychology_outlined;
+      case 'practice':
+        return Icons.edit_note_outlined;
+      case 'test':
+        return Icons.quiz_outlined;
+      case 'break':
+        return Icons.free_breakfast_outlined;
+      case 'chore':
+        return Icons.cleaning_services_outlined;
+      case 'yoga':
+        return Icons.self_improvement_outlined;
+      case 'sports':
+        return Icons.sports_soccer_outlined;
+      case 'cooking':
+        return Icons.restaurant_outlined;
+      case 'hydration':
+        return Icons.local_drink_outlined;
+      case 'sleep':
+        return Icons.bedtime_outlined;
+      case 'other':
+        return Icons.task_alt_outlined;
+      case 'study':
+      default:
+        return Icons.menu_book_outlined;
     }
   }
 
