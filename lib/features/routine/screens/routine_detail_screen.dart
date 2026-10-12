@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/theme/app_colors.dart';
+import '../../../core/theme/app_colors.dart' as premium;
+import '../../../core/theme/app_radius.dart';
 import '../../../core/errors/app_error.dart';
 import '../../../core/models/routine.dart';
 import '../../../core/models/routine_log.dart';
@@ -310,21 +312,45 @@ class _RoutineDetailScreenState extends State<RoutineDetailScreen> {
         ),
       ],
     );
-    return Card(
+    return Container(
+      decoration: BoxDecoration(
+        gradient: premium.AppColors.primaryGradientSoft(),
+        borderRadius: AppRadius.xlBorder,
+      ),
       child: Padding(
         padding: const EdgeInsets.all(20),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
+        child: Column(
           children: [
-            col(_routine!.startTime, 'Start'),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Icon(
-                Icons.arrow_forward,
-                color: theme.colorScheme.onSurface.withValues(alpha: 0.3),
-              ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(_routine!.sessionTypeIcon, size: 18, color: theme.colorScheme.primary),
+                const SizedBox(width: 6),
+                Text(
+                  _routine!.sessionTypeLabel,
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: theme.colorScheme.primary,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.3,
+                  ),
+                ),
+              ],
             ),
-            col(_routine!.endTime, 'End'),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                col(_routine!.startTime, 'Start'),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Icon(
+                    Icons.arrow_forward,
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.3),
+                  ),
+                ),
+                col(_routine!.endTime, 'End'),
+              ],
+            ),
           ],
         ),
       ),
@@ -337,7 +363,7 @@ class _RoutineDetailScreenState extends State<RoutineDetailScreen> {
     final skipped = _todayLog?.isSkipped ?? false;
     final status = done ? 'Completed today' : skipped ? 'Skipped today' : 'Not done yet today';
     final color = done ? AppColors.success : skipped ? AppColors.warning : theme.colorScheme.primary;
-    return Card(
+    return Card(shape: const RoundedRectangleBorder(borderRadius: AppRadius.xlBorder),
       key: const Key('routine_today_card'),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -410,7 +436,7 @@ class _RoutineDetailScreenState extends State<RoutineDetailScreen> {
 
   Widget _buildScheduleCard() {
     final theme = Theme.of(context);
-    return Card(
+    return Card(shape: const RoundedRectangleBorder(borderRadius: AppRadius.xlBorder),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -452,7 +478,7 @@ class _RoutineDetailScreenState extends State<RoutineDetailScreen> {
   Widget _buildDetailsCard() {
     final theme = Theme.of(context);
     final parsed = RoutineSchedule.parseTitle(_routine!.title);
-    return Card(
+    return Card(shape: const RoundedRectangleBorder(borderRadius: AppRadius.xlBorder),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -482,7 +508,7 @@ class _RoutineDetailScreenState extends State<RoutineDetailScreen> {
   Widget _buildProgressCard() {
     final theme = Theme.of(context);
     final s = _stats;
-    return Card(
+    return Card(shape: const RoundedRectangleBorder(borderRadius: AppRadius.xlBorder),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(

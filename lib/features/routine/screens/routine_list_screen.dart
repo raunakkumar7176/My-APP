@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/theme/app_colors.dart';
+import '../../../core/theme/app_colors.dart' as premium;
+import '../../../core/theme/app_radius.dart';
 import '../../../core/models/routine.dart';
 import '../../calendar/domain/calendar_clock.dart';
 import '../data/routine_repository.dart';
@@ -295,8 +298,8 @@ class _RoutineListScreenState extends State<RoutineListScreen> {
       margin: const EdgeInsets.only(top: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
-        borderRadius: BorderRadius.circular(12),
+        gradient: premium.AppColors.primaryGradientSoft(),
+        borderRadius: AppRadius.xlBorder,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -372,103 +375,192 @@ class _RoutineListScreenState extends State<RoutineListScreen> {
     );
   }
 
+  Future<void> _toggleCompletion(RoutineWithLog item) async {
+    final routine = item.routine;
+    if (item.isCompleted) {
+      await _controller.markIncomplete(routine.id);
+    } else {
+      HapticFeedback.mediumImpact();
+      SystemSound.play(SystemSoundType.click);
+      await _controller.markComplete(routine.id);
+      if (mounted) {
+        final pts = _controller.lastRoutinePointsAwarded;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle, color: AppColors.success, size: 18),
+                const SizedBox(width: 8),
+                Text(
+                  pts > 0
+                      ? 'Routine completed! +$pts XP'
+                      : 'Routine marked as completed!',
+                ),
+              ],
+            ),
+            duration: const Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
   Widget _timelineTile(RoutineWithLog item) {
     final theme = Theme.of(context);
     final routine = item.routine;
     final isCurrent = _controller.currentItem?.routine.id == routine.id;
-    final Color dotColor = item.isCompleted
-        ? AppColors.success
-        : isCurrent
-        ? AppColors.primaryLight
-        : theme.colorScheme.outlineVariant;
-    final String? chipLabel = item.isCompleted
-        ? 'Done'
-        : item.isSkipped
-        ? 'Skipped'
-        : null;
-    final Color chipColor = item.isSkipped ? AppColors.warning : AppColors.success;
+    final isDone = item.isCompleted;
+    final hasActiveAlarm = routine.hasAlarm || routine.reminderEnabled;
 
-    return Opacity(
-      opacity: item.isCompleted || isCurrent ? 1 : 0.75,
+    return Card(
+      key: Key('routine_card_${routine.id}'),
+      margin: const EdgeInsets.only(bottom: 10),
+      elevation: isCurrent ? 2 : 0.5,
+      shape: RoundedRectangleBorder(
+        borderRadius: AppRadius.xlBorder,
+        side: BorderSide(
+          color: isCurrent
+              ? theme.colorScheme.primary.withValues(alpha: 0.5)
+              : theme.colorScheme.outlineVariant.withValues(alpha: 0.4),
+          width: isCurrent ? 1.5 : 1,
+        ),
+      ),
       child: InkWell(
-        key: Key('routine_card_${routine.id}'),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: AppRadius.xlBorder,
         onTap: () => context.push('/routine/${routine.id}'),
-        child: Card(
-          margin: const EdgeInsets.only(bottom: 8),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SizedBox(
-                  width: 56,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // Google Tasks Style Circular Checkbox
+              InkWell(
+                key: Key('routine_checkbox_${routine.id}'),
+                onTap: () => _toggleCompletion(item),
+                borderRadius: BorderRadius.circular(20),
+                child: Padding(
+                  padding: const EdgeInsets.all(6),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    width: 22,
+                    height: 22,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: isDone ? AppColors.success : Colors.transparent,
+                      border: Border.all(
+                        color: isDone
+                            ? AppColors.success
+                            : theme.colorScheme.outline.withValues(alpha: 0.7),
+                        width: 2,
+                      ),
+                    ),
+                    child: isDone
+                        ? const Icon(
+                            Icons.check,
+                            size: 14,
+                            color: Colors.white,
+                          )
+                        : null,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Center: Title, Subject/Session tag, Time
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      routine.title.isNotEmpty ? routine.title : 'Study Routine',
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        decoration: isDone ? TextDecoration.lineThrough : null,
+                        color: isDone
+                            ? theme.colorScheme.onSurface.withValues(alpha: 0.45)
+                            : isCurrent
+                                ? theme.colorScheme.primary
+                                : null,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 3),
+                    Row(
+                      children: [
+                        Text(
+                          '${RoutineSchedule.format12h(routine.startTime)} – ${RoutineSchedule.format12h(routine.endTime)}',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            fontSize: 12,
+                            color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                          ),
+                        ),
+                        if (routine.sessionType != 'study') ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.primaryContainer.withValues(alpha: 0.6),
+                              borderRadius: AppRadius.smBorder,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  routine.sessionTypeIcon,
+                                  size: 11,
+                                  color: theme.colorScheme.onPrimaryContainer,
+                                ),
+                                const SizedBox(width: 3),
+                                Text(
+                                  routine.sessionTypeLabel,
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w600,
+                                    color: theme.colorScheme.onPrimaryContainer,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Right: Bell indicator and status chip
+              if (hasActiveAlarm)
+                Tooltip(
+                  message: 'Exact Alarm Active',
+                  child: Icon(
+                    Icons.notifications_active_outlined,
+                    size: 16,
+                    color: isCurrent
+                        ? theme.colorScheme.primary
+                        : theme.colorScheme.onSurface.withValues(alpha: 0.45),
+                  ),
+                ),
+              if (item.isSkipped) ...[
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppColors.warning.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                   child: Text(
-                    RoutineSchedule.format12h(routine.startTime),
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: isCurrent
-                          ? theme.colorScheme.primary
-                          : theme.colorScheme.onSurface.withValues(alpha: 0.6),
-                      fontWeight: isCurrent ? FontWeight.w600 : null,
+                    'Skipped',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: AppColors.warning,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 10,
                     ),
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.only(top: 3, right: 12),
-                  child: Container(
-                    width: 10,
-                    height: 10,
-                    decoration: BoxDecoration(shape: BoxShape.circle, color: dotColor),
-                  ),
-                ),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              routine.title,
-                              style: theme.textTheme.bodyLarge?.copyWith(
-                                fontWeight: FontWeight.w500,
-                                color: isCurrent ? theme.colorScheme.primary : null,
-                                decoration:
-                                    item.isCompleted ? TextDecoration.lineThrough : null,
-                              ),
-                            ),
-                          ),
-                          if (chipLabel != null)
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: chipColor.withValues(alpha: 0.12),
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Text(
-                                chipLabel,
-                                style: theme.textTheme.labelSmall?.copyWith(
-                                  color: chipColor,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        '${RoutineSchedule.format12h(routine.startTime)} – '
-                        '${RoutineSchedule.format12h(routine.endTime)}'
-                        '${routine.targetDurationMinutes != null ? ' · ${routine.targetDurationMinutes}m' : ''}',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
               ],
-            ),
+            ],
           ),
         ),
       ),

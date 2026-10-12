@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/constants/theme/app_colors.dart';
+import '../../../core/theme/app_radius.dart';
 import '../../../core/models/routine.dart';
 import '../domain/routine_schedule.dart';
 
@@ -22,10 +23,11 @@ class RoutineCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
-      margin: const EdgeInsets.only(bottom: 8),
+      margin: const EdgeInsets.only(bottom: 10),
+      shape: const RoundedRectangleBorder(borderRadius: AppRadius.xlBorder),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: AppRadius.xlBorder,
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Row(
@@ -36,7 +38,7 @@ class RoutineCard extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: (isCompleted ? AppColors.success : AppColors.primaryLight)
                       .withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: AppRadius.mdBorder,
                 ),
                 child: Icon(
                   isCompleted ? Icons.check_circle : routine.sessionTypeIcon,
