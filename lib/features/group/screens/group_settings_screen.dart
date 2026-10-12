@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/constants/theme/app_colors.dart';
+import '../../../core/theme/app_colors.dart' as premium;
 import '../../../core/theme/app_radius.dart';
 import '../../../core/services/supabase_service.dart';
 import '../domain/group_errors.dart';
@@ -334,7 +335,7 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
           const SizedBox(height: 8),
           TextButton(
             key: const Key('settings_manage_rules'),
-            onPressed: () => context.push('/groups/${widget.groupId}'),
+            onPressed: () => context.push('/groups/${widget.groupId}/info'),
             child: const Text('Manage rules'),
           ),
         ],
@@ -659,8 +660,19 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _sectionCard(
-            isDark: isDark,
+          Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              gradient: premium.AppColors.primaryGradient,
+              borderRadius: AppRadius.xlBorder,
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF2563EB).withValues(alpha: isDark ? 0.25 : 0.3),
+                  blurRadius: 24,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
             child: Row(
               children: [
                 InkWell(
@@ -668,17 +680,22 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
                   borderRadius: AppRadius.pillBorder,
                   child: Stack(
                     children: [
-                      GroupAvatar(name: group.name, logoUrl: group.logoUrl, radius: 32),
+                      Container(
+                        padding: const EdgeInsets.all(3),
+                        decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white),
+                        child: GroupAvatar(name: group.name, logoUrl: group.logoUrl, radius: 30),
+                      ),
                       Positioned(
                         bottom: 0,
                         right: 0,
                         child: Container(
                           padding: const EdgeInsets.all(4),
-                          decoration: const BoxDecoration(
-                            gradient: AppColors.primaryGradient,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
                             shape: BoxShape.circle,
+                            border: Border.all(color: const Color(0xFF2563EB), width: 2),
                           ),
-                          child: const Icon(Icons.camera_alt, size: 14, color: Colors.white),
+                          child: const Icon(Icons.camera_alt, size: 13, color: Color(0xFF2563EB)),
                         ),
                       ),
                     ],
@@ -689,19 +706,26 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Logo', style: Theme.of(context).textTheme.titleSmall),
+                      Text(
+                        'Logo',
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                       const SizedBox(height: 4),
                       Text(
                         hasLogo
                             ? 'Tap to change group logo.'
                             : 'Tap to set group logo.',
                         key: const Key('logo_status'),
-                        style: Theme.of(context).textTheme.bodySmall,
+                        style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 12.5),
                       ),
                       if (hasLogo)
                         TextButton.icon(
                           key: const Key('remove_logo_button'),
                           onPressed: _c.isBusy ? null : _removeLogo,
+                          style: TextButton.styleFrom(foregroundColor: Colors.white),
                           icon: const Icon(Icons.delete_outline, size: 18),
                           label: const Text('Remove logo'),
                         ),
@@ -712,10 +736,17 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          _sectionCard(isDark: isDark, child: _inviteSection(context)),
+          _sectionCard(
+            isDark: isDark,
+            icon: Icons.vpn_key_outlined,
+            iconColor: const Color(0xFF059669),
+            child: _inviteSection(context),
+          ),
           const SizedBox(height: 16),
           _sectionCard(
             isDark: isDark,
+            icon: Icons.edit_outlined,
+            iconColor: const Color(0xFF2563EB),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -785,9 +816,19 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          _sectionCard(isDark: isDark, child: _rulesSummary(context)),
+          _sectionCard(
+            isDark: isDark,
+            icon: Icons.gavel_rounded,
+            iconColor: const Color(0xFF7C3AED),
+            child: _rulesSummary(context),
+          ),
           const SizedBox(height: 16),
-          _sectionCard(isDark: isDark, child: _membersSummary(context)),
+          _sectionCard(
+            isDark: isDark,
+            icon: Icons.people_outlined,
+            iconColor: const Color(0xFF2563EB),
+            child: _membersSummary(context),
+          ),
           const SizedBox(height: 16),
           // ── Danger zone: leave ──
           Container(
@@ -813,7 +854,12 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
     );
   }
 
-  Widget _sectionCard({required bool isDark, required Widget child}) {
+  Widget _sectionCard({
+    required bool isDark,
+    required Widget child,
+    IconData? icon,
+    Color? iconColor,
+  }) {
     return Container(
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF1E293B) : Colors.white,
@@ -823,13 +869,35 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
         ),
       ),
       clipBehavior: Clip.antiAlias,
-      // ListTile/RadioListTile paint their background/ink on the nearest
-      // Material ancestor — without this, Flutter asserts (their splash and
-      // selected-background effects would otherwise be invisible, painted
-      // underneath this card's own background).
-      child: Material(
-        color: Colors.transparent,
-        child: Padding(padding: const EdgeInsets.all(16), child: child),
+      child: Stack(
+        children: [
+          // ListTile/RadioListTile paint their background/ink on the
+          // nearest Material ancestor — without this, Flutter asserts
+          // (their splash and selected-background effects would otherwise
+          // be invisible, painted underneath this card's own background).
+          Material(
+            color: Colors.transparent,
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(16, icon != null ? 20 : 16, 16, 16),
+              child: child,
+            ),
+          ),
+          if (icon != null)
+            Positioned(
+              left: 16,
+              top: -2,
+              child: Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: (iconColor ?? const Color(0xFF2563EB))
+                      .withValues(alpha: isDark ? 0.22 : 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, size: 15, color: iconColor),
+              ),
+            ),
+        ],
       ),
     );
   }

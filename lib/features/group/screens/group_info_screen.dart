@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/constants/theme/app_colors.dart';
+import '../../../core/theme/app_colors.dart' as premium;
 import '../../../core/theme/app_radius.dart';
 import '../../../core/models/group.dart';
 import '../../../core/models/group_member.dart';
@@ -12,7 +13,9 @@ import '../../test/data/test_repository.dart';
 import '../data/notification_repository.dart';
 import '../domain/group_role.dart';
 import '../state/group_hub_controller.dart';
+import '../widgets/group_announcements_section.dart';
 import '../widgets/group_avatar.dart';
+import '../widgets/group_rules_section.dart';
 import '../widgets/invite_member_sheet.dart';
 import '../widgets/join_request_queue.dart';
 import '../widgets/outgoing_invitations_section.dart';
@@ -372,17 +375,34 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
             _buildMembersSection(context, isDark),
             const SizedBox(height: 20),
 
+            // Section: Announcements — visible to all members; manager
+            // controls (Post/Edit/Delete) are inside the section itself.
+            _sectionShell(
+              isDark: isDark,
+              icon: Icons.campaign_rounded,
+              iconColor: const Color(0xFFD97706),
+              child: GroupAnnouncementsSection(controller: _c),
+            ),
+            const SizedBox(height: 20),
+
+            // Section: Group rules — same visibility model as Announcements.
+            _sectionShell(
+              isDark: isDark,
+              icon: Icons.gavel_rounded,
+              iconColor: const Color(0xFF7C3AED),
+              child: GroupRulesSection(controller: _c),
+            ),
+            const SizedBox(height: 20),
+
             if (_c.canManageRoles) ...[
-              Card(
-                margin: EdgeInsets.zero,
-                child: ListTile(
-                  key: const Key('open_role_permissions'),
-                  leading: const Icon(Icons.admin_panel_settings_outlined),
-                  title: const Text('Roles & Permissions'),
-                  subtitle: const Text('Control what each role can do'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: _openRolePermissions,
-                ),
+              _premiumActionTile(
+                isDark: isDark,
+                key: const Key('open_role_permissions'),
+                icon: Icons.admin_panel_settings_outlined,
+                iconColor: const Color(0xFF2563EB),
+                title: 'Roles & Permissions',
+                subtitle: 'Control what each role can do',
+                onTap: _openRolePermissions,
               ),
               const SizedBox(height: 20),
             ],
@@ -409,23 +429,34 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
     final canEditAvatar = _c.canEditBasics || _c.isOwner;
 
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+      padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 16),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+        gradient: premium.AppColors.primaryGradient,
         borderRadius: AppRadius.xlBorder,
-        border: Border.all(
-          color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
-        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF2563EB).withValues(alpha: isDark ? 0.25 : 0.3),
+            blurRadius: 24,
+            offset: const Offset(0, 10),
+          ),
+        ],
       ),
       child: Column(
         children: [
-          // Large Group Avatar with camera overlay
+          // Large Group Avatar in a white ring, with camera overlay
           Stack(
             children: [
-              GroupAvatar(
-                name: group.name,
-                logoUrl: group.logoUrl,
-                radius: 46,
+              Container(
+                padding: const EdgeInsets.all(3),
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white,
+                ),
+                child: GroupAvatar(
+                  name: group.name,
+                  logoUrl: group.logoUrl,
+                  radius: 44,
+                ),
               ),
               if (canEditAvatar)
                 Positioned(
@@ -440,14 +471,18 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                       customBorder: const CircleBorder(),
                       child: Container(
                         padding: const EdgeInsets.all(7),
-                        decoration: const BoxDecoration(
+                        decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          gradient: AppColors.primaryGradient,
+                          color: Colors.white,
+                          border: Border.all(
+                            color: const Color(0xFF2563EB),
+                            width: 2,
+                          ),
                         ),
                         child: const Icon(
                           Icons.camera_alt,
-                          size: 18,
-                          color: Colors.white,
+                          size: 16,
+                          color: Color(0xFF2563EB),
                         ),
                       ),
                     ),
@@ -464,6 +499,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
             style: theme.textTheme.headlineSmall?.copyWith(
               fontWeight: FontWeight.bold,
               letterSpacing: -0.3,
+              color: Colors.white,
             ),
           ),
           const SizedBox(height: 6),
@@ -472,7 +508,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
             decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9),
+              color: Colors.white.withValues(alpha: 0.18),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Row(
@@ -485,16 +521,16 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                           ? Icons.shield_outlined
                           : Icons.lock_outline),
                   size: 13,
-                  color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                  color: Colors.white,
                 ),
                 const SizedBox(width: 5),
                 Text(
                   '${(group.privacy ?? 'private').toUpperCase()} GROUP',
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
                     letterSpacing: 0.4,
-                    color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                    color: Colors.white,
                   ),
                 ),
               ],
@@ -511,10 +547,124 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
             style: TextStyle(
               fontSize: 13.5,
               height: 1.4,
-              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+              color: Colors.white.withValues(alpha: 0.85),
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// Wraps a section (Announcements, Rules, …) in the same premium card
+  /// shell as the rest of this screen, plus a colored icon badge in its
+  /// corner so sections read apart from each other at a glance instead of
+  /// all looking like identical white boxes.
+  Widget _sectionShell({
+    required bool isDark,
+    required IconData icon,
+    required Color iconColor,
+    required Widget child,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+        borderRadius: AppRadius.xlBorder,
+        border: Border.all(
+          color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+        ),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        children: [
+          Material(
+            color: Colors.transparent,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
+              child: child,
+            ),
+          ),
+          Positioned(
+            left: 16,
+            top: -2,
+            child: Container(
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(
+                color: iconColor.withValues(alpha: isDark ? 0.22 : 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, size: 15, color: iconColor),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _premiumActionTile({
+    required bool isDark,
+    required Key key,
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+        borderRadius: AppRadius.xlBorder,
+        border: Border.all(
+          color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+        ),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          key: key,
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Row(
+              children: [
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: iconColor.withValues(alpha: isDark ? 0.22 : 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(icon, size: 19, color: iconColor),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14.5),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  Icons.chevron_right,
+                  color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -532,6 +682,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
             title: 'Members',
             value: '$membersCount',
             isDark: isDark,
+            accent: const Color(0xFF2563EB),
           ),
         ),
         const SizedBox(width: 12),
@@ -546,6 +697,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
               value: '$testsCount',
               actionLabel: 'View Tests ➔',
               isDark: isDark,
+              accent: const Color(0xFF7C3AED),
             ),
           ),
         ),
@@ -560,6 +712,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
     required String value,
     String? actionLabel,
     required bool isDark,
+    Color accent = const Color(0xFF2563EB),
   }) {
     final theme = Theme.of(context);
     return Container(
@@ -576,14 +729,24 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
         children: [
           Row(
             children: [
-              Icon(icon, size: 18, color: theme.colorScheme.primary),
+              Container(
+                width: 26,
+                height: 26,
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: isDark ? 0.22 : 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, size: 14, color: accent),
+              ),
               const SizedBox(width: 8),
-              Text(
-                title,
-                style: TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w600,
-                  color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+              Expanded(
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                  ),
                 ),
               ),
             ],
