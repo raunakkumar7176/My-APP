@@ -531,7 +531,30 @@ class _GroupChatScreenState extends State<GroupChatScreen>
             );
           }
 
-          final bubbleWidget = _bubble(context, currentMsg);
+          // Check if consecutive from previous message:
+          bool isConsecutive = false;
+          if (msgIndex > 0 && !showDateSeparator) {
+            final prevMsg = msgs[msgIndex - 1];
+            final sameSender = currentMsg.senderId != null &&
+                currentMsg.senderId == prevMsg.senderId;
+            final closeInTime = currentMsg.createdAt
+                    .difference(prevMsg.createdAt)
+                    .inMinutes
+                    .abs() <
+                2;
+            if (sameSender &&
+                closeInTime &&
+                !prevMsg.isSystemEvent &&
+                !currentMsg.isSystemEvent) {
+              isConsecutive = true;
+            }
+          }
+
+          final bubbleWidget = _bubble(
+            context,
+            currentMsg,
+            isConsecutive: isConsecutive,
+          );
 
           if (showDateSeparator) {
             return Column(
@@ -654,7 +677,11 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     );
   }
 
-  Widget _bubble(BuildContext context, GroupMessage m) {
+  Widget _bubble(
+    BuildContext context,
+    GroupMessage m, {
+    bool isConsecutive = false,
+  }) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final mine = m.senderId != null && m.senderId == _c.currentUserId;
@@ -714,7 +741,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
         onLongPress: () => _onMessageLongPress(m, mine),
         child: Container(
           constraints: const BoxConstraints(maxWidth: 340),
-          margin: const EdgeInsets.symmetric(vertical: 4),
+          margin: EdgeInsets.symmetric(vertical: isConsecutive ? 1.5 : 4),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
           decoration: BoxDecoration(
             color: mine
@@ -722,11 +749,12 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                       ? (isDark
                             ? const Color(0xFF1E293B)
                             : const Color(0xFFE2E8F0))
-                      : const Color(0xFF2563EB))
+                      : null)
                 : (isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9)),
+            gradient: mine && !m.isDeleted ? AppColors.primaryGradient : null,
             borderRadius: BorderRadius.only(
-              topLeft: const Radius.circular(16),
-              topRight: const Radius.circular(16),
+              topLeft: Radius.circular(!mine && isConsecutive ? 4 : 16),
+              topRight: Radius.circular(mine && isConsecutive ? 4 : 16),
               bottomLeft: Radius.circular(mine ? 16 : 4),
               bottomRight: Radius.circular(mine ? 4 : 16),
             ),
@@ -748,7 +776,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (!mine) ...[
+              if (!mine && !isConsecutive) ...[
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -956,30 +984,16 @@ class _GroupChatScreenState extends State<GroupChatScreen>
             ),
           ),
           const SizedBox(width: 8),
-          Container(
-            decoration: BoxDecoration(
-              color: _canSend
-                  ? const Color(0xFF2563EB)
-                  : (isDark
-                        ? const Color(0xFF334155)
-                        : const Color(0xFFCBD5E1)),
-              shape: BoxShape.circle,
-            ),
-            child: IconButton(
-              key: const Key('discussion_send_button'),
-              tooltip: 'Send',
-              onPressed: _c.sending ? null : _send,
-              icon: _c.sending
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Icon(Icons.arrow_upward_rounded, color: Colors.white),
-            ),
+          _SendButton(
+            key: const Key('discussion_send_button'),
+            // Always tappable while not sending — matches the original
+            // IconButton behavior, which relied on _send()'s own empty-text
+            // guard rather than disabling the tap target itself. _canSend
+            // only drives the gradient-vs-grey look, not tap-ability.
+            enabled: !_c.sending,
+            highlighted: _canSend,
+            busy: _c.sending,
+            onPressed: _send,
           ),
         ],
       ),
@@ -991,5 +1005,77 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     final minute = t.minute.toString().padLeft(2, '0');
     final ampm = t.hour >= 12 ? 'PM' : 'AM';
     return '$hour:$minute $ampm';
+  }
+}
+
+/// The composer's circular send button — the premium gradient fill plus a
+/// light press-scale, same touch language as [GradientButton] elsewhere in
+/// the redesign.
+class _SendButton extends StatefulWidget {
+  const _SendButton({
+    required this.enabled,
+    required this.highlighted,
+    required this.busy,
+    required this.onPressed,
+    super.key,
+  });
+
+  /// Whether the button responds to taps at all (false only while sending).
+  final bool enabled;
+
+  /// Whether it shows the gradient (has text to send) vs. a flat muted fill.
+  final bool highlighted;
+  final bool busy;
+  final VoidCallback onPressed;
+
+  @override
+  State<_SendButton> createState() => _SendButtonState();
+}
+
+class _SendButtonState extends State<_SendButton> {
+  bool _pressed = false;
+
+  void _setPressed(bool v) {
+    if (!widget.enabled) return;
+    setState(() => _pressed = v);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return GestureDetector(
+      onTapDown: (_) => _setPressed(true),
+      onTapUp: (_) => _setPressed(false),
+      onTapCancel: () => _setPressed(false),
+      onTap: widget.enabled ? widget.onPressed : null,
+      child: AnimatedScale(
+        scale: _pressed ? 0.9 : 1.0,
+        duration: const Duration(milliseconds: 120),
+        curve: Curves.easeOut,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            gradient: widget.highlighted ? AppColors.primaryGradient : null,
+            color: widget.highlighted
+                ? null
+                : (isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1)),
+            shape: BoxShape.circle,
+          ),
+          alignment: Alignment.center,
+          child: widget.busy
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : const Icon(Icons.arrow_upward_rounded, color: Colors.white),
+        ),
+      ),
+    );
   }
 }
