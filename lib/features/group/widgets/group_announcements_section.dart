@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/constants/theme/app_colors.dart';
+import '../../../core/theme/app_radius.dart';
 import '../../../core/models/group_announcement.dart';
 import '../state/group_hub_controller.dart';
+import 'gradient_button.dart';
 
 /// Announcements section in the group hub. Every member sees the list
 /// (newest first, as the server returns it); callers whose server-reported
@@ -90,6 +92,7 @@ class GroupAnnouncementsSection extends StatelessWidget {
   Widget _card(BuildContext context, GroupAnnouncement a) {
     final c = controller;
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     final acting = c.actingAnnouncementId == a.id;
     final disabled = acting || c.announcementSaving;
     final author = c.announcementAuthorLabel(a);
@@ -98,50 +101,82 @@ class GroupAnnouncementsSection extends StatelessWidget {
       _when(a.createdAt),
       if (a.wasEdited) 'edited',
     ].join(' · ');
-    return Card(
+    const accent = Color(0xFFD97706); // amber — "announcement" semantic
+    return Container(
       key: Key('announcement_${a.id}'),
-      margin: const EdgeInsets.only(bottom: 8),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 10, 4, 10),
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+        borderRadius: AppRadius.xlBorder,
+        border: Border.all(
+          color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+        ),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: IntrinsicHeight(
         child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            Container(width: 4, color: accent),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(a.title, style: theme.textTheme.titleSmall),
-                  const SizedBox(height: 4),
-                  Text(a.body),
-                  const SizedBox(height: 6),
-                  Text(
-                    meta,
-                    key: Key('announcement_meta_${a.id}'),
-                    style: theme.textTheme.bodySmall,
-                  ),
-                ],
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 12, 4, 12),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.campaign_rounded, size: 15, color: accent),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  a.title,
+                                  style: theme.textTheme.titleSmall?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(a.body),
+                          const SizedBox(height: 8),
+                          Text(
+                            meta,
+                            key: Key('announcement_meta_${a.id}'),
+                            style: theme.textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (c.canSendAnnouncement) ...[
+                      IconButton(
+                        key: Key('edit_announcement_${a.id}'),
+                        tooltip: 'Edit announcement',
+                        icon: const Icon(Icons.edit_outlined, size: 20),
+                        onPressed: disabled ? null : () => _compose(context, a),
+                      ),
+                      IconButton(
+                        key: Key('delete_announcement_${a.id}'),
+                        tooltip: 'Delete announcement',
+                        icon: acting
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.delete_outline, size: 20),
+                        onPressed: disabled ? null : () => _delete(context, a),
+                      ),
+                    ],
+                  ],
+                ),
               ),
             ),
-            if (c.canSendAnnouncement) ...[
-              IconButton(
-                key: Key('edit_announcement_${a.id}'),
-                tooltip: 'Edit announcement',
-                icon: const Icon(Icons.edit_outlined, size: 20),
-                onPressed: disabled ? null : () => _compose(context, a),
-              ),
-              IconButton(
-                key: Key('delete_announcement_${a.id}'),
-                tooltip: 'Delete announcement',
-                icon: acting
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.delete_outline, size: 20),
-                onPressed: disabled ? null : () => _delete(context, a),
-              ),
-            ],
           ],
         ),
       ),
@@ -196,10 +231,13 @@ class GroupAnnouncementsSection extends StatelessWidget {
             onPressed: () => Navigator.of(ctx).pop(false),
             child: const Text('Cancel'),
           ),
-          FilledButton(
-            key: Key(editing ? 'confirm_edit_announcement' : 'confirm_post_announcement'),
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(editing ? 'Save' : 'Post'),
+          SizedBox(
+            width: 120,
+            child: GradientButton(
+              key: Key(editing ? 'confirm_edit_announcement' : 'confirm_post_announcement'),
+              onPressed: () => Navigator.of(ctx).pop(true),
+              label: editing ? 'Save' : 'Post',
+            ),
           ),
         ],
       ),
