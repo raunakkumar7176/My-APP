@@ -850,6 +850,15 @@ class _GroupChatScreenState extends State<GroupChatScreen>
           final msgIndex = i - (_c.hasOlderMessages ? 1 : 0);
           final currentMsg = msgs[msgIndex];
 
+          // A role-changed notice right after another one (same day) is
+          // folded into the first one's pill — nothing of its own to show.
+          if (msgIndex > 0 &&
+              _isRoleChangedEvent(currentMsg) &&
+              _isRoleChangedEvent(msgs[msgIndex - 1]) &&
+              _isSameDay(currentMsg.createdAt, msgs[msgIndex - 1].createdAt)) {
+            return const SizedBox.shrink();
+          }
+
           final bool showDateSeparator;
           if (msgIndex == 0) {
             showDateSeparator = true;
@@ -880,10 +889,19 @@ class _GroupChatScreenState extends State<GroupChatScreen>
           }
 
           final isFirstEverSeen = _animatedOnce.add(currentMsg.id);
+          final mergedLines = _isRoleChangedEvent(currentMsg)
+              ? _roleChangedRun(msgs, msgIndex)
+              : null;
 
           final bubbleWidget = ChatEntranceFade(
             play: isFirstEverSeen,
-            child: _bubble(context, currentMsg, isDark, isConsecutive: isConsecutive),
+            child: _bubble(
+              context,
+              currentMsg,
+              isDark,
+              isConsecutive: isConsecutive,
+              mergedLines: mergedLines,
+            ),
           );
 
           final leadWidgets = <Widget>[
@@ -1092,11 +1110,31 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     );
   }
 
+  /// Role-changed system notices ("X is now admin") that land back-to-back
+  /// merge into one pill — e.g. promoting three members in a row no
+  /// longer prints three near-identical lines.
+  static bool _isRoleChangedEvent(GroupMessage m) =>
+      m.isSystemEvent && m.metadata['type'] == 'role_changed';
+
+  /// Consecutive role-changed bodies starting at [startIndex], same day.
+  List<String> _roleChangedRun(List<GroupMessage> msgs, int startIndex) {
+    final bodies = [msgs[startIndex].body];
+    var i = startIndex + 1;
+    while (i < msgs.length &&
+        _isRoleChangedEvent(msgs[i]) &&
+        _isSameDay(msgs[i].createdAt, msgs[startIndex].createdAt)) {
+      bodies.add(msgs[i].body);
+      i++;
+    }
+    return bodies;
+  }
+
   Widget _bubble(
     BuildContext context,
     GroupMessage m,
     bool isDark, {
     bool isConsecutive = false,
+    List<String>? mergedLines,
   }) {
     final mine = m.senderId != null && m.senderId == _c.currentUserId;
     final label = _c.messageSenderLabel(m);
@@ -1106,6 +1144,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     }
 
     if (m.isSystemEvent) {
+      final lines = mergedLines ?? [m.body];
       return Padding(
         key: Key('discussion_message_${m.id}'),
         padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 20),
@@ -1121,6 +1160,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Icon(
                   Icons.info_outline_rounded,
@@ -1129,16 +1169,23 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                 ),
                 const SizedBox(width: 6),
                 Flexible(
-                  child: Text(
-                    m.body,
-                    style: TextStyle(
-                      color: isDark
-                          ? const Color(0xFF94A3B8)
-                          : const Color(0xFF64748B),
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w500,
-                    ),
-                    textAlign: TextAlign.center,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      for (final line in lines)
+                        Text(
+                          line,
+                          style: TextStyle(
+                            color: isDark
+                                ? const Color(0xFF94A3B8)
+                                : const Color(0xFF64748B),
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                    ],
                   ),
                 ),
               ],

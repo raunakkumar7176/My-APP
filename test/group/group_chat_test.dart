@@ -690,6 +690,62 @@ void main() {
         expect(find.text('🛡️ Admin'), findsNothing);
       },
     );
+
+    testWidgets(
+      'consecutive role-changed system notices merge into one pill',
+      (tester) async {
+        final repo = _repo();
+        final first = repo.seedMessage(
+          groupId: 'g-1',
+          senderId: 'u-owner',
+          body: 'Alice is now admin',
+          at: DateTime(2026, 9, 10, 9, 10),
+          messageType: 'system',
+          metadata: const {'type': 'role_changed'},
+        );
+        final second = repo.seedMessage(
+          groupId: 'g-1',
+          senderId: 'u-owner',
+          body: 'Bob is now admin',
+          at: DateTime(2026, 9, 10, 9, 11),
+          messageType: 'system',
+          metadata: const {'type': 'role_changed'},
+        );
+        await pump(tester, repo);
+        expect(find.text('Alice is now admin'), findsOneWidget);
+        expect(find.text('Bob is now admin'), findsOneWidget);
+        // Only the first notice keeps its own pill — the second merges
+        // into it and renders nothing of its own.
+        expect(find.byKey(Key('discussion_message_${first.id}')), findsOneWidget);
+        expect(find.byKey(Key('discussion_message_${second.id}')), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'a role-changed notice on a later day does not merge with an earlier one',
+      (tester) async {
+        final repo = _repo();
+        repo.seedMessage(
+          groupId: 'g-1',
+          senderId: 'u-owner',
+          body: 'Alice is now admin',
+          at: DateTime(2026, 9, 10, 9, 10),
+          messageType: 'system',
+          metadata: const {'type': 'role_changed'},
+        );
+        repo.seedMessage(
+          groupId: 'g-1',
+          senderId: 'u-owner',
+          body: 'Bob is now admin',
+          at: DateTime(2026, 9, 11, 9, 10),
+          messageType: 'system',
+          metadata: const {'type': 'role_changed'},
+        );
+        await pump(tester, repo);
+        expect(find.text('Alice is now admin'), findsOneWidget);
+        expect(find.text('Bob is now admin'), findsOneWidget);
+      },
+    );
   });
 }
 

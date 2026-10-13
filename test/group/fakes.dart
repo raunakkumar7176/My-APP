@@ -1222,6 +1222,8 @@ class InMemoryGroupRepository implements GroupRepository {
     required String? senderId,
     required String body,
     DateTime? at,
+    String messageType = 'text',
+    Map<String, dynamic> metadata = const {},
   }) {
     _messageSeq++;
     // Default clock: strictly after the group's newest message (the server's
@@ -1238,6 +1240,8 @@ class InMemoryGroupRepository implements GroupRepository {
       senderId: senderId,
       body: body,
       createdAt: at ?? newest.add(const Duration(minutes: 1)),
+      messageType: messageType,
+      metadata: metadata,
     );
     groups[groupId]!.messages.add(m);
     return m;
