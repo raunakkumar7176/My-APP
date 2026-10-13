@@ -546,6 +546,151 @@ void main() {
       expect(c.messages.last.body, 'Shared controller check');
     });
   });
+
+  group('TEST 15 — grouping, date separators, admin-only lock, role badges', () {
+    Future<GroupHubController> pump(
+      WidgetTester tester,
+      InMemoryGroupRepository repo, {
+      String user = 'u-me',
+    }) async {
+      tester.view.physicalSize = const Size(800, 1600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final c = _hub(repo, user: user);
+      await c.load();
+      await tester.pumpWidget(
+        MaterialApp(home: GroupChatScreen(groupId: 'g-1', controller: c)),
+      );
+      await tester.pumpAndSettle();
+      return c;
+    }
+
+    testWidgets(
+      'consecutive same-sender messages within 2 minutes group: sender label shown once',
+      (tester) async {
+        final repo = _repo();
+        // 'Hi!' (u-b, 09:06) already exists; add a second u-b message one
+        // minute later — close enough to group with it.
+        repo.seedMessage(
+          groupId: 'g-1',
+          senderId: 'u-b',
+          body: 'Still there?',
+          // Between 'Hi!' (u-b, 9:06) and 'Hello' (u-me, 9:07), so the two
+          // u-b messages land adjacent to each other in the sorted window.
+          at: DateTime(2026, 9, 10, 9, 6, 30),
+        );
+        await pump(tester, repo);
+        expect(find.text('Hi!'), findsOneWidget);
+        expect(find.text('Still there?'), findsOneWidget);
+        expect(
+          find.text('Bea'),
+          findsOneWidget,
+          reason: 'grouped bubbles show the sender label only on the first one',
+        );
+      },
+    );
+
+    testWidgets(
+      'same-sender messages more than 2 minutes apart do not group: sender label shown twice',
+      (tester) async {
+        final repo = _repo();
+        repo.seedMessage(
+          groupId: 'g-1',
+          senderId: 'u-b',
+          body: 'Back again',
+          at: DateTime(2026, 9, 10, 9, 20),
+        );
+        await pump(tester, repo);
+        expect(find.text('Bea'), findsNWidgets(2));
+      },
+    );
+
+    testWidgets('a message on a new day gets its own date separator', (
+      tester,
+    ) async {
+      final repo = _repo();
+      repo.seedMessage(
+        groupId: 'g-1',
+        senderId: 'u-owner',
+        body: 'Next day message',
+        at: DateTime(2026, 9, 11, 8, 0),
+      );
+      await pump(tester, repo);
+      // All seeded 09-10 messages share one separator; the new 09-11
+      // message gets a second, distinct one.
+      expect(find.textContaining('SEP 2026'), findsNWidgets(2));
+    });
+
+    testWidgets(
+      'admin_only_chat=true: a plain member sees the lock, not the composer',
+      (tester) async {
+        final repo = _repo();
+        repo.groups['g-1']!.adminOnlyChat = true;
+        await pump(tester, repo);
+        expect(find.byKey(const Key('discussion_admin_only_lock')), findsOneWidget);
+        expect(find.byKey(const Key('discussion_message_field')), findsNothing);
+        expect(find.byKey(const Key('discussion_send_button')), findsNothing);
+        expect(find.text('Only admins can send messages right now'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'admin_only_chat=true: the owner still sees the normal composer',
+      (tester) async {
+        final repo = _repo()..currentUser = 'u-owner';
+        repo.groups['g-1']!.adminOnlyChat = true;
+        await pump(tester, repo, user: 'u-owner');
+        expect(find.byKey(const Key('discussion_admin_only_lock')), findsNothing);
+        expect(find.byKey(const Key('discussion_message_field')), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'admin_only_chat=true: an admin also still sees the normal composer',
+      (tester) async {
+        final repo = _repo();
+        repo.groups['g-1']!.adminOnlyChat = true;
+        repo.groups['g-1']!.roles['u-me'] = 'admin';
+        await pump(tester, repo);
+        expect(find.byKey(const Key('discussion_admin_only_lock')), findsNothing);
+        expect(find.byKey(const Key('discussion_message_field')), findsOneWidget);
+      },
+    );
+
+    testWidgets('admin_only_chat=false: every role sees the normal composer', (
+      tester,
+    ) async {
+      final repo = _repo();
+      await pump(tester, repo);
+      expect(find.byKey(const Key('discussion_admin_only_lock')), findsNothing);
+      expect(find.byKey(const Key('discussion_message_field')), findsOneWidget);
+    });
+
+    testWidgets(
+      "an admin sender's bubble shows the Admin role badge; a plain member's does not",
+      (tester) async {
+        final repo = _repo();
+        repo.groups['g-1']!.roles['u-b'] = 'admin';
+        await pump(tester, repo);
+        expect(find.text('🛡️ Admin'), findsOneWidget, reason: "u-b's message carries the badge");
+        expect(
+          find.text('👑 Owner'),
+          findsOneWidget,
+          reason: "the fixture's existing u-owner message still carries its own badge",
+        );
+      },
+    );
+
+    testWidgets(
+      "the owner's bubble shows the Owner role badge",
+      (tester) async {
+        final repo = _repo();
+        await pump(tester, repo);
+        expect(find.text('👑 Owner'), findsOneWidget, reason: "u-owner's message carries the badge");
+        expect(find.text('🛡️ Admin'), findsNothing);
+      },
+    );
+  });
 }
 
 class _FailingChatRepository extends InMemoryGroupRepository {
