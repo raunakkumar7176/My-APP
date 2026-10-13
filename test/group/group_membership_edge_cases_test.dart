@@ -457,6 +457,158 @@ void main() {
       expect(c.error, contains('cannot be assigned'));
       c.dispose();
     });
+
+    // Phase 2: fn_transfer_group_ownership — the real transfer feature.
+    test('owner can transfer; old owner becomes admin, new owner becomes owner', () async {
+      final repo = InMemoryGroupRepository(currentUser: 'u-me')
+        ..seed(id: 'g-1', ownerId: 'u-me', members: {'u-2': 'member'});
+      final c = _hub(repo);
+      await c.load();
+      expect(await c.transferOwnership('u-2'), isTrue);
+      expect(repo.groups['g-1']!.ownerId, 'u-2');
+      expect(repo.groups['g-1']!.roles['u-2'], 'owner');
+      expect(repo.groups['g-1']!.roles['u-me'], 'admin');
+      // The caller is re-read: they're now admin, not owner.
+      expect(c.isOwner, isFalse);
+      c.dispose();
+    });
+
+    test('non-owner cannot transfer ownership', () async {
+      final repo = InMemoryGroupRepository(currentUser: 'u-2')
+        ..seed(id: 'g-1', ownerId: 'u-me', members: {'u-2': 'member'});
+      final c = _hub(repo, user: 'u-2');
+      await c.load();
+      expect(await c.transferOwnership('u-me'), isFalse);
+      expect(c.error, contains('Only the owner'));
+      expect(repo.groups['g-1']!.ownerId, 'u-me');
+      c.dispose();
+    });
+
+    test('cannot transfer to someone who is not already a member', () async {
+      final repo = InMemoryGroupRepository(currentUser: 'u-me')
+        ..seed(id: 'g-1', ownerId: 'u-me', members: {'u-2': 'member'});
+      final c = _hub(repo);
+      await c.load();
+      expect(await c.transferOwnership('u-not-a-member'), isFalse);
+      expect(repo.groups['g-1']!.ownerId, 'u-me');
+      c.dispose();
+    });
+
+    test('a transfer always leaves exactly one owner in the roster', () async {
+      final repo = InMemoryGroupRepository(currentUser: 'u-me')
+        ..seed(id: 'g-1', ownerId: 'u-me', members: {'u-2': 'member', 'u-3': 'member'});
+      final c = _hub(repo);
+      await c.load();
+      expect(await c.transferOwnership('u-2'), isTrue);
+      final owners = repo.groups['g-1']!.roles.values.where((r) => r == 'owner');
+      expect(owners.length, 1);
+      c.dispose();
+    });
+  });
+
+  group('J. Removed-member approval gate (migration 0111)', () {
+    test('a member removed by someone else cannot rejoin by invite code without approval', () async {
+      final repo = InMemoryGroupRepository(currentUser: 'u-owner')
+        ..seed(id: 'g-1', ownerId: 'u-owner', privacy: 'public', members: {'u-2': 'member'});
+      // Owner removes u-2 — an actual removal, not a self-leave.
+      final ownerC = _hub(repo, user: 'u-owner');
+      await ownerC.load();
+      expect(await ownerC.removeMember('u-2'), isTrue);
+      ownerC.dispose();
+
+      // u-2 tries to rejoin the same (public!) group with the invite code.
+      repo.currentUser = 'u-2';
+      final outcome = await repo.joinByCode(repo.groups['g-1']!.inviteCode);
+      expect(
+        outcome,
+        isA<JoinRequestFiled>(),
+        reason: 'a removed member is routed through approval even though the group is public',
+      );
+      expect(repo.groups['g-1']!.roles.containsKey('u-2'), isFalse);
+    });
+
+    test('approving that join request clears the removed-member mark', () async {
+      final repo = InMemoryGroupRepository(currentUser: 'u-owner')
+        ..seed(id: 'g-1', ownerId: 'u-owner', privacy: 'public', members: {'u-2': 'member'});
+      final ownerC = _hub(repo, user: 'u-owner');
+      await ownerC.load();
+      await ownerC.removeMember('u-2');
+
+      repo.currentUser = 'u-2';
+      await repo.joinByCode(repo.groups['g-1']!.inviteCode);
+      repo.currentUser = 'u-owner';
+      final requestId = repo.seedJoinRequest(groupId: 'g-1', userId: 'u-2');
+      await repo.decideJoinRequest(requestId, approve: true);
+
+      expect(repo.groups['g-1']!.roles.containsKey('u-2'), isTrue);
+      expect(repo.groups['g-1']!.removedUserIds.contains('u-2'), isFalse);
+      ownerC.dispose();
+    });
+
+    test('a member who voluntarily leaves is NOT treated as removed', () async {
+      final repo = InMemoryGroupRepository(currentUser: 'u-2')
+        ..seed(id: 'g-1', ownerId: 'u-owner', privacy: 'public', members: {'u-2': 'member'});
+      final c = _hub(repo, user: 'u-2');
+      await c.load();
+      await c.leave();
+      c.dispose();
+
+      final outcome = await repo.joinByCode(repo.groups['g-1']!.inviteCode);
+      expect(
+        outcome,
+        isA<JoinedGroup>(),
+        reason: 'leaving voluntarily is not a punishment — straight rejoin via a public group',
+      );
+    });
+  });
+
+  group('K. Invite expiry / max-uses (migration 0111)', () {
+    test('an expired invite code is refused', () async {
+      final repo = InMemoryGroupRepository(currentUser: 'u-owner')
+        ..seed(id: 'g-1', ownerId: 'u-owner', privacy: 'public');
+      repo.groups['g-1']!.inviteExpiresAt = DateTime.now().subtract(const Duration(days: 1));
+      repo.currentUser = 'u-2';
+      await expectLater(
+        repo.joinByCode(repo.groups['g-1']!.inviteCode),
+        throwsA(isA<DataError>()),
+      );
+    });
+
+    test('an invite code refuses joins once its max-uses budget is spent', () async {
+      final repo = InMemoryGroupRepository(currentUser: 'u-owner')
+        ..seed(id: 'g-1', ownerId: 'u-owner', privacy: 'public');
+      repo.groups['g-1']!.inviteMaxUses = 1;
+      repo.currentUser = 'u-2';
+      final first = await repo.joinByCode(repo.groups['g-1']!.inviteCode);
+      expect(first, isA<JoinedGroup>());
+
+      repo.currentUser = 'u-3';
+      await expectLater(
+        repo.joinByCode(repo.groups['g-1']!.inviteCode),
+        throwsA(isA<DataError>()),
+      );
+    });
+
+    test('rotating the invite code resets the use counter', () async {
+      final repo = InMemoryGroupRepository(currentUser: 'u-owner')
+        ..seed(id: 'g-1', ownerId: 'u-owner', privacy: 'public');
+      repo.currentUser = 'u-2';
+      await repo.joinByCode(repo.groups['g-1']!.inviteCode);
+      expect(repo.groups['g-1']!.inviteUseCount, 1);
+
+      repo.currentUser = 'u-owner';
+      await repo.rotateInviteCode('g-1');
+      expect(repo.groups['g-1']!.inviteUseCount, 0);
+    });
+
+    test('setInviteLimits requires GROUP_SETTINGS or owner', () async {
+      final repo = InMemoryGroupRepository(currentUser: 'u-2')
+        ..seed(id: 'g-1', ownerId: 'u-owner', members: {'u-2': 'member'});
+      await expectLater(
+        repo.setInviteLimits(groupId: 'g-1', expiresAt: null, maxUses: 5),
+        throwsA(anything),
+      );
+    });
   });
 
   group('Stale state clearance', () {
