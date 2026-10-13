@@ -691,7 +691,12 @@ class _FailingRepository implements GroupRepository {
   Future<Group?> groupForMember(String groupId) async =>
       throw const DataError(message: 'Could not load groups.');
   @override
-  Future<List<GroupMember>> members(String groupId) async => const [];
+  Future<List<GroupMember>> members(
+    String groupId, {
+    int limit = 50,
+    int offset = 0,
+    String? search,
+  }) async => const [];
   @override
   Future<String> create({
     required String name,
@@ -721,6 +726,11 @@ class _FailingRepository implements GroupRepository {
   Future<bool> canEditSettings(String groupId) async => false;
   @override
   Future<void> clearLogo(String groupId) async {}
+  @override
+  Future<void> updateAdminOnlyChat({
+    required String groupId,
+    required bool adminOnlyChat,
+  }) async {}
   @override
   Future<String> inviteCode(String groupId) async =>
       throw const DataError(message: 'nope');

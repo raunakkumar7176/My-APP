@@ -17,6 +17,7 @@ final class Group {
     this.userRole = 'member',
     this.description,
     this.privacy,
+    this.adminOnlyChat = false,
   });
 
   final String id;
@@ -25,6 +26,10 @@ final class Group {
   final String? logoUrl;
   final DateTime createdAt;
   final int memberCount;
+
+  /// `groups.admin_only_chat` (migration 0110). Null-safe default false for
+  /// any read path that doesn't select it (e.g. the list RPC).
+  final bool adminOnlyChat;
 
   /// Caller's role in the group: owner | leader | moderator | member
   /// (`public.group_role`); 'owner' when the caller owns the group without a
@@ -56,6 +61,7 @@ final class Group {
       userRole: (json['user_role'] as String?) ?? 'member',
       description: json['description'] as String?,
       privacy: json['privacy'] as String?,
+      adminOnlyChat: json['admin_only_chat'] as bool? ?? false,
     );
   }
 
@@ -65,6 +71,7 @@ final class Group {
     String? privacy,
     int? memberCount,
     String? userRole,
+    bool? adminOnlyChat,
   }) {
     return Group(
       id: id,
@@ -76,6 +83,7 @@ final class Group {
       userRole: userRole ?? this.userRole,
       description: description ?? this.description,
       privacy: privacy ?? this.privacy,
+      adminOnlyChat: adminOnlyChat ?? this.adminOnlyChat,
     );
   }
 
@@ -90,6 +98,7 @@ final class Group {
       'user_role': userRole,
       if (description != null) 'description': description,
       if (privacy != null) 'privacy': privacy,
+      'admin_only_chat': adminOnlyChat,
     };
   }
 

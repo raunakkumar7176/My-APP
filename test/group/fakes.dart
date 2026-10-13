@@ -47,6 +47,7 @@ class FakeGroup {
   String privacy;
   String inviteCode;
   String? logoUrl;
+  bool adminOnlyChat = false;
   final Map<String, String> roles = {}; // userId -> group_role
   final List<GroupRule> rules = [];
   final List<GroupAnnouncement> announcements = [];
@@ -121,6 +122,7 @@ class InMemoryGroupRepository implements GroupRepository {
     userRole: g.roles[currentUser] ?? 'member',
     description: withProfile ? g.description : null,
     privacy: withProfile ? g.privacy : null,
+    adminOnlyChat: g.adminOnlyChat,
   );
 
   @override
@@ -143,11 +145,17 @@ class InMemoryGroupRepository implements GroupRepository {
   }
 
   @override
-  Future<List<GroupMember>> members(String groupId) async {
-    calls.add('members:$groupId');
+  Future<List<GroupMember>> members(
+    String groupId, {
+    int limit = 50,
+    int offset = 0,
+    String? search,
+  }) async {
+    calls.add('members:$groupId:$limit:$offset${search == null ? '' : ':$search'}');
     final g = groups[groupId];
     if (g == null || !g.roles.containsKey(currentUser)) return const [];
-    return [
+    final q = search?.trim().toLowerCase();
+    final all = [
       for (final e in g.roles.entries)
         GroupMember(
           groupId: groupId,
@@ -159,6 +167,17 @@ class InMemoryGroupRepository implements GroupRepository {
           bio: bios[e.key],
         ),
     ];
+    final filtered = q == null || q.isEmpty
+        ? all
+        : [
+            for (final m in all)
+              if ((m.fullName?.toLowerCase().contains(q) ?? false) ||
+                  (m.studentCode?.toLowerCase().contains(q) ?? false))
+                m,
+          ];
+    if (offset >= filtered.length) return const [];
+    final end = (offset + limit).clamp(0, filtered.length);
+    return filtered.sublist(offset, end);
   }
 
   @override
@@ -458,6 +477,20 @@ class InMemoryGroupRepository implements GroupRepository {
     g.name = name.trim();
     g.description = description.trim();
     if (privacy != null) g.privacy = privacy;
+  }
+
+  @override
+  Future<void> updateAdminOnlyChat({
+    required String groupId,
+    required bool adminOnlyChat,
+  }) async {
+    calls.add('updateAdminOnlyChat:$groupId:$adminOnlyChat');
+    _maybeFail();
+    final g = groups[groupId];
+    if (g == null || !await canEditSettings(groupId)) {
+      throw _notAuthorized(GroupErrorContext.update);
+    }
+    g.adminOnlyChat = adminOnlyChat;
   }
 
   @override

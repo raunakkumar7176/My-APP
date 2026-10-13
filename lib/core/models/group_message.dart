@@ -15,6 +15,7 @@ final class GroupMessage {
     required this.createdAt,
     this.messageType = 'text',
     this.deletedAt,
+    this.metadata = const {},
   });
 
   /// Live CHECK: `char_length(body) BETWEEN 1 AND 2000`.
@@ -27,15 +28,32 @@ final class GroupMessage {
   final String? senderId;
   final String body;
   final DateTime createdAt;
+
+  /// `'text' | 'system_event' | 'system' | 'announcement' | 'test' |
+  /// 'activity' | 'question' | 'solution'` (live CHECK, migration 0062).
+  /// `'system'`/`'announcement'`/`'test'` are auto-posted by
+  /// `fn_insert_system_message` (migration 0039) with real sender ids (the
+  /// acting user, falling back to the group owner) — never null — so
+  /// [isSystem] cannot key on a null sender alone.
   final String messageType;
+
+  /// `group_messages.metadata` (jsonb, migration 0039+). Carries the extra
+  /// fields a system-posted message needs to render richly — e.g. a test
+  /// announcement's `test_id`/`title`; empty for an ordinary text message.
+  final Map<String, dynamic> metadata;
 
   /// Non-null when the message has been soft-deleted. The client must show
   /// "Message deleted" instead of [body] and must not expose the original
   /// content.
   final DateTime? deletedAt;
 
-  bool get isSystem => senderId == null || messageType == 'system_event';
+  bool get isSystem =>
+      senderId == null ||
+      messageType == 'system_event' ||
+      messageType == 'system';
   bool get isSystemEvent => isSystem;
+  bool get isAnnouncement => messageType == 'announcement';
+  bool get isTestAnnouncement => messageType == 'test';
   bool get isDeleted => deletedAt != null;
 
   factory GroupMessage.fromJson(Map<String, dynamic> json) {
@@ -49,6 +67,7 @@ final class GroupMessage {
       deletedAt: json['deleted_at'] == null
           ? null
           : DateTime.parse(json['deleted_at'] as String).toLocal(),
+      metadata: (json['metadata'] as Map<String, dynamic>?) ?? const {},
     );
   }
 
@@ -60,6 +79,7 @@ final class GroupMessage {
     'message_type': messageType,
     'created_at': createdAt.toUtc().toIso8601String(),
     if (deletedAt != null) 'deleted_at': deletedAt!.toUtc().toIso8601String(),
+    if (metadata.isNotEmpty) 'metadata': metadata,
   };
 
   @override

@@ -37,6 +37,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
   final _input = TextEditingController();
   final _scrollController = ScrollController();
   bool _canSend = false;
+  bool _muted = false;
 
   /// Message ids already shown once — only a genuinely NEW id (just
   /// arrived, or just sent) gets the entrance animation; scrolling an old
@@ -61,6 +62,42 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     }
     _input.addListener(_onInputChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+    _loadMuted();
+  }
+
+  Future<void> _loadMuted() async {
+    final repo = _c.notifications;
+    if (repo == null) return;
+    try {
+      final muted = await repo.isMuted(_c.groupId);
+      if (mounted) setState(() => _muted = muted);
+    } catch (_) {
+      // Best-effort; the menu simply shows "Mute" until this succeeds.
+    }
+  }
+
+  Future<void> _toggleMuted(BuildContext context) async {
+    final repo = _c.notifications;
+    if (repo == null) return;
+    final next = !_muted;
+    try {
+      await repo.setMuted(_c.groupId, muted: next);
+      if (mounted) setState(() => _muted = next);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(next ? 'Notifications muted' : 'Notifications unmuted'),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not update notification settings.'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
   }
 
   void _onInputChanged() {
@@ -457,17 +494,11 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                   } else if (val == 'tests') {
                     context.push('/groups/${_c.groupId}/tests');
                   } else if (val == 'mute') {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Notifications muted')),
-                    );
-                  } else if (val == 'clear') {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Chat messages cleared locally')),
-                    );
+                    _toggleMuted(context);
                   }
                 },
-                itemBuilder: (_) => const [
-                  PopupMenuItem(
+                itemBuilder: (_) => [
+                  const PopupMenuItem(
                     value: 'info',
                     child: Row(
                       children: [
@@ -477,7 +508,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                       ],
                     ),
                   ),
-                  PopupMenuItem(
+                  const PopupMenuItem(
                     value: 'tests',
                     child: Row(
                       children: [
@@ -491,19 +522,14 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                     value: 'mute',
                     child: Row(
                       children: [
-                        Icon(Icons.notifications_off_outlined, size: 18),
-                        SizedBox(width: 10),
-                        Text('Mute notifications'),
-                      ],
-                    ),
-                  ),
-                  PopupMenuItem(
-                    value: 'clear',
-                    child: Row(
-                      children: [
-                        Icon(Icons.cleaning_services_outlined, size: 18),
-                        SizedBox(width: 10),
-                        Text('Clear chat'),
+                        Icon(
+                          _muted
+                              ? Icons.notifications_active_outlined
+                              : Icons.notifications_off_outlined,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 10),
+                        Text(_muted ? 'Unmute notifications' : 'Mute notifications'),
                       ],
                     ),
                   ),
@@ -757,19 +783,18 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     Color bg;
     Color text;
 
+    // Migration 0108 merged leader/moderator into admin; both legacy
+    // strings are still mapped here defensively (same as GroupRole.fromDb).
     switch (role.toLowerCase()) {
       case 'owner':
-        label = '👑 Admin';
+        label = '👑 Owner';
         bg = isDark ? const Color(0xFF3B2814) : const Color(0xFFFEF3C7);
         text = isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309);
         break;
+      case 'admin':
       case 'leader':
-        label = '⭐ Leader';
-        bg = isDark ? const Color(0xFF143026) : const Color(0xFFDCFCE7);
-        text = isDark ? const Color(0xFF34D399) : const Color(0xFF15803D);
-        break;
       case 'moderator':
-        label = '🛡️ Mod';
+        label = '🛡️ Admin';
         bg = isDark ? const Color(0xFF2E1C40) : const Color(0xFFF3E8FF);
         text = isDark ? const Color(0xFFC084FC) : const Color(0xFF7E22CE);
         break;
@@ -1000,49 +1025,52 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     );
   }
 
+  /// A visible placeholder only — real attachments (files/images) land in
+  /// Phase 3. Tapping it must never silently claim success.
   void _showAttachmentOptions(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    showModalBottomSheet<void>(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _sheetHandle(isDark),
-              const SizedBox(height: 8),
-              _sheetAction(
-                icon: Icons.quiz_rounded,
-                iconColor: const Color(0xFF4338CA),
-                label: 'Group Tests',
-                isDark: isDark,
-                onTap: () {
-                  Navigator.pop(ctx);
-                  context.push('/groups/${_c.groupId}/tests');
-                },
-              ),
-              _sheetAction(
-                icon: Icons.menu_book_rounded,
-                iconColor: const Color(0xFF15803D),
-                label: 'Study Materials',
-                isDark: isDark,
-                onTap: () {
-                  Navigator.pop(ctx);
-                  context.push('/study');
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Attachments are coming soon.')),
     );
   }
 
   Widget _buildComposer(BuildContext context, bool isDark) {
+    final locked = (_c.group?.adminOnlyChat ?? false) &&
+        !_c.myRole.isOwner &&
+        !_c.myRole.isAdmin;
+    if (locked) {
+      return Container(
+        key: const Key('discussion_admin_only_lock'),
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF4F6FB),
+          border: Border(
+            top: BorderSide(
+              color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE5E9F2),
+            ),
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.lock_outline_rounded,
+              size: 16,
+              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              'Only admins can send messages right now',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     return Container(
       padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
       decoration: BoxDecoration(
@@ -1085,7 +1113,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                 onSubmitted: (_) => _c.sending ? null : _send(),
                 style: const TextStyle(fontSize: 14.5),
                 decoration: const InputDecoration(
-                  hintText: 'Message…',
+                  hintText: 'Type a message or ask a doubt…',
                   hintStyle: TextStyle(fontSize: 14.5),
                   border: InputBorder.none,
                   isDense: true,

@@ -60,7 +60,15 @@ abstract interface class GroupRepository {
   Future<Group?> groupForMember(String groupId);
 
   /// `group_members` + embedded `profiles`, readable to fellow members.
-  Future<List<GroupMember>> members(String groupId);
+  /// Paginated (oldest-first) and, when [search] is given, filtered
+  /// server-side against the member's name/student code — groups can have
+  /// up to 500 members (migration 0109).
+  Future<List<GroupMember>> members(
+    String groupId, {
+    int limit = 50,
+    int offset = 0,
+    String? search,
+  });
 
   /// `fn_create_group(name, description, privacy)` — creates the group, the
   /// owner membership row and the default leader permissions server-side.
@@ -119,6 +127,14 @@ abstract interface class GroupRepository {
     required String name,
     required String description,
     String? privacy,
+  });
+
+  /// Sets `groups.admin_only_chat` (migration 0110). Same UPDATE policy as
+  /// [updateBasics] — the server also re-checks it on every message INSERT,
+  /// this call only decides whether that gate is on.
+  Future<void> updateAdminOnlyChat({
+    required String groupId,
+    required bool adminOnlyChat,
   });
 
   /// Sets `groups.logo_url` to NULL. Same UPDATE policy. The storage object
@@ -433,43 +449,72 @@ class SupabaseGroupRepository implements GroupRepository {
       if (membership == null) return null;
 
       // Explicit columns: `invite_code` is never selected here.
+      // `member_count` is read straight off the trigger-maintained column
+      // (migration 0108) — O(1), no separate COUNT(*) round-trip needed.
       final row = await _client
           .from('groups')
           .select(
-            'id, name, description, logo_url, owner_id, privacy, created_at',
+            'id, name, description, logo_url, owner_id, privacy, created_at, member_count, admin_only_chat',
           )
           .eq('id', groupId)
           .maybeSingle();
       if (row == null) return null;
 
-      final count = await _client
-          .from('group_members')
-          .count(CountOption.exact)
-          .eq('group_id', groupId);
-
       return Group.fromJson({
         ...row,
-        'member_count': count,
         'user_role': membership['role'],
       });
     },
   );
 
+  /// Members are ordered oldest-first (`joined_at`) so a page boundary never
+  /// shifts under an already-open list as new members join at the end.
+  /// [search] matches server-side against the joined profile's name or
+  /// student code (case-insensitive substring) — groups can have up to 500
+  /// members (migration 0109), so filtering client-side over the whole
+  /// roster stops being viable well before that cap.
   @override
-  Future<List<GroupMember>> members(String groupId) =>
-      _guard(GroupErrorContext.load, () async {
-        final rows = await _client
-            .from('group_members')
-            .select(
-              'group_id, user_id, role, joined_at, profiles(full_name, avatar_url, student_code, bio)',
-            )
-            .eq('group_id', groupId)
-            .order('joined_at');
-        return [
-          for (final r in rows as List)
-            GroupMember.fromJson(r as Map<String, dynamic>),
-        ];
-      });
+  Future<List<GroupMember>> members(
+    String groupId, {
+    int limit = 50,
+    int offset = 0,
+    String? search,
+  }) => _guard(GroupErrorContext.load, () async {
+    final q = search?.trim();
+    // Two plain, single-table queries rather than an embedded-table filter:
+    // `profiles` search first (well-trodden `ilike` pattern already used
+    // elsewhere for student lookup), then group_members by the matched ids.
+    // Keeps this on syntax already proven live, rather than a referenced-
+    // table `.or()` this codebase has never actually exercised.
+    List<String>? matchingUserIds;
+    if (q != null && q.isNotEmpty) {
+      final matches = await _client
+          .from('profiles')
+          .select('id')
+          .or('full_name.ilike.%$q%,student_code.ilike.%$q%');
+      matchingUserIds = [
+        for (final r in matches as List) (r as Map)['id'] as String,
+      ];
+      if (matchingUserIds.isEmpty) return const [];
+    }
+
+    var query = _client
+        .from('group_members')
+        .select(
+          'group_id, user_id, role, joined_at, profiles(full_name, avatar_url, student_code, bio)',
+        )
+        .eq('group_id', groupId);
+    if (matchingUserIds != null) {
+      query = query.inFilter('user_id', matchingUserIds);
+    }
+    final rows = await query
+        .order('joined_at')
+        .range(offset, offset + limit - 1);
+    return [
+      for (final r in rows as List)
+        GroupMember.fromJson(r as Map<String, dynamic>),
+    ];
+  });
 
   @override
   Future<String> create({
@@ -609,6 +654,17 @@ class SupabaseGroupRepository implements GroupRepository {
           'description': description.trim(),
           'privacy': ?privacy,
         })
+        .eq('id', groupId);
+  });
+
+  @override
+  Future<void> updateAdminOnlyChat({
+    required String groupId,
+    required bool adminOnlyChat,
+  }) => _guard(GroupErrorContext.update, () async {
+    await _client
+        .from('groups')
+        .update({'admin_only_chat': adminOnlyChat})
         .eq('id', groupId);
   });
 
@@ -1067,12 +1123,13 @@ class SupabaseGroupRepository implements GroupRepository {
 
   // ── Group Chat (G8) ──
 
-  /// Base columns including `deleted_at` (present since the initial migration;
-  /// selected so the client can show a truthful "Message deleted" placeholder
-  /// for soft-deleted rows). `message_type` / `metadata` / `deleted_by` are
-  /// never requested so a partially-migrated live table still reads.
+  /// `message_type` and `metadata` are live since 0038/0039 (confirmed:
+  /// `fn_insert_system_message` has posted system/announcement/test rows
+  /// since 0039, and every migration this client already depends on, 0062+,
+  /// post-dates both) — selected so the client can render test-announcement
+  /// cards and style system/announcement rows distinctly from ordinary text.
   static const _messageColumns =
-      'id, group_id, sender_id, body, created_at, deleted_at';
+      'id, group_id, sender_id, body, created_at, deleted_at, message_type, metadata';
 
   @override
   Future<List<GroupMessage>> messages(

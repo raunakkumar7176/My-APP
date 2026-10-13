@@ -344,11 +344,16 @@ class _FailingRosterRepository extends InMemoryGroupRepository {
   bool _failed = false;
 
   @override
-  Future<List<GroupMember>> members(String groupId) async {
+  Future<List<GroupMember>> members(
+    String groupId, {
+    int limit = 50,
+    int offset = 0,
+    String? search,
+  }) async {
     if (!_failed) {
       _failed = true;
       throw const DataError(message: 'Network error.');
     }
-    return super.members(groupId);
+    return super.members(groupId, limit: limit, offset: offset, search: search);
   }
 }
