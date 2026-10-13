@@ -24,6 +24,7 @@ import 'package:my_praperation/features/group/domain/group_privacy.dart';
 import 'package:my_praperation/features/group/domain/group_role.dart';
 import 'package:my_praperation/features/group/screens/group_create_screen.dart';
 import 'package:my_praperation/features/group/screens/group_info_screen.dart';
+import 'package:my_praperation/features/group/screens/group_settings_screen.dart';
 import 'package:my_praperation/features/group/screens/group_list_screen.dart';
 import 'package:my_praperation/features/group/state/group_hub_controller.dart';
 import 'package:my_praperation/features/group/state/group_list_controller.dart';
@@ -649,9 +650,13 @@ void main() {
       c.dispose();
     });
 
-    testWidgets('hub: member sees a working Leave button and confirmation', (
+    testWidgets('settings: member sees a working Leave button and confirmation', (
       tester,
     ) async {
+      // Leave moved from Info's old Danger Zone to Settings' (Phase 2,
+      // item A/B.9) — reachable even for a plain member with no other
+      // settings-related permission (the forbidden-screen fallback still
+      // offers Leave, since leaving needs no permission at all).
       final repo = InMemoryGroupRepository(currentUser: 'u-me')
         ..seed(id: 'g-1', ownerId: 'u-owner', members: {'u-me': 'member'});
       final c = GroupHubController(
@@ -659,20 +664,19 @@ void main() {
         repository: repo,
         currentUserId: 'u-me',
       );
-      // Tall viewport: the leave button sits below the G6/G7/G8 sections in
-      // the hub's lazy ListView.
-      tester.view.physicalSize = const Size(800, 4100);
+      tester.view.physicalSize = const Size(800, 2700);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       await tester.pumpWidget(
         MaterialApp(
-          home: GroupInfoScreen(groupId: 'g-1', controller: c),
+          home: GroupSettingsScreen(groupId: 'g-1', controller: c),
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('leave_group_button')), findsOneWidget);
+      expect(find.byKey(const Key('settings_forbidden')), findsOneWidget);
+      expect(find.byKey(const Key('settings_leave_button')), findsOneWidget);
 
-      await tester.tap(find.byKey(const Key('leave_group_button')));
+      await tester.tap(find.byKey(const Key('settings_leave_button')));
       await tester.pumpAndSettle();
       expect(find.text('Leave group?'), findsOneWidget);
       await tester.tap(find.text('Cancel'));

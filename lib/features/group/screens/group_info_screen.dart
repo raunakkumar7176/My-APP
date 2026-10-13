@@ -17,7 +17,6 @@ import '../widgets/group_action_row.dart';
 import '../widgets/group_announcements_section.dart';
 import '../widgets/group_avatar.dart';
 import '../widgets/group_leaderboard_section.dart';
-import '../widgets/group_management_section.dart';
 import '../widgets/group_media_section.dart';
 import '../widgets/group_members_section.dart';
 import '../widgets/group_rules_section.dart';
@@ -87,11 +86,6 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
 
   Future<void> _openTests() async {
     await context.push('/groups/${widget.groupId}/tests');
-    if (mounted) await _c.refresh();
-  }
-
-  Future<void> _openMembers() async {
-    await context.push('/groups/${widget.groupId}/members');
     if (mounted) await _c.refresh();
   }
 
@@ -207,76 +201,8 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
     invite.dispose();
   }
 
-  Future<void> _leave() async {
-    if (!_c.canLeave) return;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Leave group?'),
-        content: Text(
-          'You will lose access to ${_c.group?.name ?? 'this group'}, its tests and discussions.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            key: const Key('confirm_leave'),
-            style: FilledButton.styleFrom(backgroundColor: AppColors.error),
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Leave Group'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-    final ok = await _c.leave();
-    if (!mounted) return;
-    if (ok) {
-      _snack('You left the group.');
-      context.go('/groups');
-    } else {
-      _snack(_c.error ?? 'Could not leave the group.', error: true);
-    }
-  }
-
-  Future<void> _deleteGroup() async {
-    if (!_c.canDeleteGroup) {
-      _snack('Only the group owner can delete this group.', error: true);
-      return;
-    }
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete this group?'),
-        content: const Text(
-          'This action cannot be undone. All messages, members, and group data will be permanently deleted.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            key: const Key('confirm_delete_group'),
-            style: FilledButton.styleFrom(backgroundColor: AppColors.error),
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Delete Group'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-    final ok = await _c.deleteGroup();
-    if (!mounted) return;
-    if (ok) {
-      _snack('Group deleted.');
-      context.go('/groups');
-    } else {
-      _snack(_c.error ?? 'Could not delete the group.', error: true);
-    }
-  }
+  // Leave/Delete/Transfer moved entirely to Settings' Danger Zone — Info
+  // no longer carries its own.
 
   Future<void> _pickAndUploadAvatar(ImageSource source) async {
     Navigator.of(context).pop();
@@ -500,20 +426,6 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
             ),
             const SizedBox(height: 20),
 
-            // One surface routing to every management screen this caller's
-            // server-reported permissions unlock; renders nothing for a
-            // plain member.
-            if (_c.hasManagementControls) ...[
-              GroupManagementSection(
-                controller: _c,
-                onOpenSettings: _openSettings,
-                onOpenMembers: _openMembers,
-                onOpenTests: _openTests,
-                onOpenRolePermissions: _openRolePermissions,
-              ),
-              const SizedBox(height: 20),
-            ],
-
             // Members (search + local paging).
             GroupMembersSection(
               controller: _c,
@@ -536,40 +448,23 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
             GroupLeaderboardSection(onOpenTests: _openTests),
             const SizedBox(height: 20),
 
-            // Announcements — visible to all members; manager controls
-            // (Post/Edit/Delete) are inside the section itself.
+            // Announcements — read-only here; posting/editing/deleting is
+            // a Settings action now (every section appears exactly once).
             _sectionShell(
               isDark: isDark,
               icon: Icons.campaign_rounded,
               iconColor: const Color(0xFFD97706),
-              child: GroupAnnouncementsSection(controller: _c),
+              child: GroupAnnouncementsSection(controller: _c, readOnly: true),
             ),
             const SizedBox(height: 20),
 
-            // Group rules — same visibility model as Announcements.
+            // Group rules — same read-only treatment as Announcements.
             _sectionShell(
               isDark: isDark,
               icon: Icons.gavel_rounded,
               iconColor: const Color(0xFF7C3AED),
-              child: GroupRulesSection(controller: _c),
+              child: GroupRulesSection(controller: _c, readOnly: true),
             ),
-            const SizedBox(height: 20),
-
-            if (_c.canManageRoles) ...[
-              _premiumActionTile(
-                isDark: isDark,
-                key: const Key('open_role_permissions'),
-                icon: Icons.admin_panel_settings_outlined,
-                iconColor: const Color(0xFF2563EB),
-                title: 'Roles & Permissions',
-                subtitle: 'Control what each role can do',
-                onTap: _openRolePermissions,
-              ),
-              const SizedBox(height: 20),
-            ],
-
-            // Danger Zone (Leave / Delete).
-            _buildDangerZone(context, isDark),
             const SizedBox(height: 32),
           ],
         ),
@@ -765,176 +660,4 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
     );
   }
 
-  Widget _premiumActionTile({
-    required bool isDark,
-    required Key key,
-    required IconData icon,
-    required Color iconColor,
-    required String title,
-    required String subtitle,
-    required VoidCallback onTap,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1E293B) : Colors.white,
-        borderRadius: AppRadius.xlBorder,
-        border: Border.all(
-          color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
-        ),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          key: key,
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Row(
-              children: [
-                Container(
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    color: iconColor.withValues(alpha: isDark ? 0.22 : 0.12),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(icon, size: 19, color: iconColor),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 14.5,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        subtitle,
-                        style: TextStyle(
-                          fontSize: 12.5,
-                          color: isDark
-                              ? const Color(0xFF94A3B8)
-                              : const Color(0xFF64748B),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Icon(
-                  Icons.chevron_right,
-                  color: isDark
-                      ? const Color(0xFF64748B)
-                      : const Color(0xFF94A3B8),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDangerZone(BuildContext context, bool isDark) {
-    final isOwner = _c.isOwner;
-
-    // The owner sees no leave button or explanatory text at all — ownership
-    // must be transferred (not modelled yet) before an owner can leave.
-    if (isOwner && !_c.canDeleteGroup) return const SizedBox.shrink();
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF2A1215) : const Color(0xFFFEF2F2),
-        borderRadius: AppRadius.xlBorder,
-        border: Border.all(
-          color: isDark ? const Color(0xFF5C1D24) : const Color(0xFFFECACA),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Row(
-            children: [
-              Icon(
-                Icons.warning_amber_rounded,
-                color: AppColors.error,
-                size: 20,
-              ),
-              SizedBox(width: 8),
-              Text(
-                'Danger Zone',
-                style: TextStyle(
-                  color: AppColors.error,
-                  fontSize: 15,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            isOwner
-                ? 'Deleting this group will remove all messages, tests, and member associations permanently.'
-                : 'Leaving this group will revoke your access to its materials and discussions.',
-            style: TextStyle(
-              fontSize: 13,
-              color: isDark ? const Color(0xFFFCA5A5) : const Color(0xFF991B1B),
-            ),
-          ),
-          const SizedBox(height: 14),
-          // Leave and Delete are independent actions (an owner who can
-          // always delete still can't leave without transferring
-          // ownership first) — rendered separately, not else-if. The owner
-          // sees Leave at all only if canLeave somehow becomes true later
-          // (e.g. ownership transfer); today that's never the case, which
-          // is why the whole zone is skipped above when there's nothing an
-          // owner can do here except delete.
-          if (_c.canLeave)
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                key: const Key('leave_group_button'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppColors.error,
-                  side: const BorderSide(color: AppColors.error),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-                onPressed: _leave,
-                icon: const Icon(Icons.exit_to_app, size: 18),
-                label: const Text(
-                  'Leave Group',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ),
-            ),
-          if (_c.canDeleteGroup) ...[
-            if (_c.canLeave) const SizedBox(height: 10),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                key: const Key('delete_group_button'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.error,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-                onPressed: _deleteGroup,
-                icon: const Icon(Icons.delete_forever, size: 18),
-                label: const Text(
-                  'Delete Group',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
 }

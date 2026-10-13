@@ -13,7 +13,6 @@ import 'package:my_praperation/features/group/domain/group_role.dart';
 import 'package:my_praperation/features/group/screens/group_info_screen.dart';
 import 'package:my_praperation/features/group/state/group_hub_controller.dart';
 import 'package:my_praperation/features/group/state/group_list_controller.dart';
-import 'package:my_praperation/features/group/widgets/group_management_section.dart';
 
 import 'fakes.dart';
 
@@ -154,25 +153,24 @@ void main() {
       hub.dispose();
     });
 
-    testWidgets('hub renders management section only for authorized users', (
+    testWidgets('hub shows the Settings entry only for authorized users', (
       tester,
     ) async {
       final repo = _repo(user: 'u-owner');
       final hub = _ctl(repo, user: 'u-owner');
       await _pumpHub(tester, hub);
       expect(find.byKey(const Key('group_header_meta')), findsOneWidget);
-      expect(find.byType(GroupManagementSection), findsOneWidget);
+      expect(find.byKey(const Key('group_info_settings_action_row')), findsOneWidget);
       hub.dispose();
     });
 
-    testWidgets('hub renders no management section for plain member', (
+    testWidgets('hub hides the Settings entry for a plain member', (
       tester,
     ) async {
       final repo = _repo(user: 'u-mem');
       final hub = _ctl(repo, user: 'u-mem');
       await _pumpHub(tester, hub);
-      expect(find.byType(GroupManagementSection), findsNothing);
-      expect(find.byKey(const Key('leave_group_button')), findsOneWidget);
+      expect(find.byKey(const Key('group_info_settings_action_row')), findsNothing);
       hub.dispose();
     });
   });

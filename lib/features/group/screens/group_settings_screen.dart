@@ -183,7 +183,9 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Discard changes?'),
-        content: const Text('You have unsaved changes to this group\'s settings.'),
+        content: const Text(
+          'You have unsaved changes to this group\'s settings.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
@@ -266,7 +268,9 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
           '${widget.groupId}/avatar_${DateTime.now().millisecondsSinceEpoch}.jpg';
       String? publicUrl;
       try {
-        await client.storage.from('group-avatars').uploadBinary(
+        await client.storage
+            .from('group-avatars')
+            .uploadBinary(
               path,
               bytes,
               fileOptions: const FileOptions(
@@ -277,7 +281,9 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
         publicUrl = client.storage.from('group-avatars').getPublicUrl(path);
       } catch (_) {
         final fallbackPath = 'groups/${widget.groupId}/avatar.jpg';
-        await client.storage.from('avatars').uploadBinary(
+        await client.storage
+            .from('avatars')
+            .uploadBinary(
               fallbackPath,
               bytes,
               fileOptions: const FileOptions(
@@ -388,17 +394,41 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
         ),
       );
     }
-    if (!_c.canEditBasics) {
+    // "Forbidden" means no card on this screen applies to this caller at
+    // all — Basics/Privacy/Invite/Permissions/Rules still need
+    // canEditBasics specifically, but Announcements (SEND_ANNOUNCEMENT)
+    // and Requests (MANAGE_MEMBERS) are real, narrower capabilities a
+    // leader/admin can hold without GROUP_SETTINGS (the live default
+    // seeding grants everything except GROUP_SETTINGS and MANAGE_ROLES) —
+    // locking them out of posting an announcement here just because they
+    // lack GROUP_SETTINGS would be a real regression, not a UX nicety.
+    final hasAnySettingsCapability =
+        _c.canEditBasics ||
+        _c.canSendAnnouncement ||
+        _c.canManageMembers ||
+        _c.canManageRolePermissions;
+    if (!hasAnySettingsCapability) {
       return Scaffold(
         appBar: AppBar(title: const Text('Group Settings')),
-        body: const Center(
+        body: Center(
           child: Padding(
-            padding: EdgeInsets.all(24),
-            child: Text(
-              'Only the group owner or a member with the settings permission '
-              'can change these.',
-              key: Key('settings_forbidden'),
-              textAlign: TextAlign.center,
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Only the group owner or a member with a settings-related '
+                  'permission can change these.',
+                  key: Key('settings_forbidden'),
+                  textAlign: TextAlign.center,
+                ),
+                // Leaving needs no permission at all — never hidden behind
+                // the capability gate above.
+                if (_c.canLeave) ...[
+                  const SizedBox(height: 16),
+                  SettingsDangerZone(controller: _c),
+                ],
+              ],
             ),
           ),
         ),
@@ -419,7 +449,9 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
         }
       },
       child: Scaffold(
-        backgroundColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+        backgroundColor: isDark
+            ? const Color(0xFF0F172A)
+            : const Color(0xFFF8FAFC),
         appBar: AppBar(title: const Text('Group Settings')),
         body: Column(
           children: [
@@ -427,214 +459,236 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(18),
-                    decoration: BoxDecoration(
-                      gradient: premium.AppColors.primaryGradient,
-                      borderRadius: AppRadius.xlBorder,
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(0xFF2563EB)
-                              .withValues(alpha: isDark ? 0.25 : 0.3),
-                          blurRadius: 24,
-                          offset: const Offset(0, 10),
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      children: [
-                        InkWell(
-                          onTap: _showAvatarOptions,
-                          borderRadius: AppRadius.pillBorder,
-                          child: Stack(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(3),
-                                decoration: const BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: Colors.white,
-                                ),
-                                child: GroupAvatar(
-                                  name: group.name,
-                                  logoUrl: group.logoUrl,
-                                  radius: 30,
-                                ),
-                              ),
-                              Positioned(
-                                bottom: 0,
-                                right: 0,
-                                child: Container(
-                                  padding: const EdgeInsets.all(4),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
+                  if (_c.canEditBasics) ...[
+                    Container(
+                      padding: const EdgeInsets.all(18),
+                      decoration: BoxDecoration(
+                        gradient: premium.AppColors.primaryGradient,
+                        borderRadius: AppRadius.xlBorder,
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF2563EB)
+                                .withValues(alpha: isDark ? 0.25 : 0.3),
+                            blurRadius: 24,
+                            offset: const Offset(0, 10),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        children: [
+                          InkWell(
+                            onTap: _showAvatarOptions,
+                            borderRadius: AppRadius.pillBorder,
+                            child: Stack(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(3),
+                                  decoration: const BoxDecoration(
                                     shape: BoxShape.circle,
-                                    border: Border.all(
-                                      color: const Color(0xFF2563EB),
-                                      width: 2,
+                                    color: Colors.white,
+                                  ),
+                                  child: GroupAvatar(
+                                    name: group.name,
+                                    logoUrl: group.logoUrl,
+                                    radius: 30,
+                                  ),
+                                ),
+                                Positioned(
+                                  bottom: 0,
+                                  right: 0,
+                                  child: Container(
+                                    padding: const EdgeInsets.all(4),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: const Color(0xFF2563EB),
+                                        width: 2,
+                                      ),
+                                    ),
+                                    child: const Icon(
+                                      Icons.camera_alt,
+                                      size: 13,
+                                      color: Color(0xFF2563EB),
                                     ),
                                   ),
-                                  child: const Icon(
-                                    Icons.camera_alt,
-                                    size: 13,
-                                    color: Color(0xFF2563EB),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Logo',
+                                  style: Theme.of(context).textTheme.titleSmall
+                                      ?.copyWith(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  hasLogo
+                                      ? 'Tap to change group logo.'
+                                      : 'Tap to set group logo.',
+                                  key: const Key('logo_status'),
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.85),
+                                    fontSize: 12.5,
                                   ),
                                 ),
-                              ),
-                            ],
+                                if (hasLogo)
+                                  TextButton.icon(
+                                    key: const Key('remove_logo_button'),
+                                    onPressed: _c.isBusy ? null : _removeLogo,
+                                    style: TextButton.styleFrom(
+                                      foregroundColor: Colors.white,
+                                    ),
+                                    icon: const Icon(
+                                      Icons.delete_outline,
+                                      size: 18,
+                                    ),
+                                    label: const Text('Remove logo'),
+                                  ),
+                              ],
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Logo',
-                                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                hasLogo
-                                    ? 'Tap to change group logo.'
-                                    : 'Tap to set group logo.',
-                                key: const Key('logo_status'),
-                                style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.85),
-                                  fontSize: 12.5,
-                                ),
-                              ),
-                              if (hasLogo)
-                                TextButton.icon(
-                                  key: const Key('remove_logo_button'),
-                                  onPressed: _c.isBusy ? null : _removeLogo,
-                                  style: TextButton.styleFrom(foregroundColor: Colors.white),
-                                  icon: const Icon(Icons.delete_outline, size: 18),
-                                  label: const Text('Remove logo'),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                  _sectionCard(
-                    isDark: isDark,
-                    icon: Icons.edit_outlined,
-                    iconColor: const Color(0xFF2563EB),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Basics', style: Theme.of(context).textTheme.titleSmall),
-                        const SizedBox(height: 10),
-                        TextField(
-                          key: const Key('settings_name_field'),
-                          controller: _name,
-                          enabled: true,
-                          maxLength: GroupErrors.nameMaxLength,
-                          decoration: InputDecoration(
-                            labelText: 'Group name',
-                            filled: true,
-                            fillColor: isDark
-                                ? const Color(0xFF0F172A)
-                                : Colors.white,
-                            border: const OutlineInputBorder(borderRadius: AppRadius.mdBorder),
-                            errorText: _nameError,
+                    const SizedBox(height: 16),
+                    _sectionCard(
+                      isDark: isDark,
+                      icon: Icons.edit_outlined,
+                      iconColor: const Color(0xFF2563EB),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Basics',
+                            style: Theme.of(context).textTheme.titleSmall,
                           ),
-                        ),
-                        const SizedBox(height: 8),
-                        TextField(
-                          key: const Key('settings_description_field'),
-                          controller: _description,
-                          enabled: true,
-                          maxLines: 3,
-                          decoration: InputDecoration(
-                            labelText: 'Description',
-                            filled: true,
-                            fillColor: isDark
-                                ? const Color(0xFF0F172A)
-                                : Colors.white,
-                            border: const OutlineInputBorder(borderRadius: AppRadius.mdBorder),
+                          const SizedBox(height: 10),
+                          TextField(
+                            key: const Key('settings_name_field'),
+                            controller: _name,
+                            enabled: true,
+                            maxLength: GroupErrors.nameMaxLength,
+                            decoration: InputDecoration(
+                              labelText: 'Group name',
+                              filled: true,
+                              fillColor: isDark
+                                  ? const Color(0xFF0F172A)
+                                  : Colors.white,
+                              border: const OutlineInputBorder(
+                                borderRadius: AppRadius.mdBorder,
+                              ),
+                              errorText: _nameError,
+                            ),
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 8),
+                          TextField(
+                            key: const Key('settings_description_field'),
+                            controller: _description,
+                            enabled: true,
+                            maxLines: 3,
+                            decoration: InputDecoration(
+                              labelText: 'Description',
+                              filled: true,
+                              fillColor: isDark
+                                  ? const Color(0xFF0F172A)
+                                  : Colors.white,
+                              border: const OutlineInputBorder(
+                                borderRadius: AppRadius.mdBorder,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                  _sectionCard(
-                    isDark: isDark,
-                    icon: Icons.policy_outlined,
-                    iconColor: const Color(0xFF0EA5E9),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Privacy', style: Theme.of(context).textTheme.titleSmall),
-                        RadioGroup<GroupPrivacy>(
-                          groupValue: _privacy,
-                          onChanged: (v) => setState(() => _privacy = v ?? _privacy),
-                          child: Column(
-                            children: [
-                              for (final p in GroupPrivacy.values)
-                                RadioListTile<GroupPrivacy>(
-                                  key: Key('settings_privacy_${p.name}'),
-                                  contentPadding: EdgeInsets.zero,
-                                  value: p,
-                                  title: Text(p.label),
-                                  subtitle: Text(p.description),
-                                ),
-                            ],
+                    const SizedBox(height: 16),
+                    _sectionCard(
+                      isDark: isDark,
+                      icon: Icons.policy_outlined,
+                      iconColor: const Color(0xFF0EA5E9),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Privacy',
+                            style: Theme.of(context).textTheme.titleSmall,
                           ),
-                        ),
-                      ],
+                          RadioGroup<GroupPrivacy>(
+                            groupValue: _privacy,
+                            onChanged: (v) =>
+                                setState(() => _privacy = v ?? _privacy),
+                            child: Column(
+                              children: [
+                                for (final p in GroupPrivacy.values)
+                                  RadioListTile<GroupPrivacy>(
+                                    key: Key('settings_privacy_${p.name}'),
+                                    contentPadding: EdgeInsets.zero,
+                                    value: p,
+                                    title: Text(p.label),
+                                    subtitle: Text(p.description),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  if (_c.error != null) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      _c.error!,
-                      key: const Key('settings_error'),
-                      style: const TextStyle(color: AppColors.error),
+                    if (_c.error != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        _c.error!,
+                        key: const Key('settings_error'),
+                        style: const TextStyle(color: AppColors.error),
+                      ),
+                    ],
+                    if (_saved && _c.error == null) ...[
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Saved.',
+                        key: Key('settings_saved'),
+                        style: TextStyle(color: AppColors.success),
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    if (_invite != null)
+                      _sectionCard(
+                        isDark: isDark,
+                        icon: Icons.vpn_key_outlined,
+                        iconColor: const Color(0xFF059669),
+                        child: SettingsInviteCard(controller: _invite!),
+                      ),
+                    const SizedBox(height: 16),
+                    _sectionCard(
+                      isDark: isDark,
+                      icon: Icons.admin_panel_settings_outlined,
+                      iconColor: const Color(0xFF7C3AED),
+                      child: SettingsPermissionsCard(controller: _c),
+                    ),
+                    const SizedBox(height: 16),
+                    _sectionCard(
+                      isDark: isDark,
+                      icon: Icons.gavel_rounded,
+                      iconColor: const Color(0xFF7C3AED),
+                      child: GroupRulesSection(controller: _c),
+                    ),
+                  ], // end canEditBasics-only cards (Logo/Basics/Privacy/Invite/Permissions/Rules)
+                  if (_c.canSendAnnouncement || _c.canEditBasics) ...[
+                    const SizedBox(height: 16),
+                    _sectionCard(
+                      isDark: isDark,
+                      icon: Icons.campaign_rounded,
+                      iconColor: const Color(0xFFD97706),
+                      child: GroupAnnouncementsSection(controller: _c),
                     ),
                   ],
-                  if (_saved && _c.error == null) ...[
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Saved.',
-                      key: Key('settings_saved'),
-                      style: TextStyle(color: AppColors.success),
-                    ),
-                  ],
-                  const SizedBox(height: 16),
-                  _sectionCard(
-                    isDark: isDark,
-                    icon: Icons.vpn_key_outlined,
-                    iconColor: const Color(0xFF059669),
-                    child: SettingsInviteCard(controller: _invite!),
-                  ),
-                  const SizedBox(height: 16),
-                  _sectionCard(
-                    isDark: isDark,
-                    icon: Icons.admin_panel_settings_outlined,
-                    iconColor: const Color(0xFF7C3AED),
-                    child: SettingsPermissionsCard(controller: _c),
-                  ),
-                  const SizedBox(height: 16),
-                  _sectionCard(
-                    isDark: isDark,
-                    icon: Icons.gavel_rounded,
-                    iconColor: const Color(0xFF7C3AED),
-                    child: GroupRulesSection(controller: _c),
-                  ),
-                  const SizedBox(height: 16),
-                  _sectionCard(
-                    isDark: isDark,
-                    icon: Icons.campaign_rounded,
-                    iconColor: const Color(0xFFD97706),
-                    child: GroupAnnouncementsSection(controller: _c),
-                  ),
                   if (_c.canManageMembers) ...[
                     const SizedBox(height: 16),
                     _sectionCard(
@@ -711,8 +765,9 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
                 width: 28,
                 height: 28,
                 decoration: BoxDecoration(
-                  color: (iconColor ?? const Color(0xFF2563EB))
-                      .withValues(alpha: isDark ? 0.22 : 0.12),
+                  color: (iconColor ?? const Color(0xFF2563EB)).withValues(
+                    alpha: isDark ? 0.22 : 0.12,
+                  ),
                   shape: BoxShape.circle,
                 ),
                 child: Icon(icon, size: 15, color: iconColor),

@@ -97,6 +97,7 @@ class _GroupMembersSectionState extends State<GroupMembersSection> {
                         ),
                       if (c.canManageRoles)
                         IconButton(
+                          key: const Key('open_role_permissions_icon'),
                           tooltip: 'Role permissions',
                           icon: const Icon(
                             Icons.admin_panel_settings_outlined,

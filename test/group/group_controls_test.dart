@@ -17,7 +17,6 @@ import 'package:my_praperation/features/group/domain/group_permission.dart';
 import 'package:my_praperation/features/group/domain/group_role.dart';
 import 'package:my_praperation/features/group/screens/group_info_screen.dart';
 import 'package:my_praperation/features/group/state/group_hub_controller.dart';
-import 'package:my_praperation/features/group/widgets/group_management_section.dart';
 import 'package:my_praperation/features/group/widgets/role_permissions_sheet.dart';
 
 import 'fakes.dart';
@@ -113,12 +112,10 @@ void main() {
     testWidgets('owner sees every Manage row; owner row is never removable/demotable', (tester) async {
       final c = await _loaded('u-owner');
       await _pumpHub(tester, c);
-      expect(find.byKey(const Key('group_management_section')), findsOneWidget);
-      for (final k in ['manage_settings', 'manage_members', 'manage_role_permissions', 'manage_tests', 'manage_analytics', 'manage_announcements']) {
-        expect(find.byKey(Key(k)), findsOneWidget, reason: k);
-      }
-      expect(find.text('invite & remove · change roles'), findsOneWidget);
-      expect(find.text('create · edit · publish · schedule · results'), findsOneWidget);
+      // The "Manage" card itself is gone (Phase 2, item A) — its routing
+      // destinations (Settings/Members/Tests/RolePermissions) are each
+      // reachable directly now. What's still checked here: the owner's
+      // real G3/G4 member-row controls.
       // Existing G3/G4 controls remain: others removable, owner never.
       expect(find.byKey(const Key('remove_u-mem')), findsOneWidget);
       expect(find.byKey(const Key('role_menu_u-mem')), findsOneWidget);
@@ -163,15 +160,7 @@ void main() {
     testWidgets('leader (seeded 10 perms) sees test/analytics/announce/member rows, not settings or role permissions', (tester) async {
       final c = await _loaded('u-lead');
       await _pumpHub(tester, c);
-      expect(find.byKey(const Key('group_management_section')), findsOneWidget);
-      expect(find.byKey(const Key('manage_members')), findsOneWidget);
-      expect(find.text('invite & remove'), findsOneWidget); // no MANAGE_ROLES
-      expect(find.byKey(const Key('manage_tests')), findsOneWidget);
-      expect(find.byKey(const Key('manage_analytics')), findsOneWidget);
-      expect(find.byKey(const Key('manage_announcements')), findsOneWidget);
-      expect(find.byKey(const Key('manage_settings')), findsNothing);
-      expect(find.byKey(const Key('manage_role_permissions')), findsNothing);
-      expect(find.byKey(const Key('group_settings_action')), findsNothing);
+      expect(find.byKey(const Key('group_info_settings_action_row')), findsNothing);
       // G3: no role menu without MANAGE_ROLES; G4: remove offered with MANAGE_MEMBERS.
       expect(find.byKey(const Key('role_menu_u-mem')), findsNothing);
       expect(find.byKey(const Key('remove_u-mem')), findsOneWidget);
@@ -179,25 +168,18 @@ void main() {
       c.dispose();
     });
 
-    testWidgets('leader granted MANAGE_ROLES gains the role-permissions control; revoked leader loses tests', (tester) async {
+    test('leader granted MANAGE_ROLES still never gets the per-member role menu', () async {
       final repo = _repo('u-lead');
       repo.roleGrants.add('g-1:leader:MANAGE_ROLES');
-      repo.roleRevokes.addAll({
-        'g-1:leader:CREATE_TEST', 'g-1:leader:EDIT_TEST', 'g-1:leader:PUBLISH_TEST',
-        'g-1:leader:SCHEDULE_TEST', 'g-1:leader:GENERATE_RESULTS',
-      });
       final c = _ctl(repo, 'u-lead');
       await c.load();
-      await _pumpHub(tester, c);
-      expect(find.byKey(const Key('manage_role_permissions')), findsOneWidget);
-      expect(find.text('invite & remove · change roles'), findsOneWidget);
-      expect(find.byKey(const Key('manage_tests')), findsNothing);
-      // MANAGE_ROLES grants access to the permission-template editor
-      // (manage_role_permissions, above) but never the per-member role
-      // menu — only the owner can change an individual member's role
-      // (migration 0108), regardless of MANAGE_ROLES.
-      expect(find.byKey(const Key('role_menu_u-mem')), findsNothing);
-      await tester.pumpWidget(const SizedBox());
+      expect(c.canManageRolePermissions, isTrue);
+      // MANAGE_ROLES grants access to the permission-template editor but
+      // never the per-member role menu — only the owner can change an
+      // individual member's role (migration 0108), regardless of
+      // MANAGE_ROLES.
+      expect(await c.changeRole('u-mem', GroupRole.admin), isFalse);
+      expect(c.error, contains('permission to change roles'));
       c.dispose();
     });
 
@@ -221,7 +203,6 @@ void main() {
       final c = await _loaded('u-mod');
       await _pumpHub(tester, c);
       expect(c.hasManagementControls, isFalse);
-      expect(find.byKey(const Key('group_management_section')), findsNothing);
       expect(find.byKey(const Key('invite_member_action')), findsNothing);
       expect(find.byKey(const Key('remove_u-mem')), findsNothing);
       expect(find.byKey(const Key('role_menu_u-mem')), findsNothing);
@@ -235,13 +216,8 @@ void main() {
       final c = _ctl(repo, 'u-mod');
       await c.load();
       await _pumpHub(tester, c);
-      expect(find.byKey(const Key('manage_announcements')), findsOneWidget);
-      expect(find.byKey(const Key('manage_members')), findsOneWidget);
       expect(find.byKey(const Key('invite_member_action')), findsOneWidget);
       expect(find.byKey(const Key('remove_u-mem')), findsOneWidget);
-      expect(find.byKey(const Key('manage_tests')), findsNothing);
-      expect(find.byKey(const Key('manage_analytics')), findsNothing);
-      expect(find.byKey(const Key('manage_role_permissions')), findsNothing);
       expect(find.byKey(const Key('role_menu_u-mem')), findsNothing);
       // Uses the existing G4 action: remove goes through and the roster is re-read.
       expect(await c.removeMember('u-mem'), isTrue);
@@ -267,7 +243,6 @@ void main() {
       await _pumpHub(tester, c);
       expect(c.hasManagementControls, isFalse);
       expect(c.controls.testCapabilities, isEmpty);
-      expect(find.byKey(const Key('group_management_section')), findsNothing);
       expect(find.byKey(const Key('group_info_settings_action_row')), findsNothing);
       expect(find.byKey(const Key('invite_member_action')), findsNothing);
       expect(find.byKey(const Key('remove_u-mod')), findsNothing);
@@ -275,7 +250,6 @@ void main() {
       // Non-management navigation stays: tests, chat, announcements, members.
       expect(find.byKey(const Key('group_info_view_all_tests')), findsOneWidget);
       expect(find.byKey(const Key('member_u-mem')), findsOneWidget);
-      expect(find.byKey(const Key('leave_group_button')), findsOneWidget);
       await tester.pumpWidget(const SizedBox());
       c.dispose();
     });
@@ -510,7 +484,7 @@ void main() {
       final c = _ctl(repo, 'u-owner');
       await c.load();
       await _pumpHub(tester, c);
-      await tester.tap(find.byKey(const Key('manage_role_permissions')));
+      await tester.tap(find.byKey(const Key('open_role_permissions_icon')));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('role_permissions_title')), findsOneWidget);
       expect(tester.widget<SwitchListTile>(find.byKey(const Key('perm_admin_createTest'))).value, isTrue);
@@ -526,36 +500,10 @@ void main() {
       c.dispose();
     });
 
-    testWidgets('section rows route to the existing screens (settings / members / tests)', (tester) async {
-      final c = await _loaded('u-owner');
-      final taps = <String>[];
-      tester.view.physicalSize = const Size(800, 2100);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.reset);
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: GroupManagementSection(
-              controller: c,
-              onOpenSettings: () => taps.add('settings'),
-              onOpenMembers: () => taps.add('members'),
-              onOpenTests: () => taps.add('tests'),
-              onOpenRolePermissions: () => taps.add('roles'),
-            ),
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('manage_settings')));
-      await tester.tap(find.byKey(const Key('manage_members')));
-      await tester.tap(find.byKey(const Key('manage_tests')));
-      await tester.tap(find.byKey(const Key('manage_analytics')));
-      await tester.tap(find.byKey(const Key('manage_role_permissions')));
-      expect(taps, ['settings', 'members', 'tests', 'tests', 'roles']);
-      expect(find.byKey(const Key('management_role_label')), findsOneWidget);
-      expect(find.text('Owner'), findsOneWidget);
-      c.dispose();
-    });
+    // The old "Manage" card (GroupManagementSection) that routed to
+    // Settings/Members/Tests/RolePermissions is gone (Phase 2, item A) —
+    // each destination is reachable directly now (action row, Members
+    // section icons, Tests section "View all").
 
     testWidgets('RolePermissionsSheet shows the server error with retry', (tester) async {
       final repo = _repo('u-owner');
@@ -576,7 +524,6 @@ void main() {
       expect(find.byKey(const Key('group_info_view_all_tests')), findsOneWidget);
       expect(find.byKey(const Key('invite_member_action')), findsOneWidget);
       expect(find.byKey(const Key('hub_members_heading')), findsOneWidget);
-      expect(find.byKey(const Key('leave_group_button')), findsOneWidget);
       await tester.pumpWidget(const SizedBox());
       c.dispose();
     });

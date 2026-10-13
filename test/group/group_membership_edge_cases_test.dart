@@ -9,6 +9,7 @@ import 'package:my_praperation/core/errors/app_error.dart';
 import 'package:my_praperation/features/group/data/group_repository.dart';
 import 'package:my_praperation/features/group/domain/group_role.dart';
 import 'package:my_praperation/features/group/screens/group_info_screen.dart';
+import 'package:my_praperation/features/group/screens/group_settings_screen.dart';
 import 'package:my_praperation/features/group/state/group_hub_controller.dart';
 import 'package:my_praperation/features/group/state/group_list_controller.dart';
 
@@ -29,6 +30,9 @@ GroupHubController _hub(
   currentUserId: user,
 );
 
+// Leave now lives in Settings' Danger Zone (Phase 2, item A/B.9), not
+// Info's old one — this router is used only by the leave-flow dialog
+// tests below, so its one route points straight at Settings.
 GoRouter _router({
   required GroupHubController controller,
   String initial = '/groups/g-1',
@@ -42,7 +46,7 @@ GoRouter _router({
     GoRoute(
       path: '/groups/:groupId',
       builder: (_, _) =>
-          GroupInfoScreen(groupId: 'g-1', controller: controller),
+          GroupSettingsScreen(groupId: 'g-1', controller: controller),
     ),
   ],
 );
@@ -77,8 +81,8 @@ void main() {
         final router = _router(controller: c);
         await tester.pumpWidget(MaterialApp.router(routerConfig: router));
         await tester.pumpAndSettle();
-        expect(find.byKey(const Key('leave_group_button')), findsOneWidget);
-        await tester.tap(find.byKey(const Key('leave_group_button')));
+        expect(find.byKey(const Key('settings_leave_button')), findsOneWidget);
+        await tester.tap(find.byKey(const Key('settings_leave_button')));
         await tester.pumpAndSettle();
         expect(find.text('Leave group?'), findsOneWidget);
         expect(find.textContaining('Physics'), findsWidgets);
@@ -97,14 +101,14 @@ void main() {
         ..seed(id: 'g-1', ownerId: 'u-owner', members: {'u-me': 'member'});
       final c = _hub(repo);
       await tester.pumpWidget(
-        MaterialApp(home: GroupInfoScreen(groupId: 'g-1', controller: c)),
+        MaterialApp(home: GroupSettingsScreen(groupId: 'g-1', controller: c)),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('leave_group_button')));
+      await tester.tap(find.byKey(const Key('settings_leave_button')));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Cancel'));
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('leave_group_button')), findsOneWidget);
+      expect(find.byKey(const Key('settings_leave_button')), findsOneWidget);
       expect(repo.groups['g-1']!.roles.containsKey('u-me'), isTrue);
       await tester.pumpWidget(const SizedBox());
       c.dispose();
@@ -164,8 +168,8 @@ void main() {
       final router = _router(controller: c);
       await tester.pumpWidget(MaterialApp.router(routerConfig: router));
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('leave_group_button')), findsOneWidget);
-      await tester.tap(find.byKey(const Key('leave_group_button')));
+      expect(find.byKey(const Key('settings_leave_button')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('settings_leave_button')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('confirm_leave')));
       await tester.pumpAndSettle();
@@ -224,13 +228,13 @@ void main() {
     });
 
     testWidgets(
-      'owner hub: Danger Zone offers Delete, never a Leave button (owner can always delete)',
+      'owner Settings: Danger Zone offers Transfer/Delete, never a Leave button',
       (tester) async {
         // Product decision: the owner can delete a group at any time,
         // regardless of other members (0102) -- canDeleteGroup is
-        // unconditionally true for an owner now. GroupInfoScreen's Danger
-        // Zone (no 3-dot popup menu, unlike the old GroupHubScreen) shows
-        // the Delete button inline; Leave never shows for an owner.
+        // unconditionally true for an owner now. Danger Zone (moved to
+        // Settings, Phase 2) shows Transfer + Delete for the owner; Leave
+        // never shows for an owner.
         final repo = InMemoryGroupRepository(currentUser: 'u-me')
           ..seed(id: 'g-1', ownerId: 'u-me', members: {'u-2': 'member'});
         final c = _hub(repo);
@@ -238,11 +242,12 @@ void main() {
         tester.view.devicePixelRatio = 1;
         addTearDown(tester.view.reset);
         await tester.pumpWidget(
-          MaterialApp(home: GroupInfoScreen(groupId: 'g-1', controller: c)),
+          MaterialApp(home: GroupSettingsScreen(groupId: 'g-1', controller: c)),
         );
         await tester.pumpAndSettle();
         expect(find.byKey(const Key('delete_group_button')), findsOneWidget);
-        expect(find.byKey(const Key('leave_group_button')), findsNothing);
+        expect(find.byKey(const Key('settings_transfer_ownership_button')), findsOneWidget);
+        expect(find.byKey(const Key('settings_leave_button')), findsNothing);
         await tester.pumpWidget(const SizedBox());
         c.dispose();
       },

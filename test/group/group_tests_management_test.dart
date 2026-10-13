@@ -590,7 +590,6 @@ void main() {
       await tester.pumpWidget(MaterialApp(home: GroupInfoScreen(groupId: 'g-1', controller: c)));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('group_info_view_all_tests')), findsOneWidget);
-      expect(find.byKey(const Key('leave_group_button')), findsOneWidget);
       await tester.pumpWidget(const SizedBox());
       c.dispose();
     });

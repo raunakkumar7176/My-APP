@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:my_praperation/core/errors/app_error.dart';
 import 'package:my_praperation/core/models/group_rule.dart';
 import 'package:my_praperation/features/group/screens/group_info_screen.dart';
+import 'package:my_praperation/features/group/screens/group_settings_screen.dart';
 import 'package:my_praperation/features/group/state/group_hub_controller.dart';
 import 'package:my_praperation/features/group/widgets/group_rules_section.dart';
 
@@ -307,6 +308,24 @@ void main() {
       return c;
     }
 
+    // Adding/editing/deleting rules moved to Settings (Phase 2, item A) —
+    // Info only shows the read-only list now.
+    Future<GroupHubController> pumpSettings(
+      WidgetTester tester,
+      InMemoryGroupRepository repo, {
+      String user = 'u-me',
+    }) async {
+      tester.view.physicalSize = const Size(800, 3300);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final c = _hub(repo, user: user);
+      await tester.pumpWidget(
+        MaterialApp(home: GroupSettingsScreen(groupId: 'g-1', controller: c)),
+      );
+      await tester.pumpAndSettle();
+      return c;
+    }
+
     testWidgets('member: read-only — rules shown, no controls', (tester) async {
       final c = await pump(tester, _repo());
       expect(find.byKey(const Key('group_rules_section')), findsOneWidget);
@@ -316,9 +335,8 @@ void main() {
       expect(find.byKey(const Key('add_rule_button')), findsNothing);
       expect(find.byKey(const Key('edit_rule_r-1')), findsNothing);
       expect(find.byKey(const Key('delete_rule_r-1')), findsNothing);
-      // Hub regression: roster and leave still render around the section.
+      // Hub regression: roster still renders around the section.
       expect(find.byKey(const Key('hub_members_heading')), findsOneWidget);
-      expect(find.byKey(const Key('leave_group_button')), findsOneWidget);
       await tester.pumpWidget(const SizedBox());
       c.dispose();
     });
@@ -371,7 +389,7 @@ void main() {
       tester,
     ) async {
       final repo = _repo(user: 'u-owner');
-      final c = await pump(tester, repo, user: 'u-owner');
+      final c = await pumpSettings(tester, repo, user: 'u-owner');
       expect(find.byKey(const Key('add_rule_button')), findsOneWidget);
 
       await tester.tap(find.byKey(const Key('add_rule_button')));
@@ -406,7 +424,7 @@ void main() {
       tester,
     ) async {
       final repo = _repo(user: 'u-owner');
-      final c = await pump(tester, repo, user: 'u-owner');
+      final c = await pumpSettings(tester, repo, user: 'u-owner');
       await tester.tap(find.byKey(const Key('add_rule_button')));
       await tester.pumpAndSettle();
       await tester.enterText(find.byKey(const Key('new_rule_field')), '   ');

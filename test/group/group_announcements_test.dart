@@ -11,6 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:my_praperation/core/errors/app_error.dart';
 import 'package:my_praperation/core/models/group_announcement.dart';
 import 'package:my_praperation/features/group/screens/group_info_screen.dart';
+import 'package:my_praperation/features/group/screens/group_settings_screen.dart';
 import 'package:my_praperation/features/group/state/group_hub_controller.dart';
 import 'package:my_praperation/features/group/widgets/group_announcements_section.dart';
 
@@ -390,6 +391,24 @@ void main() {
       return c;
     }
 
+    // Posting/editing/deleting moved to Settings (Phase 2, item A) — Info
+    // only shows the read-only list now.
+    Future<GroupHubController> pumpSettings(
+      WidgetTester tester,
+      InMemoryGroupRepository repo, {
+      String user = 'u-me',
+    }) async {
+      tester.view.physicalSize = const Size(800, 3700);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final c = _hub(repo, user: user);
+      await tester.pumpWidget(
+        MaterialApp(home: GroupSettingsScreen(groupId: 'g-1', controller: c)),
+      );
+      await tester.pumpAndSettle();
+      return c;
+    }
+
     testWidgets('member: read-only — list shown, no controls', (tester) async {
       final c = await pump(tester, _repo());
       expect(find.byKey(const Key('group_announcements_section')), findsOneWidget);
@@ -406,7 +425,6 @@ void main() {
       // Hub regression: rules, roster and leave still render around it.
       expect(find.byKey(const Key('group_rules_section')), findsOneWidget);
       expect(find.byKey(const Key('hub_members_heading')), findsOneWidget);
-      expect(find.byKey(const Key('leave_group_button')), findsOneWidget);
       await tester.pumpWidget(const SizedBox());
       c.dispose();
     });
@@ -448,7 +466,7 @@ void main() {
       tester,
     ) async {
       final repo = _repo(user: 'u-lead');
-      final c = await pump(tester, repo, user: 'u-lead');
+      final c = await pumpSettings(tester, repo, user: 'u-lead');
       expect(find.byKey(const Key('add_announcement_button')), findsOneWidget);
 
       await tester.tap(find.byKey(const Key('add_announcement_button')));
@@ -494,7 +512,7 @@ void main() {
       tester,
     ) async {
       final repo = _repo(user: 'u-lead');
-      final c = await pump(tester, repo, user: 'u-lead');
+      final c = await pumpSettings(tester, repo, user: 'u-lead');
       await tester.tap(find.byKey(const Key('add_announcement_button')));
       await tester.pumpAndSettle();
       await tester.enterText(
