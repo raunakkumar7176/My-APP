@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:image_picker/image_picker.dart';
@@ -13,16 +12,20 @@ import '../domain/group_errors.dart';
 import '../domain/group_privacy.dart';
 import '../state/group_hub_controller.dart';
 import '../state/invite_code_controller.dart';
-import '../widgets/gradient_button.dart';
+import '../widgets/group_announcements_section.dart';
 import '../widgets/group_avatar.dart';
+import '../widgets/group_rules_section.dart';
+import '../widgets/settings_danger_zone.dart';
+import '../widgets/settings_invite_card.dart';
+import '../widgets/settings_permissions_card.dart';
+import '../widgets/settings_requests_card.dart';
 
-/// Full group settings: profile, privacy, invite code, rules summary,
-/// members summary, and a danger zone (leave).
-///
-/// Editability comes from the server (`fn_has_permission(GROUP_SETTINGS)`,
-/// which is true for the owner) — the UI only hides controls; the live
-/// `groups` UPDATE policy is the boundary. Logo upload/replace is not offered:
-/// no group-scoped storage policy exists live (see G2 report).
+/// Full group settings: profile/logo, privacy, invite (code/share/QR/
+/// expiry/max-uses), permissions, rules, announcements, join requests +
+/// invitation history, and a danger zone (transfer ownership / delete /
+/// leave). Editability comes from the server (`fn_has_permission
+/// (GROUP_SETTINGS)`, true for the owner) — the UI only hides controls;
+/// the live `groups` UPDATE policy is the boundary.
 class GroupSettingsScreen extends StatefulWidget {
   const GroupSettingsScreen({
     required this.groupId,
@@ -50,9 +53,18 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
   final _name = TextEditingController();
   final _description = TextEditingController();
   GroupPrivacy _privacy = GroupPrivacy.public;
+  String _initialName = '';
+  String _initialDescription = '';
+  GroupPrivacy _initialPrivacy = GroupPrivacy.public;
   bool _seeded = false;
   String? _nameError;
+  bool _saving = false;
   bool _saved = false;
+
+  bool get _dirty =>
+      _name.text.trim() != _initialName ||
+      _description.text.trim() != _initialDescription ||
+      _privacy != _initialPrivacy;
 
   @override
   void initState() {
@@ -60,12 +72,18 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
     _owns = widget.controller == null;
     _c = widget.controller ?? GroupHubController(groupId: widget.groupId);
     _c.addListener(_onChanged);
+    _name.addListener(_onFieldEdited);
+    _description.addListener(_onFieldEdited);
     if (_c.hasLoaded) {
       _seedFromGroup();
       _ensureInviteController();
     } else {
       _c.load();
     }
+  }
+
+  void _onFieldEdited() {
+    if (mounted) setState(() => _saved = false);
   }
 
   void _onChanged() {
@@ -93,13 +111,16 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
   }
 
   /// Seeds the fields once from the loaded group; a later reload (after
-  /// save) must not overwrite what the user is typing.
+  /// save) re-seeds so "unsaved changes" reflects the new baseline.
   void _seedFromGroup() {
     final g = _c.group;
     if (g == null) return;
     _name.text = g.name;
     _description.text = g.description ?? '';
     _privacy = GroupPrivacy.fromDb(g.privacy);
+    _initialName = _name.text.trim();
+    _initialDescription = _description.text.trim();
+    _initialPrivacy = _privacy;
     _seeded = true;
   }
 
@@ -109,6 +130,8 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
     if (_owns) _c.dispose();
     _invite?.removeListener(_onChanged);
     if (_ownsInvite) _invite?.dispose();
+    _name.removeListener(_onFieldEdited);
+    _description.removeListener(_onFieldEdited);
     _name.dispose();
     _description.dispose();
     super.dispose();
@@ -121,352 +144,61 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
       _saved = false;
     });
     if (invalid != null) return;
+    setState(() => _saving = true);
     final ok = await _c.updateBasics(
       name: _name.text,
       description: _description.text,
       privacy: _privacy,
     );
     if (!mounted) return;
-    setState(() => _saved = ok);
+    // Re-seed BEFORE flipping _saved: reassigning the controllers' .text
+    // (even to the value they already hold) resets TextEditingValue's
+    // selection, which notifies _onFieldEdited and would otherwise clear
+    // _saved right back to false.
+    if (ok) _seedFromGroup(); // new baseline — the sticky bar disappears
+    setState(() {
+      _saving = false;
+      _saved = ok;
+    });
     if (ok) {
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('Group settings saved.')));
     }
+    // On failure, the inline `settings_error` text below already shows
+    // _c.error — no separate SnackBar, so the message isn't shown twice.
   }
 
-  // ── invite code (G5.1) ──
-  // Rendered only when canEditBasics (the controller is only created then).
-  // The value is displayed, copied and rotated here and nowhere else.
-  Widget _inviteSection(BuildContext context) {
-    final i = _invite;
-    if (i == null) return const SizedBox.shrink();
-    final theme = Theme.of(context);
-    return Column(
-      key: const Key('invite_section'),
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Invite code', style: theme.textTheme.titleSmall),
-        const SizedBox(height: 4),
-        Text(
-          'Share this code so people can join. Rotating it invalidates the old '
-          'code immediately.',
-          style: theme.textTheme.bodySmall,
-        ),
-        const SizedBox(height: 8),
-        if (i.isLoading && !i.hasLoaded)
-          const Padding(
-            key: Key('invite_loading'),
-            padding: EdgeInsets.symmetric(vertical: 8),
-            child: LinearProgressIndicator(),
-          )
-        else if (i.code == null)
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  i.error ?? 'Invite code is not available.',
-                  key: const Key('invite_error'),
-                  style: const TextStyle(color: AppColors.error),
-                ),
-              ),
-              TextButton(
-                key: const Key('invite_retry'),
-                onPressed: i.isBusy ? null : i.retry,
-                child: const Text('Retry'),
-              ),
-            ],
-          )
-        else ...[
-          Row(
-            children: [
-              Expanded(
-                child: SelectableText(
-                  i.code!,
-                  key: const Key('invite_code_value'),
-                  style: theme.textTheme.headlineSmall?.copyWith(
-                    fontFamily: 'monospace',
-                    letterSpacing: 2,
-                  ),
-                ),
-              ),
-              IconButton(
-                key: const Key('invite_copy'),
-                tooltip: 'Copy invite code',
-                icon: const Icon(Icons.copy_outlined),
-                onPressed: i.isBusy ? null : () => _copyInvite(i.code!),
-              ),
-            ],
-          ),
-          if (i.error != null)
-            Text(
-              i.error!,
-              key: const Key('invite_error'),
-              style: const TextStyle(color: AppColors.error),
-            ),
-          if (i.justRotated && i.error == null)
-            const Text(
-              'New code generated.',
-              key: Key('invite_rotated'),
-              style: TextStyle(color: AppColors.success),
-            ),
-          OutlinedButton.icon(
-            key: const Key('invite_rotate'),
-            onPressed: i.isBusy ? null : _rotateInvite,
-            icon: const Icon(Icons.refresh),
-            label: Text(i.isRotating ? 'Rotating…' : 'Rotate invite code'),
-          ),
-        ],
-      ],
-    );
+  void _discardChanges() {
+    setState(() {
+      _name.text = _initialName;
+      _description.text = _initialDescription;
+      _privacy = _initialPrivacy;
+      _nameError = null;
+    });
   }
 
-  Future<void> _copyInvite(String code) async {
-    await Clipboard.setData(ClipboardData(text: code));
-    if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text('Invite code copied.')));
-  }
-
-  Future<void> _rotateInvite() async {
-    final i = _invite;
-    if (i == null) return;
-    final confirmed = await showDialog<bool>(
+  Future<bool> _confirmDiscardAndLeave() async {
+    if (!_dirty) return true;
+    final leave = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Rotate invite code?'),
-        content: const Text(
-          'The current code will stop working immediately. Anyone who has not '
-          'joined yet will need the new code.',
-        ),
+        title: const Text('Discard changes?'),
+        content: const Text('You have unsaved changes to this group\'s settings.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
+            child: const Text('Keep editing'),
           ),
           FilledButton(
-            key: const Key('confirm_rotate'),
+            key: const Key('confirm_discard_changes'),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.error),
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Rotate'),
+            child: const Text('Discard'),
           ),
         ],
       ),
     );
-    if (confirmed != true || !mounted) return;
-    final ok = await i.rotate();
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          ok
-              ? 'Invite code rotated.'
-              : (i.error ?? 'Could not rotate the code.'),
-        ),
-        backgroundColor: ok ? null : AppColors.error,
-      ),
-    );
-  }
-
-  Widget _rulesSummary(BuildContext context) {
-    final rules = _c.rules;
-    final isLoading = _c.rulesLoading && rules.isEmpty;
-    final error = _c.rulesError;
-    final theme = Theme.of(context);
-    return Column(
-      key: const Key('settings_rules_summary'),
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(
-              Icons.gavel_outlined,
-              size: 20,
-              color: theme.colorScheme.outline,
-            ),
-            const SizedBox(width: 8),
-            Text('Group rules', style: theme.textTheme.titleSmall),
-            const SizedBox(width: 8),
-            if (!isLoading)
-              Text(
-                '${rules.length}',
-                key: const Key('settings_rules_count'),
-                style: theme.textTheme.bodySmall,
-              ),
-          ],
-        ),
-        const SizedBox(height: 4),
-        if (isLoading)
-          const LinearProgressIndicator(key: Key('settings_rules_loading'))
-        else if (error != null && rules.isEmpty)
-          Text(
-            error,
-            key: const Key('settings_rules_error'),
-            style: const TextStyle(color: AppColors.error, fontSize: 12),
-          )
-        else if (rules.isEmpty)
-          Text(
-            'No rules yet.',
-            key: const Key('settings_rules_empty'),
-            style: theme.textTheme.bodySmall,
-          )
-        else
-          for (final rule in rules.take(3))
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                rule.ruleText,
-                key: Key('settings_rule_${rule.id}'),
-                style: theme.textTheme.bodySmall,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-        if (rules.length > 3)
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Text(
-              '+${rules.length - 3} more',
-              key: const Key('settings_rules_more'),
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.primary,
-              ),
-            ),
-          ),
-        if (rules.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          TextButton(
-            key: const Key('settings_manage_rules'),
-            onPressed: () => context.push('/groups/${widget.groupId}/info'),
-            child: const Text('Manage rules'),
-          ),
-        ],
-      ],
-    );
-  }
-
-  Widget _membersSummary(BuildContext context) {
-    final group = _c.group;
-    if (group == null) return const SizedBox.shrink();
-    final theme = Theme.of(context);
-    final myRole = _c.myRole;
-    return Column(
-      key: const Key('settings_members_summary'),
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(
-              Icons.people_outlined,
-              size: 20,
-              color: theme.colorScheme.outline,
-            ),
-            const SizedBox(width: 8),
-            Text('Members', style: theme.textTheme.titleSmall),
-            const Spacer(),
-            Text(
-              '${_c.memberCount}',
-              key: const Key('settings_members_count'),
-              style: theme.textTheme.bodySmall,
-            ),
-          ],
-        ),
-        const SizedBox(height: 4),
-        Text(
-          'Your role: ${myRole.label}',
-          key: const Key('settings_my_role'),
-          style: theme.textTheme.bodySmall,
-        ),
-        const SizedBox(height: 8),
-        TextButton(
-          key: const Key('settings_manage_members'),
-          onPressed: () => context.push('/groups/${widget.groupId}/members'),
-          child: const Text('Manage members'),
-        ),
-      ],
-    );
-  }
-
-  Widget _leaveSection(BuildContext context) {
-    final theme = Theme.of(context);
-    final canLeave = _c.canLeave;
-    final blockedReason = _c.leaveBlockedReason;
-    return Column(
-      key: const Key('settings_leave_section'),
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            const Icon(Icons.logout, size: 20, color: AppColors.error),
-            const SizedBox(width: 8),
-            Text(
-              'Danger zone',
-              style: theme.textTheme.titleSmall?.copyWith(
-                color: AppColors.error,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        if (canLeave)
-          OutlinedButton.icon(
-            key: const Key('settings_leave_button'),
-            onPressed: _c.isBusy ? null : _leaveGroup,
-            icon: const Icon(Icons.logout, color: AppColors.error),
-            label: const Text(
-              'Leave group',
-              style: TextStyle(color: AppColors.error),
-            ),
-            style: OutlinedButton.styleFrom(
-              side: const BorderSide(color: AppColors.error),
-            ),
-          )
-        else
-          Text(
-            blockedReason,
-            key: const Key('settings_leave_blocked'),
-            style: theme.textTheme.bodySmall?.copyWith(color: AppColors.error),
-          ),
-      ],
-    );
-  }
-
-  Future<void> _leaveGroup() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Leave group?'),
-        content: Text(
-          'You will lose access to ${_c.group?.name ?? 'this group'}, its '
-          'tests and its members. You can rejoin later with the invite code '
-          'if the group allows it.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            key: const Key('confirm_leave'),
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Leave'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-    final ok = await _c.leave();
-    if (!mounted) return;
-    if (ok) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('You left the group.')));
-      context.go('/groups');
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(_c.error ?? 'Could not leave the group.'),
-          backgroundColor: AppColors.error,
-        ),
-      );
-    }
+    return leave ?? false;
   }
 
   Future<void> _removeLogo() async {
@@ -501,13 +233,34 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
     );
   }
 
+  /// Client-side guard before any upload: a reasonable size cap and an
+  /// image-only type check. The actual storage bucket/policy are assumed
+  /// already provisioned server-side (group-avatars, falling back to the
+  /// shared avatars bucket) — unchanged from before this screen's rebuild.
+  static const _maxLogoBytes = 5 * 1024 * 1024; // 5 MB
+
   Future<void> _pickAndUploadAvatar(ImageSource source) async {
     Navigator.of(context).pop();
     try {
       final picker = ImagePicker();
-      final file = await picker.pickImage(source: source, imageQuality: 85);
+      final file = await picker.pickImage(
+        source: source,
+        imageQuality: 85,
+        maxWidth: 1024,
+        maxHeight: 1024,
+      );
       if (file == null) return;
       final bytes = await file.readAsBytes();
+      if (bytes.length > _maxLogoBytes) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('That image is too large (max 5 MB).'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+        return;
+      }
       final client = SupabaseService.client;
       final path =
           '${widget.groupId}/avatar_${DateTime.now().millisecondsSinceEpoch}.jpg';
@@ -654,202 +407,270 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
 
     final hasLogo = (group.logoUrl ?? '').trim().isNotEmpty;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
-      appBar: AppBar(title: const Text('Group Settings')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Container(
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              gradient: premium.AppColors.primaryGradient,
-              borderRadius: AppRadius.xlBorder,
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF2563EB).withValues(alpha: isDark ? 0.25 : 0.3),
-                  blurRadius: 24,
-                  offset: const Offset(0, 10),
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
-                InkWell(
-                  onTap: _showAvatarOptions,
-                  borderRadius: AppRadius.pillBorder,
-                  child: Stack(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(3),
-                        decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white),
-                        child: GroupAvatar(name: group.name, logoUrl: group.logoUrl, radius: 30),
-                      ),
-                      Positioned(
-                        bottom: 0,
-                        right: 0,
-                        child: Container(
-                          padding: const EdgeInsets.all(4),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            shape: BoxShape.circle,
-                            border: Border.all(color: const Color(0xFF2563EB), width: 2),
+    final dirty = _dirty;
+
+    return PopScope(
+      canPop: !dirty,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        if (await _confirmDiscardAndLeave()) {
+          _discardChanges();
+          if (mounted) Navigator.of(context).maybePop();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+        appBar: AppBar(title: const Text('Group Settings')),
+        body: Column(
+          children: [
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      gradient: premium.AppColors.primaryGradient,
+                      borderRadius: AppRadius.xlBorder,
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF2563EB)
+                              .withValues(alpha: isDark ? 0.25 : 0.3),
+                          blurRadius: 24,
+                          offset: const Offset(0, 10),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        InkWell(
+                          onTap: _showAvatarOptions,
+                          borderRadius: AppRadius.pillBorder,
+                          child: Stack(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(3),
+                                decoration: const BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: Colors.white,
+                                ),
+                                child: GroupAvatar(
+                                  name: group.name,
+                                  logoUrl: group.logoUrl,
+                                  radius: 30,
+                                ),
+                              ),
+                              Positioned(
+                                bottom: 0,
+                                right: 0,
+                                child: Container(
+                                  padding: const EdgeInsets.all(4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: const Color(0xFF2563EB),
+                                      width: 2,
+                                    ),
+                                  ),
+                                  child: const Icon(
+                                    Icons.camera_alt,
+                                    size: 13,
+                                    color: Color(0xFF2563EB),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                          child: const Icon(Icons.camera_alt, size: 13, color: Color(0xFF2563EB)),
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Logo',
-                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Logo',
+                                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                hasLogo
+                                    ? 'Tap to change group logo.'
+                                    : 'Tap to set group logo.',
+                                key: const Key('logo_status'),
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.85),
+                                  fontSize: 12.5,
+                                ),
+                              ),
+                              if (hasLogo)
+                                TextButton.icon(
+                                  key: const Key('remove_logo_button'),
+                                  onPressed: _c.isBusy ? null : _removeLogo,
+                                  style: TextButton.styleFrom(foregroundColor: Colors.white),
+                                  icon: const Icon(Icons.delete_outline, size: 18),
+                                  label: const Text('Remove logo'),
+                                ),
+                            ],
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        hasLogo
-                            ? 'Tap to change group logo.'
-                            : 'Tap to set group logo.',
-                        key: const Key('logo_status'),
-                        style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 12.5),
-                      ),
-                      if (hasLogo)
-                        TextButton.icon(
-                          key: const Key('remove_logo_button'),
-                          onPressed: _c.isBusy ? null : _removeLogo,
-                          style: TextButton.styleFrom(foregroundColor: Colors.white),
-                          icon: const Icon(Icons.delete_outline, size: 18),
-                          label: const Text('Remove logo'),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  _sectionCard(
+                    isDark: isDark,
+                    icon: Icons.edit_outlined,
+                    iconColor: const Color(0xFF2563EB),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Basics', style: Theme.of(context).textTheme.titleSmall),
+                        const SizedBox(height: 10),
+                        TextField(
+                          key: const Key('settings_name_field'),
+                          controller: _name,
+                          enabled: true,
+                          maxLength: GroupErrors.nameMaxLength,
+                          decoration: InputDecoration(
+                            labelText: 'Group name',
+                            filled: true,
+                            fillColor: isDark
+                                ? const Color(0xFF0F172A)
+                                : Colors.white,
+                            border: const OutlineInputBorder(borderRadius: AppRadius.mdBorder),
+                            errorText: _nameError,
+                          ),
                         ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          _sectionCard(
-            isDark: isDark,
-            icon: Icons.vpn_key_outlined,
-            iconColor: const Color(0xFF059669),
-            child: _inviteSection(context),
-          ),
-          const SizedBox(height: 16),
-          _sectionCard(
-            isDark: isDark,
-            icon: Icons.edit_outlined,
-            iconColor: const Color(0xFF2563EB),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                TextField(
-                  key: const Key('settings_name_field'),
-                  controller: _name,
-                  maxLength: GroupErrors.nameMaxLength,
-                  decoration: InputDecoration(
-                    labelText: 'Group name',
-                    border: const OutlineInputBorder(borderRadius: AppRadius.mdBorder),
-                    errorText: _nameError,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  key: const Key('settings_description_field'),
-                  controller: _description,
-                  maxLines: 3,
-                  decoration: const InputDecoration(
-                    labelText: 'Description',
-                    border: OutlineInputBorder(borderRadius: AppRadius.mdBorder),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Text('Privacy', style: Theme.of(context).textTheme.titleSmall),
-                RadioGroup<GroupPrivacy>(
-                  groupValue: _privacy,
-                  onChanged: (v) => setState(() => _privacy = v ?? _privacy),
-                  child: Column(
-                    children: [
-                      for (final p in GroupPrivacy.values)
-                        RadioListTile<GroupPrivacy>(
-                          key: Key('settings_privacy_${p.name}'),
-                          contentPadding: EdgeInsets.zero,
-                          value: p,
-                          title: Text(p.label),
-                          subtitle: Text(p.description),
+                        const SizedBox(height: 8),
+                        TextField(
+                          key: const Key('settings_description_field'),
+                          controller: _description,
+                          enabled: true,
+                          maxLines: 3,
+                          decoration: InputDecoration(
+                            labelText: 'Description',
+                            filled: true,
+                            fillColor: isDark
+                                ? const Color(0xFF0F172A)
+                                : Colors.white,
+                            border: const OutlineInputBorder(borderRadius: AppRadius.mdBorder),
+                          ),
                         ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-                if (_c.error != null) ...[
+                  const SizedBox(height: 16),
+                  _sectionCard(
+                    isDark: isDark,
+                    icon: Icons.policy_outlined,
+                    iconColor: const Color(0xFF0EA5E9),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Privacy', style: Theme.of(context).textTheme.titleSmall),
+                        RadioGroup<GroupPrivacy>(
+                          groupValue: _privacy,
+                          onChanged: (v) => setState(() => _privacy = v ?? _privacy),
+                          child: Column(
+                            children: [
+                              for (final p in GroupPrivacy.values)
+                                RadioListTile<GroupPrivacy>(
+                                  key: Key('settings_privacy_${p.name}'),
+                                  contentPadding: EdgeInsets.zero,
+                                  value: p,
+                                  title: Text(p.label),
+                                  subtitle: Text(p.description),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (_c.error != null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      _c.error!,
+                      key: const Key('settings_error'),
+                      style: const TextStyle(color: AppColors.error),
+                    ),
+                  ],
+                  if (_saved && _c.error == null) ...[
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Saved.',
+                      key: Key('settings_saved'),
+                      style: TextStyle(color: AppColors.success),
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  _sectionCard(
+                    isDark: isDark,
+                    icon: Icons.vpn_key_outlined,
+                    iconColor: const Color(0xFF059669),
+                    child: SettingsInviteCard(controller: _invite!),
+                  ),
+                  const SizedBox(height: 16),
+                  _sectionCard(
+                    isDark: isDark,
+                    icon: Icons.admin_panel_settings_outlined,
+                    iconColor: const Color(0xFF7C3AED),
+                    child: SettingsPermissionsCard(controller: _c),
+                  ),
+                  const SizedBox(height: 16),
+                  _sectionCard(
+                    isDark: isDark,
+                    icon: Icons.gavel_rounded,
+                    iconColor: const Color(0xFF7C3AED),
+                    child: GroupRulesSection(controller: _c),
+                  ),
+                  const SizedBox(height: 16),
+                  _sectionCard(
+                    isDark: isDark,
+                    icon: Icons.campaign_rounded,
+                    iconColor: const Color(0xFFD97706),
+                    child: GroupAnnouncementsSection(controller: _c),
+                  ),
+                  if (_c.canManageMembers) ...[
+                    const SizedBox(height: 16),
+                    _sectionCard(
+                      isDark: isDark,
+                      icon: Icons.how_to_reg_outlined,
+                      iconColor: const Color(0xFF2563EB),
+                      child: SettingsRequestsCard(controller: _c),
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  SettingsDangerZone(controller: _c),
                   const SizedBox(height: 8),
-                  Text(
-                    _c.error!,
-                    key: const Key('settings_error'),
-                    style: const TextStyle(color: AppColors.error),
+                  Center(
+                    child: TextButton(
+                      onPressed: () async {
+                        if (await _confirmDiscardAndLeave()) {
+                          _discardChanges();
+                          if (mounted) context.pop();
+                        }
+                      },
+                      child: const Text('Back to group'),
+                    ),
                   ),
+                  SizedBox(height: dirty ? 72 : 8),
                 ],
-                if (_saved && _c.error == null) ...[
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Saved.',
-                    key: Key('settings_saved'),
-                    style: TextStyle(color: AppColors.success),
-                  ),
-                ],
-                const SizedBox(height: 16),
-                GradientButton(
-                  key: const Key('settings_save'),
-                  // Disabled while the update is in flight: no duplicate submission.
-                  onPressed: _c.isBusy ? null : _save,
-                  label: _c.isBusy ? 'Saving…' : 'Save',
-                  busy: _c.isBusy,
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          _sectionCard(
-            isDark: isDark,
-            icon: Icons.gavel_rounded,
-            iconColor: const Color(0xFF7C3AED),
-            child: _rulesSummary(context),
-          ),
-          const SizedBox(height: 16),
-          _sectionCard(
-            isDark: isDark,
-            icon: Icons.people_outlined,
-            iconColor: const Color(0xFF2563EB),
-            child: _membersSummary(context),
-          ),
-          const SizedBox(height: 16),
-          // ── Danger zone: leave ──
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF2A1215) : const Color(0xFFFEF2F2),
-              borderRadius: AppRadius.xlBorder,
-              border: Border.all(
-                color: isDark ? const Color(0xFF5C1D24) : const Color(0xFFFECACA),
               ),
             ),
-            child: _leaveSection(context),
-          ),
-          const SizedBox(height: 8),
-          Center(
-            child: TextButton(
-              onPressed: () => context.pop(),
-              child: const Text('Back to group'),
-            ),
-          ),
-        ],
+            if (dirty)
+              _StickySaveBar(
+                key: const Key('settings_sticky_save_bar'),
+                saving: _saving,
+                onDiscard: _discardChanges,
+                onSave: _save,
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -898,6 +719,50 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+class _StickySaveBar extends StatelessWidget {
+  const _StickySaveBar({
+    required this.saving,
+    required this.onDiscard,
+    required this.onSave,
+    super.key,
+  });
+
+  final bool saving;
+  final VoidCallback onDiscard;
+  final VoidCallback onSave;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Material(
+      elevation: 8,
+      color: isDark ? const Color(0xFF1E293B) : Colors.white,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+          child: Row(
+            children: [
+              const Expanded(child: Text('You have unsaved changes')),
+              TextButton(
+                key: const Key('settings_discard_button'),
+                onPressed: saving ? null : onDiscard,
+                child: const Text('Discard'),
+              ),
+              const SizedBox(width: 8),
+              FilledButton(
+                key: const Key('settings_save'),
+                onPressed: saving ? null : onSave,
+                child: Text(saving ? 'Saving…' : 'Save'),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

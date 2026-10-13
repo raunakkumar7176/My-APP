@@ -111,6 +111,15 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
   }
 
   Future<void> _openRequests() async {
+    // Deliberately NOT folded into Settings: Settings is gated on
+    // GROUP_SETTINGS-or-owner, but reviewing join requests only needs
+    // MANAGE_MEMBERS — an admin with MANAGE_MEMBERS but not GROUP_SETTINGS
+    // (the live default: leader/admin seeding grants everything except
+    // GROUP_SETTINGS and MANAGE_ROLES) would be locked out of this
+    // entirely if it only lived in Settings. The Settings screen also
+    // shows a requests card (SettingsRequestsCard) as a convenience for
+    // whoever is already there with GROUP_SETTINGS, but this dedicated,
+    // more-permissively-gated screen stays the primary path.
     await context.push('/groups/${widget.groupId}/requests');
     if (mounted) await _c.refresh();
   }

@@ -1043,6 +1043,26 @@ class GroupHubController extends DisposableNotifier {
     return ok;
   }
 
+  /// Sets `groups.admin_only_chat` (migration 0110) — Settings >
+  /// Permissions "who can chat". GROUP_SETTINGS or owner, same gate as
+  /// [updateBasics].
+  Future<bool> updateAdminOnlyChat(bool adminOnly) async {
+    if (!canEditBasics) {
+      _error = 'You do not have permission to change this group.';
+      notifyListeners();
+      return false;
+    }
+    final ok = await _run(
+      GroupErrorContext.update,
+      () => _repo.updateAdminOnlyChat(groupId: groupId, adminOnlyChat: adminOnly),
+    );
+    if (ok && _group != null) {
+      _group = _group!.copyWith(adminOnlyChat: adminOnly);
+      notifyListeners();
+    }
+    return ok;
+  }
+
   /// Removes the group logo (`logo_url = NULL`). Upload/replace wait on a
   /// group-scoped storage policy that does not exist live yet.
   Future<bool> clearLogo() async {

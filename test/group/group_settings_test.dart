@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:my_praperation/core/errors/app_error.dart';
-import 'package:my_praperation/core/models/group_rule.dart';
 import 'package:my_praperation/features/group/domain/group_privacy.dart';
 import 'package:my_praperation/features/group/screens/group_info_screen.dart';
 import 'package:my_praperation/features/group/screens/group_settings_screen.dart';
@@ -250,9 +249,17 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('settings_save')), findsOneWidget);
+      // The sticky save bar only appears once there's something to save.
+      expect(find.byKey(const Key('settings_save')), findsNothing);
+      expect(find.byKey(const Key('settings_name_field')), findsOneWidget);
       // Seeded from the loaded group.
       expect(find.text('Physics Group'), findsOneWidget);
+      await tester.enterText(
+        find.byKey(const Key('settings_name_field')),
+        'Physics Group Renamed',
+      );
+      await tester.pump();
+      expect(find.byKey(const Key('settings_save')), findsOneWidget);
       await tester.pumpWidget(const SizedBox());
       owner.dispose();
     });
@@ -274,6 +281,7 @@ void main() {
         find.byKey(const Key('settings_name_field')),
         '  ',
       );
+      await tester.pump(); // sticky save bar appears once dirty
       await tester.tap(find.byKey(const Key('settings_save')));
       await tester.pumpAndSettle();
       expect(find.text('Group name is required.'), findsOneWidget);
@@ -322,6 +330,7 @@ void main() {
         find.byKey(const Key('settings_name_field')),
         'Renamed',
       );
+      await tester.pump(); // sticky save bar appears once dirty
       await tester.tap(find.byKey(const Key('settings_save')));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('settings_error')), findsOneWidget);
@@ -376,6 +385,7 @@ void main() {
         find.byKey(const Key('settings_name_field')),
         'Renamed',
       );
+      await tester.pump(); // sticky save bar appears once dirty
       await tester.tap(find.byKey(const Key('settings_save')));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Back to group'));
@@ -412,94 +422,13 @@ void main() {
       c.dispose();
     });
   });
-  group('G13 — Rules summary', () {
-    testWidgets('shows rules count and first 3 rules', (tester) async {
-      _tallView(tester);
-      final repo = InMemoryGroupRepository()..seed(id: 'g-1', ownerId: 'u-me');
-      final c = _hub(repo);
-      await c.load();
-      // Seed 5 rules
-      for (var i = 1; i <= 5; i++) {
-        repo.groups['g-1']!.rules.add(
-          GroupRule(
-            id: 'rule-$i',
-            groupId: 'g-1',
-            ruleText: 'Rule $i text',
-            position: i,
-            createdAt: DateTime(2026, 9, i),
-            updatedAt: DateTime(2026, 9, i),
-          ),
-        );
-      }
-      await c.retryRules();
-
-      await tester.pumpWidget(
-        MaterialApp(home: GroupSettingsScreen(groupId: 'g-1', controller: c)),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.byKey(const Key('settings_rules_summary')), findsOneWidget);
-      expect(find.text('5'), findsOneWidget);
-      expect(find.text('Rule 1 text'), findsOneWidget);
-      expect(find.text('Rule 2 text'), findsOneWidget);
-      expect(find.text('Rule 3 text'), findsOneWidget);
-      expect(find.text('+2 more'), findsOneWidget);
-      expect(find.byKey(const Key('settings_manage_rules')), findsOneWidget);
-
-      await tester.pumpWidget(const SizedBox());
-      c.dispose();
-    });
-
-    testWidgets('empty rules shows no-rules message', (tester) async {
-      _tallView(tester);
-      final repo = InMemoryGroupRepository()..seed(id: 'g-1', ownerId: 'u-me');
-      final c = _hub(repo);
-      await c.load();
-
-      await tester.pumpWidget(
-        MaterialApp(home: GroupSettingsScreen(groupId: 'g-1', controller: c)),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.byKey(const Key('settings_rules_empty')), findsOneWidget);
-      expect(find.text('No rules yet.'), findsOneWidget);
-      expect(find.byKey(const Key('settings_manage_rules')), findsNothing);
-
-      await tester.pumpWidget(const SizedBox());
-      c.dispose();
-    });
-  });
-
-  group('G13 — Members summary', () {
-    testWidgets('shows member count and role', (tester) async {
-      _tallView(tester);
-      final repo = InMemoryGroupRepository()..seed(
-        id: 'g-1',
-        ownerId: 'u-me',
-        members: {'u-2': 'leader', 'u-3': 'member'},
-      );
-      final c = _hub(repo);
-      await c.load();
-
-      await tester.pumpWidget(
-        MaterialApp(home: GroupSettingsScreen(groupId: 'g-1', controller: c)),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.byKey(const Key('settings_members_summary')), findsOneWidget);
-      expect(find.byKey(const Key('settings_members_count')), findsOneWidget);
-      expect(find.text('3'), findsWidgets);
-      expect(find.byKey(const Key('settings_my_role')), findsOneWidget);
-      expect(find.textContaining('Your role:'), findsOneWidget);
-      expect(find.byKey(const Key('settings_manage_members')), findsOneWidget);
-
-      await tester.pumpWidget(const SizedBox());
-      c.dispose();
-    });
-  });
-
-  group('G13 — Leave section', () {
-    testWidgets('owner sees blocked message, not leave button', (tester) async {
+  // G13's old "Rules summary" (3-line condensed preview linking to the
+  // hub) and "Members summary" cards no longer exist on Settings — Phase 2
+  // replaced the rules preview with the full GroupRulesSection editor
+  // (already covered by test/group/group_rules_test.dart) and moved
+  // member management entirely onto the Info screen's Members section.
+  group('G13 — Leave section (now in the Danger Zone)', () {
+    testWidgets('owner sees Transfer/Delete, never a Leave button or blocked text', (tester) async {
       _tallView(tester);
       final repo = InMemoryGroupRepository()..seed(id: 'g-1', ownerId: 'u-me');
       final c = _hub(repo);
@@ -512,7 +441,9 @@ void main() {
 
       expect(find.byKey(const Key('settings_leave_section')), findsOneWidget);
       expect(find.byKey(const Key('settings_leave_button')), findsNothing);
-      expect(find.byKey(const Key('settings_leave_blocked')), findsOneWidget);
+      expect(find.byKey(const Key('settings_leave_blocked')), findsNothing);
+      expect(find.byKey(const Key('settings_transfer_ownership_button')), findsOneWidget);
+      expect(find.byKey(const Key('delete_group_button')), findsOneWidget);
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();

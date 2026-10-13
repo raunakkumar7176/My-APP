@@ -88,7 +88,10 @@ class _GroupMembersSectionState extends State<GroupMembersSection> {
                           icon: Badge.count(
                             count: c.pendingRequestCount,
                             isLabelVisible: c.pendingRequestCount > 0,
-                            child: const Icon(Icons.how_to_reg_outlined, size: 20),
+                            child: const Icon(
+                              Icons.how_to_reg_outlined,
+                              size: 20,
+                            ),
                           ),
                           onPressed: widget.onOpenRequests,
                         ),
@@ -117,11 +120,13 @@ class _GroupMembersSectionState extends State<GroupMembersSection> {
                 key: const Key('group_members_search_field'),
                 controller: _searchController,
                 onChanged: _onSearchChanged,
-                decoration: InputDecoration(
+                decoration: const InputDecoration(
                   isDense: true,
                   hintText: 'Search members…',
-                  prefixIcon: const Icon(Icons.search, size: 20),
-                  border: OutlineInputBorder(borderRadius: AppRadius.mdBorder),
+                  prefixIcon: Icon(Icons.search, size: 20),
+                  border: OutlineInputBorder(
+                    borderRadius: AppRadius.mdBorder,
+                  ),
                 ),
               ),
               const SizedBox(height: 12),
@@ -129,7 +134,9 @@ class _GroupMembersSectionState extends State<GroupMembersSection> {
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   child: Text(
-                    c.hasMemberFilter ? 'No members match your search.' : 'No members found.',
+                    c.hasMemberFilter
+                        ? 'No members match your search.'
+                        : 'No members found.',
                     key: const Key('group_members_empty'),
                   ),
                 )
@@ -170,7 +177,9 @@ class _GroupMembersSectionState extends State<GroupMembersSection> {
                         key: const Key('group_members_load_more'),
                         onPressed: () =>
                             setState(() => _visibleCount += _pageSize),
-                        child: Text('Show more (${all.length - visible.length})'),
+                        child: Text(
+                          'Show more (${all.length - visible.length})',
+                        ),
                       ),
                     ),
                   ),
