@@ -14,6 +14,7 @@ import 'package:my_praperation/core/models/group_join_request.dart';
 import 'package:my_praperation/core/models/group_member.dart';
 import 'package:my_praperation/core/models/group_message.dart';
 import 'package:my_praperation/core/models/group_rule.dart';
+import 'package:my_praperation/core/models/invite_limits.dart';
 import 'package:my_praperation/core/models/profile_match.dart';
 import 'package:my_praperation/features/group/data/group_repository.dart';
 import 'package:my_praperation/features/group/domain/group_controls.dart';
@@ -738,6 +739,20 @@ class _FailingRepository implements GroupRepository {
   @override
   Future<String> rotateInviteCode(String groupId) async =>
       throw const DataError(message: 'nope');
+  @override
+  Future<InviteLimits> inviteLimits(String groupId) async =>
+      throw const DataError(message: 'nope');
+  @override
+  Future<void> setInviteLimits({
+    required String groupId,
+    DateTime? expiresAt,
+    int? maxUses,
+  }) async {}
+  @override
+  Future<void> transferOwnership({
+    required String groupId,
+    required String newOwnerId,
+  }) async {}
   @override
   Future<GroupJoinRequest?> myJoinRequest(String groupId) async => null;
   @override

@@ -454,15 +454,10 @@ class GroupHubController extends DisposableNotifier {
       notifyListeners();
       return false;
     }
-    if (!RolePermissionRules.canEditRole(role)) {
+    if (!RolePermissionRules.canEditRolePermission(role, permission)) {
       _error = role.isOwner
           ? 'The owner always holds every permission; nothing to change.'
           : 'Permissions cannot be assigned to the ${role.label} role here.';
-      notifyListeners();
-      return false;
-    }
-    if (!RolePermissionRules.canEditPermission(permission)) {
-      _error = 'That permission cannot be changed here.';
       notifyListeners();
       return false;
     }

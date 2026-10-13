@@ -56,6 +56,30 @@ class GroupErrors {
     if (lower.contains('invalid_invite_code')) {
       return 'That invite code does not match any group. Check it and try again.';
     }
+    // fn_join_group, migration 0111.
+    if (lower.contains('invite_expired')) {
+      return 'This invite code has expired.';
+    }
+    if (lower.contains('invite_max_uses_reached')) {
+      return 'This invite code has reached its use limit.';
+    }
+    // fn_set_group_invite_limits, migration 0111.
+    if (lower.contains('invalid_max_uses')) {
+      return 'Max uses must be a positive number, or left blank for no limit.';
+    }
+    // fn_transfer_group_ownership, migration 0111.
+    if (lower.contains('only_owner_can_transfer')) {
+      return 'Only the group owner can transfer ownership.';
+    }
+    if (lower.contains('already_owner')) {
+      return 'That member already owns this group.';
+    }
+    if (lower.contains('new_owner_must_be_member')) {
+      return 'Pick a current member to transfer ownership to.';
+    }
+    if (lower.contains('group_not_found')) {
+      return 'This group no longer exists.';
+    }
     if (lower.contains('invalid_name')) {
       return 'Group name must be between $nameMinLength and $nameMaxLength characters.';
     }

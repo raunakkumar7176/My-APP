@@ -81,6 +81,20 @@ final class RolePermissionRules {
 
   static bool canEditPermission(GroupPermission p) =>
       p != GroupPermission.unknown && editablePermissions.contains(p);
+
+  /// Combined check used by every write path. One narrow, deliberate
+  /// carve-out beyond [editableRoles]/[editablePermissions]: the group's
+  /// Settings > Permissions "who can create tests" toggle grants/revokes
+  /// CREATE_TEST for the `member` role specifically. Unlike MANAGE_MEMBERS/
+  /// MANAGE_ROLES/GROUP_SETTINGS, creating a test is not a management
+  /// escalation, so this doesn't reopen the "member — never offered" gap
+  /// the rest of this class exists to close.
+  static bool canEditRolePermission(GroupRole role, GroupPermission p) {
+    if (role == GroupRole.member) {
+      return p == GroupPermission.createTest;
+    }
+    return canEditRole(role) && canEditPermission(p);
+  }
 }
 
 /// The group's `role_permissions` rows, as the server returned them.

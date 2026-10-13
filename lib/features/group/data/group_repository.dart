@@ -11,6 +11,7 @@ import '../../../core/models/group_join_request.dart';
 import '../../../core/models/group_member.dart';
 import '../../../core/models/group_message.dart';
 import '../../../core/models/group_rule.dart';
+import '../../../core/models/invite_limits.dart';
 import '../../../core/models/profile_match.dart';
 import '../../../core/services/auth_service.dart';
 import '../../../core/services/supabase_service.dart';
@@ -154,8 +155,27 @@ abstract interface class GroupRepository {
 
   /// `fn_reset_group_invite(p_group)` — the server generates and returns the
   /// new code (GROUP_SETTINGS or owner; `NOT_AUTHORIZED` otherwise). Nothing
-  /// is generated client-side.
+  /// is generated client-side. Resets the usage counter server-side too.
   Future<String> rotateInviteCode(String groupId);
+
+  /// The code plus its optional expiry/max-uses/use-count (migration
+  /// 0111) — same GROUP_SETTINGS/owner gate as [inviteCode].
+  Future<InviteLimits> inviteLimits(String groupId);
+
+  /// `fn_set_group_invite_limits` — owner/admin only; either argument null
+  /// means "no limit" for that one.
+  Future<void> setInviteLimits({
+    required String groupId,
+    DateTime? expiresAt,
+    int? maxUses,
+  });
+
+  /// `fn_transfer_group_ownership(p_group, p_new_owner)` — owner only; the
+  /// new owner must already be a member. Leaves exactly one owner.
+  Future<void> transferOwnership({
+    required String groupId,
+    required String newOwnerId,
+  });
 
   /// The caller's own join request for [groupId], or null. Exact group id +
   /// the caller's own user id; the live SELECT policy (`user_id = uid` OR
@@ -719,6 +739,48 @@ class SupabaseGroupRepository implements GroupRepository {
         return code;
       });
 
+  @override
+  Future<InviteLimits> inviteLimits(String groupId) =>
+      _guard(GroupErrorContext.inviteCode, () async {
+        final row = await _client
+            .from('groups')
+            .select('invite_code, invite_expires_at, invite_max_uses, invite_use_count')
+            .eq('id', groupId)
+            .maybeSingle();
+        final code = row?['invite_code'];
+        if (row == null || code is! String || code.isEmpty) {
+          throw const DataError(message: 'Invite details are not available.');
+        }
+        return InviteLimits.fromJson(row); // never logged
+      });
+
+  @override
+  Future<void> setInviteLimits({
+    required String groupId,
+    DateTime? expiresAt,
+    int? maxUses,
+  }) => _guard(GroupErrorContext.inviteCode, () async {
+    await _client.rpc(
+      'fn_set_group_invite_limits',
+      params: {
+        'p_group': groupId,
+        'p_expires_at': expiresAt?.toUtc().toIso8601String(),
+        'p_max_uses': maxUses,
+      },
+    );
+  });
+
+  @override
+  Future<void> transferOwnership({
+    required String groupId,
+    required String newOwnerId,
+  }) => _guard(GroupErrorContext.update, () async {
+    await _client.rpc(
+      'fn_transfer_group_ownership',
+      params: {'p_group': groupId, 'p_new_owner': newOwnerId},
+    );
+  });
+
   static const _joinRequestColumns =
       'id, group_id, user_id, status, created_at';
 
@@ -938,8 +1000,7 @@ class SupabaseGroupRepository implements GroupRepository {
     required GroupPermission permission,
     required bool granted,
   }) => _guard(GroupErrorContext.rolePermission, () async {
-    if (!RolePermissionRules.canEditRole(role) ||
-        !RolePermissionRules.canEditPermission(permission)) {
+    if (!RolePermissionRules.canEditRolePermission(role, permission)) {
       throw const ValidationError(
         message: 'That role or permission cannot be changed here.',
       );

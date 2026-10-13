@@ -20,6 +20,7 @@ import 'package:my_praperation/core/models/group_join_request.dart';
 import 'package:my_praperation/core/models/group_member.dart';
 import 'package:my_praperation/core/models/group_message.dart';
 import 'package:my_praperation/core/models/group_rule.dart';
+import 'package:my_praperation/core/models/invite_limits.dart';
 import 'package:my_praperation/core/models/profile_match.dart';
 import 'package:my_praperation/features/group/data/group_repository.dart';
 import 'package:my_praperation/features/group/data/notification_repository.dart';
@@ -43,11 +44,14 @@ class FakeGroup {
   final String id;
   String name;
   String description;
-  final String ownerId;
+  String ownerId;
   String privacy;
   String inviteCode;
   String? logoUrl;
   bool adminOnlyChat = false;
+  DateTime? inviteExpiresAt;
+  int? inviteMaxUses;
+  int inviteUseCount = 0;
   final Map<String, String> roles = {}; // userId -> group_role
   final List<GroupRule> rules = [];
   final List<GroupAnnouncement> announcements = [];
@@ -56,6 +60,10 @@ class FakeGroup {
 
   /// Mirrors `message_reads.last_read_at`: userId -> last-read timestamp.
   final Map<String, DateTime> lastReadAt = {};
+
+  /// Mirrors `group_removed_members` (migration 0111): userId -> removed,
+  /// requires manager approval to rejoin even via invite code.
+  final Set<String> removedUserIds = {};
 }
 
 class InMemoryGroupRepository implements GroupRepository {
@@ -232,12 +240,25 @@ class InMemoryGroupRepository implements GroupRepository {
     if (g.roles.containsKey(currentUser)) {
       return JoinedGroup(g.id, alreadyMember: true);
     }
-    if (g.privacy == 'restricted') {
+    if (g.inviteExpiresAt != null && g.inviteExpiresAt!.isBefore(DateTime.now())) {
+      throw DataError(
+        message: GroupErrors.map('INVITE_EXPIRED', context: GroupErrorContext.join),
+      );
+    }
+    if (g.inviteMaxUses != null && g.inviteUseCount >= g.inviteMaxUses!) {
+      throw DataError(
+        message: GroupErrors.map('INVITE_MAX_USES_REACHED', context: GroupErrorContext.join),
+      );
+    }
+    final wasRemoved = g.removedUserIds.contains(currentUser);
+    if (g.privacy == 'restricted' || wasRemoved) {
       joinRequests.add('${g.id}:$currentUser');
       requestStatus['${g.id}:$currentUser'] = 'pending'; // upsert → pending
+      g.inviteUseCount++;
       return const JoinRequestFiled();
     }
     g.roles[currentUser] = 'member';
+    g.inviteUseCount++;
     return JoinedGroup(g.id);
   }
 
@@ -272,6 +293,7 @@ class InMemoryGroupRepository implements GroupRepository {
       throw const DataError(message: 'ONLY_OWNER_CAN_REMOVE_ADMIN');
     }
     g.roles.remove(userId);
+    g.removedUserIds.add(userId); // removed by someone else, not a self-leave
   }
 
   @override
@@ -551,7 +573,76 @@ class InMemoryGroupRepository implements GroupRepository {
     rotations++;
     final g = groups[groupId]!;
     g.inviteCode = 'ROT${rotations.toString().padLeft(5, '0')}';
+    g.inviteUseCount = 0; // a new code starts its usage budget over
     return g.inviteCode;
+  }
+
+  @override
+  Future<InviteLimits> inviteLimits(String groupId) async {
+    inviteCodeReads.add(groupId);
+    _maybeFail();
+    final g = groups[groupId];
+    final visible =
+        g != null &&
+        (g.roles.containsKey(currentUser) || g.privacy == 'public');
+    if (!visible) {
+      throw const DataError(message: 'Invite details are not available.');
+    }
+    return InviteLimits(
+      code: g.inviteCode,
+      expiresAt: g.inviteExpiresAt,
+      maxUses: g.inviteMaxUses,
+      useCount: g.inviteUseCount,
+    );
+  }
+
+  @override
+  Future<void> setInviteLimits({
+    required String groupId,
+    DateTime? expiresAt,
+    int? maxUses,
+  }) async {
+    calls.add('setInviteLimits:$groupId');
+    _maybeFail();
+    if (!await canEditSettings(groupId)) {
+      throw _notAuthorized(GroupErrorContext.inviteCode);
+    }
+    if (maxUses != null && maxUses <= 0) {
+      throw const DataError(message: 'INVALID_MAX_USES');
+    }
+    final g = groups[groupId]!;
+    g.inviteExpiresAt = expiresAt;
+    g.inviteMaxUses = maxUses;
+  }
+
+  /// Live `fn_transfer_group_ownership`: owner only, new owner must already
+  /// be a member, leaves exactly one owner.
+  @override
+  Future<void> transferOwnership({
+    required String groupId,
+    required String newOwnerId,
+  }) async {
+    calls.add('transferOwnership:$groupId:$newOwnerId');
+    _maybeFail();
+    final g = groups[groupId];
+    if (g == null || g.ownerId != currentUser) {
+      throw DataError(
+        message: GroupErrors.map('ONLY_OWNER_CAN_TRANSFER', context: GroupErrorContext.update),
+      );
+    }
+    if (newOwnerId == currentUser) {
+      throw DataError(
+        message: GroupErrors.map('ALREADY_OWNER', context: GroupErrorContext.update),
+      );
+    }
+    if (!g.roles.containsKey(newOwnerId)) {
+      throw DataError(
+        message: GroupErrors.map('NEW_OWNER_MUST_BE_MEMBER', context: GroupErrorContext.update),
+      );
+    }
+    g.roles[newOwnerId] = 'owner';
+    g.roles[currentUser] = 'admin';
+    g.ownerId = newOwnerId;
   }
 
   /// Join requests as live rows: `'<groupId>:<userId>' -> status`. The
@@ -635,6 +726,7 @@ class InMemoryGroupRepository implements GroupRepository {
     }
     if (approve) {
       groups[groupId]?.roles.putIfAbsent(userId, () => 'member');
+      groups[groupId]?.removedUserIds.remove(userId);
       requestStatus[key] = 'approved';
     } else {
       requestStatus[key] = 'declined';
