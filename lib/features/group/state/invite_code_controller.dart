@@ -17,18 +17,31 @@ class InviteCodeController extends DisposableNotifier {
   final GroupRepository _repo;
 
   String? _code;
+  DateTime? _expiresAt;
+  int? _maxUses;
+  int _useCount = 0;
   bool _loading = false;
   bool _rotating = false;
+  bool _settingLimits = false;
   bool _loadedOnce = false;
   String? _error;
   bool _rotated = false;
 
   /// The current code, or null before load / after a failed load.
   String? get code => _code;
+
+  /// Null means no expiry.
+  DateTime? get expiresAt => _expiresAt;
+
+  /// Null means unlimited uses.
+  int? get maxUses => _maxUses;
+  int get useCount => _useCount;
+
   bool get isLoading => _loading;
   bool get isRotating => _rotating;
+  bool get isSettingLimits => _settingLimits;
   bool get hasLoaded => _loadedOnce;
-  bool get isBusy => _loading || _rotating;
+  bool get isBusy => _loading || _rotating || _settingLimits;
   String? get error => _error;
 
   /// True only after the most recent rotation succeeded; cleared by any
@@ -42,7 +55,11 @@ class InviteCodeController extends DisposableNotifier {
     _rotated = false;
     notifyListeners();
     try {
-      _code = await _repo.inviteCode(groupId);
+      final limits = await _repo.inviteLimits(groupId);
+      _code = limits.code;
+      _expiresAt = limits.expiresAt;
+      _maxUses = limits.maxUses;
+      _useCount = limits.useCount;
     } on AppError catch (e) {
       _code = null;
       _error = e.message;
@@ -65,6 +82,7 @@ class InviteCodeController extends DisposableNotifier {
   /// Rotates via the server and shows what it returned. Single-flight: a
   /// second call while one is running is dropped. On failure the previous
   /// code stays displayed (it is still the valid one) and [error] is set.
+  /// A rotation resets the use counter server-side (new code, new budget).
   Future<bool> rotate() async {
     if (_rotating || _loading) return false;
     _rotating = true;
@@ -73,6 +91,7 @@ class InviteCodeController extends DisposableNotifier {
     notifyListeners();
     try {
       _code = await _repo.rotateInviteCode(groupId);
+      _useCount = 0;
       _rotated = true;
       return true;
     } on AppError catch (e) {
@@ -87,6 +106,38 @@ class InviteCodeController extends DisposableNotifier {
       return false;
     } finally {
       _rotating = false;
+      notifyListeners();
+    }
+  }
+
+  /// Sets expiry/max-uses together (`fn_set_group_invite_limits`); either
+  /// null means "no limit" for that one.
+  Future<bool> setLimits({DateTime? expiresAt, int? maxUses}) async {
+    if (isBusy) return false;
+    _settingLimits = true;
+    _error = null;
+    notifyListeners();
+    try {
+      await _repo.setInviteLimits(
+        groupId: groupId,
+        expiresAt: expiresAt,
+        maxUses: maxUses,
+      );
+      _expiresAt = expiresAt;
+      _maxUses = maxUses;
+      return true;
+    } on AppError catch (e) {
+      _error = e.message;
+      return false;
+    } catch (e, st) {
+      AppLogger.error('Invite limits update failed: $e', stackTrace: st);
+      _error = GroupErrors.map(
+        e.toString(),
+        context: GroupErrorContext.inviteCode,
+      );
+      return false;
+    } finally {
+      _settingLimits = false;
       notifyListeners();
     }
   }

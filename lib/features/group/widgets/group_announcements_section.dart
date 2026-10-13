@@ -12,14 +12,26 @@ import 'gradient_button.dart';
 /// true also see Post / Edit / Delete. The live RLS on
 /// `group_announcements` is the boundary; UI visibility is UX only.
 class GroupAnnouncementsSection extends StatelessWidget {
-  const GroupAnnouncementsSection({required this.controller, super.key});
+  const GroupAnnouncementsSection({
+    required this.controller,
+    this.readOnly = false,
+    super.key,
+  });
 
   final GroupHubController controller;
+
+  /// Forces the display-only form (no Post/Edit/Delete) regardless of
+  /// permission — used on the Info screen, which shows announcements but
+  /// manages them only from Settings.
+  final bool readOnly;
+
+  bool _canEdit(GroupHubController c) => !readOnly && c.canSendAnnouncement;
 
   @override
   Widget build(BuildContext context) {
     final c = controller;
     final theme = Theme.of(context);
+    final canEdit = _canEdit(c);
     return Column(
       key: const Key('group_announcements_section'),
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -35,7 +47,7 @@ class GroupAnnouncementsSection extends StatelessWidget {
                 style: theme.textTheme.bodySmall,
               ),
             const Spacer(),
-            if (c.canSendAnnouncement)
+            if (canEdit)
               TextButton.icon(
                 key: const Key('add_announcement_button'),
                 onPressed: c.announcementSaving
@@ -75,7 +87,7 @@ class GroupAnnouncementsSection extends StatelessWidget {
             style: theme.textTheme.bodySmall,
           )
         else
-          for (final a in c.announcements) _card(context, a),
+          for (final a in c.announcements) _card(context, a, canEdit),
         if (c.announcementsError != null && c.announcements.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 4),
@@ -89,7 +101,7 @@ class GroupAnnouncementsSection extends StatelessWidget {
     );
   }
 
-  Widget _card(BuildContext context, GroupAnnouncement a) {
+  Widget _card(BuildContext context, GroupAnnouncement a, bool canEdit) {
     final c = controller;
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
@@ -153,7 +165,7 @@ class GroupAnnouncementsSection extends StatelessWidget {
                         ],
                       ),
                     ),
-                    if (c.canSendAnnouncement) ...[
+                    if (canEdit) ...[
                       IconButton(
                         key: Key('edit_announcement_${a.id}'),
                         tooltip: 'Edit announcement',

@@ -921,6 +921,23 @@ class GroupHubController extends DisposableNotifier {
     return ok;
   }
 
+  /// Transfers ownership to another current member (`fn_transfer_group_
+  /// ownership`) — owner only; the new owner must already be a member.
+  /// Re-reads the group on success: the caller is now admin, not owner.
+  Future<bool> transferOwnership(String newOwnerId) async {
+    if (!isOwner) {
+      _error = 'Only the owner can transfer ownership.';
+      notifyListeners();
+      return false;
+    }
+    final ok = await _run(
+      GroupErrorContext.update,
+      () => _repo.transferOwnership(groupId: groupId, newOwnerId: newOwnerId),
+    );
+    if (ok) await refresh();
+    return ok;
+  }
+
   /// Changes another member's role. Client invariants (each also enforced
   /// server-side by `trg_owner_guard`, migration 0108): never yourself,
   /// never the owner, never *to* owner, only a live assignable role, and

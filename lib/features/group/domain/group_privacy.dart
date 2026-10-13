@@ -28,7 +28,7 @@ enum GroupPrivacy {
       case GroupPrivacy.private:
         return 'Private';
       case GroupPrivacy.restricted:
-        return 'Restricted';
+        return 'Approval required';
     }
   }
 

@@ -10,14 +10,29 @@ import '../state/group_hub_controller.dart';
 /// group settings screen. The live RLS is the boundary: member SELECT,
 /// GROUP_SETTINGS-or-owner INSERT/UPDATE/DELETE. UI visibility is UX only.
 class GroupRulesSection extends StatelessWidget {
-  const GroupRulesSection({required this.controller, super.key});
+  const GroupRulesSection({
+    required this.controller,
+    this.readOnly = false,
+    super.key,
+  });
 
   final GroupHubController controller;
+
+  /// Forces the display-only form (no Add/Edit/Delete) regardless of
+  /// permission — used on the Info screen, which shows rules but edits
+  /// them only from Settings.
+  final bool readOnly;
+
+  /// Live CHECK on new rules: a group may hold at most this many.
+  static const maxRules = 5;
+
+  bool _canEdit(GroupHubController c) => !readOnly && c.canEditBasics;
 
   @override
   Widget build(BuildContext context) {
     final c = controller;
     final theme = Theme.of(context);
+    final canEdit = _canEdit(c);
     return Column(
       key: const Key('group_rules_section'),
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -28,12 +43,12 @@ class GroupRulesSection extends StatelessWidget {
             const SizedBox(width: 8),
             if (c.rules.isNotEmpty)
               Text(
-                '${c.rules.length}',
+                '${c.rules.length}/$maxRules',
                 key: const Key('rules_count'),
                 style: theme.textTheme.bodySmall,
               ),
             const Spacer(),
-            if (c.canEditBasics)
+            if (canEdit && c.rules.length < maxRules)
               TextButton.icon(
                 key: const Key('add_rule_button'),
                 onPressed: c.rulesSaving ? null : () => _addRule(context),
@@ -69,7 +84,7 @@ class GroupRulesSection extends StatelessWidget {
             style: theme.textTheme.bodySmall,
           )
         else
-          for (final rule in c.rules) _tile(context, rule),
+          for (final rule in c.rules) _tile(context, rule, canEdit),
         if (c.rulesError != null && c.rules.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 4),
@@ -83,7 +98,7 @@ class GroupRulesSection extends StatelessWidget {
     );
   }
 
-  Widget _tile(BuildContext context, GroupRule rule) {
+  Widget _tile(BuildContext context, GroupRule rule, bool canEdit) {
     final c = controller;
     final acting = c.actingRuleId == rule.id;
     final disabled = acting || c.rulesSaving;
@@ -93,7 +108,7 @@ class GroupRulesSection extends StatelessWidget {
       leading: const Icon(Icons.gavel_outlined),
       title: Text(rule.ruleText),
       subtitle: Text(_when(rule.createdAt)),
-      trailing: c.canEditBasics
+      trailing: canEdit
           ? Row(
               mainAxisSize: MainAxisSize.min,
               children: [
