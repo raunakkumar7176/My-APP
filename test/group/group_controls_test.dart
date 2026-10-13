@@ -190,7 +190,11 @@ void main() {
       expect(find.byKey(const Key('manage_role_permissions')), findsOneWidget);
       expect(find.text('invite & remove · change roles'), findsOneWidget);
       expect(find.byKey(const Key('manage_tests')), findsNothing);
-      expect(find.byKey(const Key('role_menu_u-mem')), findsOneWidget);
+      // MANAGE_ROLES grants access to the permission-template editor
+      // (manage_role_permissions, above) but never the per-member role
+      // menu — only the owner can change an individual member's role
+      // (migration 0108), regardless of MANAGE_ROLES.
+      expect(find.byKey(const Key('role_menu_u-mem')), findsNothing);
       await tester.pumpWidget(const SizedBox());
       c.dispose();
     });
@@ -266,9 +270,10 @@ void main() {
       expect(find.byKey(const Key('invite_member_action')), findsNothing);
       expect(find.byKey(const Key('remove_u-mod')), findsNothing);
       expect(find.byKey(const Key('role_menu_u-mod')), findsNothing);
-      // Non-management navigation stays: tests, chat, announcements, members.
+      // Non-management navigation stays: tests, chat, announcements, members
+      // (shown inline on GroupInfoScreen, no separate "View all" link).
       expect(find.byKey(const Key('open_group_tests')), findsOneWidget);
-      expect(find.byKey(const Key('view_all_members')), findsOneWidget);
+      expect(find.byKey(const Key('member_u-mem')), findsOneWidget);
       expect(find.byKey(const Key('leave_group_button')), findsOneWidget);
       await tester.pumpWidget(const SizedBox());
       c.dispose();
@@ -372,41 +377,62 @@ void main() {
   });
 
   group('13–14. role permissions: single-flight, server re-read', () {
-    test('owner grants and revokes a moderator permission; matrix and own probes re-read after each', () async {
-      final repo = _repo('u-owner');
+    test('owner grants and revokes an admin permission; matrix and own probes re-read after each', () async {
+      // Dedicated fixture (not the shared _repo helper): migration 0108
+      // means a real admin member's raw role string is 'admin', not the
+      // legacy 'leader'/'moderator' the shared fixture still uses for
+      // other tests in this file — seeding that directly here keeps this
+      // specific scenario internally consistent.
+      final repo = InMemoryGroupRepository(currentUser: 'u-owner')
+        ..seed(
+          id: 'g-1',
+          name: 'Physics',
+          ownerId: 'u-owner',
+          members: {'u-adm': 'admin', 'u-mem': 'member'},
+        );
       final c = _ctl(repo, 'u-owner');
       await c.load();
       await c.loadRolePermissions();
+      // Admin inherits the 10 seeded 'leader' permissions via the server's
+      // fallback (0062) before any explicit grant.
       expect(c.rolePermissions.of(GroupRole.admin).length, 10);
-      expect(c.rolePermissions.of(GroupRole.admin), isEmpty);
+      // groupSettings is not in the seeded-leader set, so granting it is a
+      // real mutation (sendAnnouncement, used lower down, already defaults
+      // true via the leader fallback and would be a no-op here).
       final before = repo.calls.length;
-      expect(await c.setRolePermission(GroupRole.admin, GroupPermission.sendAnnouncement, granted: true), isTrue);
+      expect(await c.setRolePermission(GroupRole.admin, GroupPermission.groupSettings, granted: true), isTrue);
       final after = repo.calls.sublist(before);
-      expect(after.first, 'setRolePermission:g-1:moderator:SEND_ANNOUNCEMENT:true');
+      expect(after.first, 'setRolePermission:g-1:admin:GROUP_SETTINGS:true');
       expect(after.where((x) => x == 'rolePermissions:g-1').length, 1);
       expect(after.where((x) => x == 'permissionsFor:g-1').length, 1); // load()
-      expect(c.rolePermissions.has(GroupRole.admin, GroupPermission.sendAnnouncement), isTrue);
-      // The moderator now really holds it (fake mirrors fn_has_permission).
-      repo.currentUser = 'u-mod';
-      final mod = _ctl(repo, 'u-mod');
-      await mod.load();
-      expect(mod.canSendAnnouncement, isTrue);
-      expect(mod.hasManagementControls, isTrue);
-      mod.dispose();
+      expect(c.rolePermissions.has(GroupRole.admin, GroupPermission.groupSettings), isTrue);
+      // The admin member really holds it (fake mirrors fn_has_permission).
+      repo.currentUser = 'u-adm';
+      final adm = _ctl(repo, 'u-adm');
+      await adm.load();
+      expect(adm.canEditBasics, isTrue);
+      expect(adm.hasManagementControls, isTrue);
+      adm.dispose();
       repo.currentUser = 'u-owner';
-      // Revoke, then the moderator loses it.
-      expect(await c.setRolePermission(GroupRole.admin, GroupPermission.sendAnnouncement, granted: false), isTrue);
-      expect(c.rolePermissions.has(GroupRole.admin, GroupPermission.sendAnnouncement), isFalse);
-      repo.currentUser = 'u-mod';
-      final mod2 = _ctl(repo, 'u-mod');
-      await mod2.load();
-      expect(mod2.hasManagementControls, isFalse);
-      mod2.dispose();
+      // Revoke a seeded (not just-granted) permission too.
+      expect(await c.setRolePermission(GroupRole.admin, GroupPermission.manageMembers, granted: false), isTrue);
+      expect(c.rolePermissions.has(GroupRole.admin, GroupPermission.manageMembers), isFalse);
+      repo.currentUser = 'u-adm';
+      final adm2 = _ctl(repo, 'u-adm');
+      await adm2.load();
+      expect(adm2.canManageMembers, isFalse);
+      adm2.dispose();
       c.dispose();
     });
 
-    test('no-op toggles send nothing; revoking a seeded leader permission works', () async {
-      final repo = _repo('u-owner');
+    test('no-op toggles send nothing; revoking a seeded admin permission works', () async {
+      final repo = InMemoryGroupRepository(currentUser: 'u-owner')
+        ..seed(
+          id: 'g-1',
+          name: 'Physics',
+          ownerId: 'u-owner',
+          members: {'u-adm': 'admin', 'u-mem': 'member'},
+        );
       final c = _ctl(repo, 'u-owner');
       await c.load();
       await c.loadRolePermissions();
@@ -415,12 +441,12 @@ void main() {
       expect(repo.calls.length, n); // already granted
       expect(await c.setRolePermission(GroupRole.admin, GroupPermission.createTest, granted: false), isTrue);
       expect(c.rolePermissions.has(GroupRole.admin, GroupPermission.createTest), isFalse);
-      repo.currentUser = 'u-lead';
-      final lead = _ctl(repo, 'u-lead');
-      await lead.load();
-      expect(lead.controls.canCreateTest, isFalse);
-      expect(lead.controls.canEditTest, isTrue);
-      lead.dispose();
+      repo.currentUser = 'u-adm';
+      final adm = _ctl(repo, 'u-adm');
+      await adm.load();
+      expect(adm.controls.canCreateTest, isFalse);
+      expect(adm.controls.canEditTest, isTrue);
+      adm.dispose();
       c.dispose();
     });
 
@@ -430,9 +456,13 @@ void main() {
       await c.load();
       await c.loadRolePermissions();
       repo.failNextWith = const _Boom();
-      expect(await c.setRolePermission(GroupRole.admin, GroupPermission.createTest, granted: true), isFalse);
+      // groupSettings isn't seeded, so this is a real mutation attempt that
+      // actually reaches the (failing) server — createTest is already
+      // seeded true and granting it again would be a no-op, never reaching
+      // the server at all.
+      expect(await c.setRolePermission(GroupRole.admin, GroupPermission.groupSettings, granted: true), isFalse);
       expect(c.error, isNotNull);
-      expect(c.rolePermissions.has(GroupRole.admin, GroupPermission.createTest), isFalse);
+      expect(c.rolePermissions.has(GroupRole.admin, GroupPermission.groupSettings), isFalse);
       expect(repo.calls.last, 'rolePermissions:g-1');
       c.dispose();
     });
@@ -457,8 +487,10 @@ void main() {
       final c = _ctl(repo, 'u-owner');
       await c.load();
       await c.loadRolePermissions();
-      final first = c.setRolePermission(GroupRole.admin, GroupPermission.createTest, granted: true);
-      final second = c.setRolePermission(GroupRole.admin, GroupPermission.editTest, granted: true);
+      // Neither permission is in the seeded set, so both are real mutation
+      // attempts (a no-op toggle never goes "busy" at all).
+      final first = c.setRolePermission(GroupRole.admin, GroupPermission.groupSettings, granted: true);
+      final second = c.setRolePermission(GroupRole.admin, GroupPermission.manageRoles, granted: true);
       expect(await second, isFalse);
       expect(await first, isTrue);
       expect(repo.calls.where((x) => x.startsWith('setRolePermission')).length, 1);
@@ -467,7 +499,12 @@ void main() {
   });
 
   group('UI: management section and role-permissions sheet', () {
-    testWidgets('sheet lists the live permissions per role and toggles through the controller', (tester) async {
+    testWidgets('sheet lists the live permissions for admin and toggles through the controller', (tester) async {
+      // Migration 0108: editableRoles is just [admin] now — one segment,
+      // not a leader/moderator tab switch. Admin inherits the legacy
+      // 'leader' seeded rows via fn_has_permission's fallback (0062), so
+      // the matrix still reads the same seeded-true/false values a leader
+      // used to show.
       final repo = _repo('u-owner');
       final c = _ctl(repo, 'u-owner');
       await c.load();
@@ -475,19 +512,15 @@ void main() {
       await tester.tap(find.byKey(const Key('manage_role_permissions')));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('role_permissions_title')), findsOneWidget);
-      // Leader tab first: seeded rows on, GROUP_SETTINGS / MANAGE_ROLES off.
-      expect(tester.widget<SwitchListTile>(find.byKey(const Key('perm_leader_createTest'))).value, isTrue);
-      expect(tester.widget<SwitchListTile>(find.byKey(const Key('perm_leader_manageRoles'))).value, isFalse);
+      expect(tester.widget<SwitchListTile>(find.byKey(const Key('perm_admin_createTest'))).value, isTrue);
+      expect(tester.widget<SwitchListTile>(find.byKey(const Key('perm_admin_manageRoles'))).value, isFalse);
       expect(find.byKey(const Key('perm_owner_createTest')), findsNothing);
       expect(find.byKey(const Key('perm_member_createTest')), findsNothing);
-      // Moderator tab: everything off; grant one.
-      await tester.tap(find.descendant(of: find.byKey(const Key('role_permissions_role')), matching: find.text('Moderator')));
+      expect(tester.widget<SwitchListTile>(find.byKey(const Key('perm_admin_sendAnnouncement'))).value, isTrue);
+      await tester.tap(find.byKey(const Key('perm_admin_sendAnnouncement')));
       await tester.pumpAndSettle();
-      expect(tester.widget<SwitchListTile>(find.byKey(const Key('perm_moderator_sendAnnouncement'))).value, isFalse);
-      await tester.tap(find.byKey(const Key('perm_moderator_sendAnnouncement')));
-      await tester.pumpAndSettle();
-      expect(repo.calls, contains('setRolePermission:g-1:moderator:SEND_ANNOUNCEMENT:true'));
-      expect(tester.widget<SwitchListTile>(find.byKey(const Key('perm_moderator_sendAnnouncement'))).value, isTrue);
+      expect(repo.calls, contains('setRolePermission:g-1:admin:SEND_ANNOUNCEMENT:false'));
+      expect(tester.widget<SwitchListTile>(find.byKey(const Key('perm_admin_sendAnnouncement'))).value, isFalse);
       await tester.pumpWidget(const SizedBox());
       c.dispose();
     });
@@ -530,7 +563,7 @@ void main() {
       await tester.pumpWidget(MaterialApp(home: Scaffold(body: RolePermissionsSheet(hub: c))));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('role_permissions_error')), findsNothing);
-      expect(find.byKey(const Key('perm_leader_publishTest')), findsOneWidget);
+      expect(find.byKey(const Key('perm_admin_publishTest')), findsOneWidget);
       c.dispose();
     });
   });
@@ -540,7 +573,6 @@ void main() {
       final c = await _loaded('u-lead');
       await _pumpHub(tester, c);
       expect(find.byKey(const Key('open_group_tests')), findsOneWidget);
-      expect(find.byKey(const Key('view_all_members')), findsOneWidget);
       expect(find.byKey(const Key('invite_member_action')), findsOneWidget);
       expect(find.byKey(const Key('hub_members_heading')), findsOneWidget);
       expect(find.byKey(const Key('leave_group_button')), findsOneWidget);

@@ -281,14 +281,14 @@ void main() {
       final repo = _repo();
       final id = repo.seedJoinRequest(groupId: 'g-1', userId: 'u-req');
       final c = await pump(tester, repo);
-      expect(find.text('Members · 1'), findsOneWidget);
+      expect(find.text('Members (1)'), findsOneWidget);
       await tester.tap(find.byKey(Key('approve_request_$id')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('confirm_approve_request')));
       await tester.pumpAndSettle();
       expect(find.byKey(Key('join_request_$id')), findsNothing);
       expect(find.byKey(const Key('join_requests_empty')), findsOneWidget);
-      expect(find.text('Members · 2'), findsOneWidget);
+      expect(find.text('Members (2)'), findsOneWidget);
       expect(find.byKey(const Key('member_u-req')), findsOneWidget);
       await tester.pumpWidget(const SizedBox());
       c.dispose();
@@ -317,7 +317,7 @@ void main() {
         await tester.tap(find.byKey(const Key('confirm_decline_request')));
         await tester.pumpAndSettle();
         expect(find.byKey(Key('join_request_$id')), findsNothing);
-        expect(find.text('Members · 1'), findsOneWidget);
+        expect(find.text('Members (1)'), findsOneWidget);
         await tester.pumpWidget(const SizedBox());
         c.dispose();
       },

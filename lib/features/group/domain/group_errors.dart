@@ -69,6 +69,17 @@ class GroupErrors {
     if (lower.contains('cannot_remove_owner')) {
       return 'The group owner cannot be removed from the group.';
     }
+    // trg_owner_guard (fn_prevent_owner_removal), migration 0108.
+    if (lower.contains('only_owner_can_change_roles')) {
+      return 'Only the group owner can change roles.';
+    }
+    if (lower.contains('only_owner_can_remove_admin')) {
+      return 'Only the group owner can remove an admin.';
+    }
+    // trg_group_member_cap (fn_enforce_group_member_cap), migration 0109.
+    if (lower.contains('group_is_full')) {
+      return 'Group is full.';
+    }
     if (lower.contains('invalid input value for enum')) {
       return 'That role is not valid.';
     }

@@ -195,6 +195,9 @@ void main() {
     });
 
     testWidgets('tapping View Test navigates to /tests/:id', (tester) async {
+      tester.view.physicalSize = const Size(800, 2600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
       final f = _fixture();
       f.tests.rows['t-soon'] = _t(
         't-soon',

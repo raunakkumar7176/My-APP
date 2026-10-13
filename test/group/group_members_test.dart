@@ -176,7 +176,10 @@ void main() {
       expect(find.byKey(const Key('member_code_u-asha')), findsOneWidget);
       expect(find.byKey(const Key('member_code_u-ravi')), findsNothing);
       expect(find.byKey(const Key('role_badge_owner')), findsOneWidget);
-      expect(find.byKey(const Key('role_badge_admin')), findsOneWidget);
+      // Migration 0108 merged leader+moderator into admin — the fixture's
+      // 'u-asha' (was leader) and 'u-ravi' (was moderator) both render the
+      // same badge now.
+      expect(find.byKey(const Key('role_badge_admin')), findsNWidgets(2));
       await tester.pumpWidget(const SizedBox());
       c.dispose();
     });
@@ -307,11 +310,12 @@ void main() {
       c2.dispose();
     });
 
-    testWidgets('hub: View all opens the members hub', (tester) async {
+    testWidgets('hub: Info screen shows the full roster inline (no View all link)', (tester) async {
+      // GroupInfoScreen shows every member directly in its Members
+      // section — unlike the old GroupHubScreen, there's no "View all"
+      // link to a separate, truncated-preview roster to open.
       final repo = _roster();
       final c = _hub(repo);
-      // Tall viewport: the roster sits below the G6/G7 sections in the
-      // hub's lazy ListView.
       tester.view.physicalSize = const Size(800, 3700);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
@@ -322,7 +326,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('hub_members_heading')), findsOneWidget);
-      expect(find.byKey(const Key('view_all_members')), findsOneWidget);
+      expect(find.byKey(const Key('view_all_members')), findsNothing);
       expect(find.byKey(const Key('member_u-asha')), findsOneWidget);
       await tester.pumpWidget(const SizedBox());
       c.dispose();

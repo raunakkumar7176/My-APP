@@ -333,11 +333,11 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('remove_logo_button')), findsNothing);
       expect(repo.groups['g-1']!.logoUrl, isNull);
-      expect(
-        find.textContaining('storage policy'),
-        findsOneWidget,
-        reason: 'upload is truthfully reported as unavailable',
-      );
+      // Stale: this used to assert a "no storage policy" disclaimer from
+      // before logo upload existed. Upload is implemented now (camera/
+      // gallery via _pickAndUploadAvatar, group-avatars bucket with a
+      // fallback to avatars) — there is no such disclaimer to show.
+      expect(find.byKey(const Key('logo_status')), findsOneWidget);
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();

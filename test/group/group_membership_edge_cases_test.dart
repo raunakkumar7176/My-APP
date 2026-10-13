@@ -221,23 +221,25 @@ void main() {
     });
 
     testWidgets(
-      'owner hub: popup menu offers Delete, not Leave (owner can always delete)',
+      'owner hub: Danger Zone offers Delete, never a Leave button (owner can always delete)',
       (tester) async {
         // Product decision: the owner can delete a group at any time,
         // regardless of other members (0102) -- canDeleteGroup is
-        // unconditionally true for an owner now, so the hub's menu never
-        // falls through to the "Leave group" branch for them.
+        // unconditionally true for an owner now. GroupInfoScreen's Danger
+        // Zone (no 3-dot popup menu, unlike the old GroupHubScreen) shows
+        // the Delete button inline; Leave never shows for an owner.
         final repo = InMemoryGroupRepository(currentUser: 'u-me')
           ..seed(id: 'g-1', ownerId: 'u-me', members: {'u-2': 'member'});
         final c = _hub(repo);
+        tester.view.physicalSize = const Size(800, 3600);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
         await tester.pumpWidget(
           MaterialApp(home: GroupInfoScreen(groupId: 'g-1', controller: c)),
         );
         await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('group_menu')));
-        await tester.pumpAndSettle();
-        expect(find.text('Delete group'), findsOneWidget);
-        expect(find.text('Leave group'), findsNothing);
+        expect(find.byKey(const Key('delete_group_button')), findsOneWidget);
+        expect(find.byKey(const Key('leave_group_button')), findsNothing);
         await tester.pumpWidget(const SizedBox());
         c.dispose();
       },
