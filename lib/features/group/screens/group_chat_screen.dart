@@ -9,8 +9,11 @@ import '../../../core/models/group_member.dart';
 import '../../../core/models/group_message.dart';
 import '../../../core/theme/app_radius.dart';
 import '../../test/data/test_repository.dart';
+import '../data/chat_local_state.dart';
 import '../data/notification_repository.dart';
+import '../domain/group_test_management.dart';
 import '../state/group_hub_controller.dart';
+import '../widgets/chat_widgets.dart';
 import '../widgets/group_avatar.dart';
 
 /// A ground-up redesign of the cohort chat screen — same real-time
@@ -38,6 +41,20 @@ class _GroupChatScreenState extends State<GroupChatScreen>
   final _scrollController = ScrollController();
   bool _canSend = false;
   bool _muted = false;
+  final _local = const ChatLocalState();
+
+  /// When this device last opened this chat (null the very first time) —
+  /// drives the one-shot "New messages" divider. Captured before it's
+  /// overwritten for next time.
+  DateTime? _unreadDividerAt;
+
+  /// Local-only "Clear chat" cutoff: messages at or before this moment are
+  /// hidden on this device, nowhere else. Null means nothing is cleared.
+  DateTime? _clearedBeforeAt;
+
+  /// Shows the scroll-to-bottom button once the viewer has scrolled away
+  /// from the latest message.
+  bool _showScrollToBottom = false;
 
   /// Message ids already shown once — only a genuinely NEW id (just
   /// arrived, or just sent) gets the entrance animation; scrolling an old
@@ -60,9 +77,58 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     if (_ownsController) {
       _c.load();
     }
+    _loadLocalState();
     _input.addListener(_onInputChanged);
+    _scrollController.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
     _loadMuted();
+  }
+
+  Future<void> _loadLocalState() async {
+    final lastOpened = await _local.lastOpenedAt(widget.groupId);
+    final clearedBefore = await _local.clearedBefore(widget.groupId);
+    if (mounted) {
+      setState(() {
+        _unreadDividerAt = lastOpened;
+        _clearedBeforeAt = clearedBefore;
+      });
+    }
+    // Record this visit for next time — after reading the previous value,
+    // never before.
+    await _local.setLastOpenedAt(widget.groupId, DateTime.now());
+  }
+
+  Future<void> _clearChatForMe(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Clear chat?'),
+        content: const Text(
+          'This hides the chat history on this device only. Other members, '
+          'and your own other devices, keep seeing it as it is.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const Key('confirm_clear_chat'),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Clear Chat'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final now = DateTime.now();
+    await _local.clearChat(widget.groupId, now);
+    if (!mounted) return;
+    setState(() => _clearedBeforeAt = now);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Chat cleared on this device.')),
+    );
   }
 
   Future<void> _loadMuted() async {
@@ -115,6 +181,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _input.removeListener(_onInputChanged);
+    _scrollController.removeListener(_onScroll);
     _c.removeListener(_onChanged);
     if (_ownsController) {
       _c.dispose();
@@ -128,6 +195,16 @@ class _GroupChatScreenState extends State<GroupChatScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _c.refreshMessages();
+    }
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    final awayFromBottom =
+        _scrollController.position.maxScrollExtent - _scrollController.offset >
+        240;
+    if (awayFromBottom != _showScrollToBottom) {
+      setState(() => _showScrollToBottom = awayFromBottom);
     }
   }
 
@@ -172,15 +249,17 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     final text = _input.text;
     if (text.trim().isEmpty) return;
     HapticFeedback.lightImpact();
+    // Optimistic: the input clears and the pending bubble appears right
+    // away, regardless of how the send resolves — a failure leaves a
+    // "Failed · Tap to retry" row instead of restoring the typed text.
+    _input.clear();
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _scrollToBottom(animate: true),
+    );
     final ok = await _c.sendMessage(text);
     if (!mounted) return;
 
-    if (ok) {
-      _input.clear();
-      WidgetsBinding.instance.addPostFrameCallback(
-        (_) => _scrollToBottom(animate: true),
-      );
-    } else {
+    if (!ok) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(_c.error ?? 'Could not send the message.'),
@@ -201,6 +280,9 @@ class _GroupChatScreenState extends State<GroupChatScreen>
 
   Future<void> _onMessageLongPress(GroupMessage m, bool isMine) async {
     if (m.isSystem) return;
+    // A still-sending or failed row has no server id yet — nothing to copy
+    // or delete server-side. Tapping it (when failed) retries instead.
+    if (_c.isMessageSending(m.id) || _c.isMessageFailed(m.id)) return;
     HapticFeedback.mediumImpact();
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -383,7 +465,24 @@ class _GroupChatScreenState extends State<GroupChatScreen>
               child: Column(
                 children: [
                   if (!_c.isRealtimeConnected) _reconnectingStrip(context, isDark),
-                  Expanded(child: _buildMessageArea(context, isDark)),
+                  _liveTestBanner(context, isDark),
+                  Expanded(
+                    child: Stack(
+                      children: [
+                        _buildMessageArea(context, isDark),
+                        if (_showScrollToBottom)
+                          Positioned(
+                            right: 14,
+                            bottom: 14,
+                            child: ChatScrollToBottomButton(
+                              key: const Key('discussion_scroll_to_bottom'),
+                              isDark: isDark,
+                              onTap: () => _scrollToBottom(animate: true),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
                   _buildComposer(context, isDark),
                 ],
               ),
@@ -495,6 +594,8 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                     context.push('/groups/${_c.groupId}/tests');
                   } else if (val == 'mute') {
                     _toggleMuted(context);
+                  } else if (val == 'clear') {
+                    _clearChatForMe(context);
                   }
                 },
                 itemBuilder: (_) => [
@@ -533,12 +634,57 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                       ],
                     ),
                   ),
+                  const PopupMenuItem(
+                    value: 'clear',
+                    child: Row(
+                      children: [
+                        Icon(Icons.cleaning_services_outlined, size: 18),
+                        SizedBox(width: 10),
+                        Text('Clear chat (this device)'),
+                      ],
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(width: 4),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _liveTestBanner(BuildContext context, bool isDark) {
+    final live = _c.testsInSection(GroupTestSection.live);
+    if (live.isEmpty) return const SizedBox.shrink();
+    final test = live.first;
+    return Container(
+      key: Key('discussion_live_test_banner_${test.id}'),
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 14),
+      color: const Color(0xFFDC2626).withValues(alpha: isDark ? 0.2 : 0.08),
+      child: Row(
+        children: [
+          const ChatPulsingDot(),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'LIVE: ${test.title}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFFDC2626),
+              ),
+            ),
+          ),
+          TextButton(
+            key: Key('discussion_start_test_${test.id}'),
+            onPressed: () => context.push('/tests/${test.id}'),
+            child: const Text('Start Now'),
+          ),
+        ],
       ),
     );
   }
@@ -576,6 +722,19 @@ class _GroupChatScreenState extends State<GroupChatScreen>
         ],
       ),
     );
+  }
+
+  /// The real window minus anything hidden by a local "Clear chat" — see
+  /// [ChatLocalState]. Nothing is deleted; a later clear of the local
+  /// cutoff (there is no UI for that today) would bring it all back.
+  List<GroupMessage> get _visibleMessages {
+    final all = _c.messages;
+    final clearedBefore = _clearedBeforeAt;
+    if (clearedBefore == null) return all;
+    return [
+      for (final m in all)
+        if (m.createdAt.isAfter(clearedBefore)) m,
+    ];
   }
 
   Widget _buildMessageArea(BuildContext context, bool isDark) {
@@ -639,9 +798,28 @@ class _GroupChatScreenState extends State<GroupChatScreen>
         ),
       );
     }
+    if (_visibleMessages.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Text(
+            'Chat cleared on this device.',
+            key: const Key('discussion_cleared_empty'),
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      );
+    }
 
-    final msgs = _c.messages;
+    final msgs = _visibleMessages;
     final totalCount = msgs.length + (_c.hasOlderMessages ? 1 : 0);
+    final dividerAt = _unreadDividerAt;
+    final unreadDividerIndex = dividerAt == null
+        ? -1
+        : msgs.indexWhere((m) => m.createdAt.isAfter(dividerAt));
 
     return RefreshIndicator(
       onRefresh: _c.refreshMessages,
@@ -703,22 +881,21 @@ class _GroupChatScreenState extends State<GroupChatScreen>
 
           final isFirstEverSeen = _animatedOnce.add(currentMsg.id);
 
-          final bubbleWidget = _EntranceFade(
+          final bubbleWidget = ChatEntranceFade(
             play: isFirstEverSeen,
             child: _bubble(context, currentMsg, isDark, isConsecutive: isConsecutive),
           );
 
-          if (showDateSeparator) {
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _dateSeparator(context, isDark, currentMsg.createdAt),
-                bubbleWidget,
-              ],
-            );
-          }
+          final leadWidgets = <Widget>[
+            if (showDateSeparator) _dateSeparator(context, isDark, currentMsg.createdAt),
+            if (msgIndex == unreadDividerIndex) _unreadDivider(isDark),
+          ];
 
-          return bubbleWidget;
+          if (leadWidgets.isEmpty) return bubbleWidget;
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [...leadWidgets, bubbleWidget],
+          );
         },
       ),
     );
@@ -741,6 +918,32 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     ];
     return '${date.day.toString().padLeft(2, '0')} ${months[date.month - 1]} ${date.year}'
         .toUpperCase();
+  }
+
+  Widget _unreadDivider(bool isDark) {
+    final color = isDark ? const Color(0xFF93A4F0) : const Color(0xFF5B6CDB);
+    return Padding(
+      key: const Key('discussion_unread_divider'),
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(
+        children: [
+          Expanded(child: Divider(color: color.withValues(alpha: 0.4))),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: Text(
+              'NEW MESSAGES',
+              style: TextStyle(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.6,
+                color: color,
+              ),
+            ),
+          ),
+          Expanded(child: Divider(color: color.withValues(alpha: 0.4))),
+        ],
+      ),
+    );
   }
 
   Widget _dateSeparator(BuildContext context, bool isDark, DateTime date) {
@@ -817,6 +1020,78 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     );
   }
 
+  /// A test-created event ('test' message type, migration 0039), rendered
+  /// as a card using the message's own `metadata` (`test_id`, `title`,
+  /// `created_by`) — distinct from the small grey system-event pill used
+  /// for joins/leaves/role changes.
+  Widget _testAnnouncementCard(BuildContext context, GroupMessage m, bool isDark) {
+    final testId = m.metadata['test_id'] as String?;
+    final title = m.metadata['title'] as String? ?? m.body;
+    final creatorLabel = _c.messageSenderLabel(m);
+    return Padding(
+      key: Key('discussion_message_${m.id}'),
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 20),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          gradient: AppColors.primaryGradientSoft(alpha: isDark ? 0.22 : 0.1),
+          borderRadius: AppRadius.lgBorder,
+          border: Border.all(
+            color: isDark ? const Color(0xFF334155) : const Color(0xFFE5E9F2),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.quiz_rounded,
+                  size: 16,
+                  color: isDark ? const Color(0xFF93A4F0) : const Color(0xFF5B6CDB),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'New test',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.4,
+                    color: isDark ? const Color(0xFF93A4F0) : const Color(0xFF5B6CDB),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              title,
+              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14.5),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              'Created by $creatorLabel · ${_formatTime(m.createdAt)}',
+              style: TextStyle(
+                fontSize: 11.5,
+                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton.tonal(
+                key: Key('discussion_view_test_${m.id}'),
+                onPressed: testId == null
+                    ? null
+                    : () => context.push('/tests/$testId'),
+                child: const Text('View'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _bubble(
     BuildContext context,
     GroupMessage m,
@@ -825,6 +1100,10 @@ class _GroupChatScreenState extends State<GroupChatScreen>
   }) {
     final mine = m.senderId != null && m.senderId == _c.currentUserId;
     final label = _c.messageSenderLabel(m);
+
+    if (m.isTestAnnouncement) {
+      return _testAnnouncementCard(context, m, isDark);
+    }
 
     if (m.isSystemEvent) {
       return Padding(
@@ -871,6 +1150,8 @@ class _GroupChatScreenState extends State<GroupChatScreen>
 
     final bodyText = m.isDeleted ? 'This message was deleted' : m.body;
     final sender = !mine && !isConsecutive ? _senderOf(m) : null;
+    final isSending = mine && _c.isMessageSending(m.id);
+    final isFailed = mine && _c.isMessageFailed(m.id);
 
     return Padding(
       key: Key('discussion_message_${m.id}'),
@@ -895,6 +1176,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
           Flexible(
             child: GestureDetector(
               onLongPress: () => _onMessageLongPress(m, mine),
+              onTap: isFailed ? () => _c.retryPendingMessage() : null,
               child: Container(
                 constraints: const BoxConstraints(maxWidth: 320),
                 padding: const EdgeInsets.fromLTRB(14, 9, 14, 7),
@@ -999,21 +1281,65 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                     const SizedBox(height: 3),
                     Align(
                       alignment: Alignment.centerRight,
-                      child: Text(
-                        _formatTime(m.createdAt),
-                        style: TextStyle(
-                          fontSize: 10.5,
-                          color: mine
-                              ? (m.isDeleted
-                                    ? (isDark
-                                          ? const Color(0xFF94A3B8)
-                                          : const Color(0xFF64748B))
-                                    : const Color(0xB3FFFFFF))
-                              : (isDark
-                                    ? const Color(0xFF64748B)
-                                    : const Color(0xFF9AA4B8)),
-                        ),
-                      ),
+                      child: isSending
+                          ? Row(
+                              key: Key('discussion_message_sending_${m.id}'),
+                              mainAxisSize: MainAxisSize.min,
+                              children: const [
+                                SizedBox(
+                                  width: 9,
+                                  height: 9,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 1.5,
+                                    color: Color(0xB3FFFFFF),
+                                  ),
+                                ),
+                                SizedBox(width: 5),
+                                Text(
+                                  'Sending…',
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    color: Color(0xB3FFFFFF),
+                                  ),
+                                ),
+                              ],
+                            )
+                          : isFailed
+                          ? Row(
+                              key: Key('discussion_message_failed_${m.id}'),
+                              mainAxisSize: MainAxisSize.min,
+                              children: const [
+                                Icon(
+                                  Icons.error_outline_rounded,
+                                  size: 12,
+                                  color: Color(0xFFFCA5A5),
+                                ),
+                                SizedBox(width: 4),
+                                Text(
+                                  'Failed · Tap to retry',
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFFFCA5A5),
+                                  ),
+                                ),
+                              ],
+                            )
+                          : Text(
+                              _formatTime(m.createdAt),
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                color: mine
+                                    ? (m.isDeleted
+                                          ? (isDark
+                                                ? const Color(0xFF94A3B8)
+                                                : const Color(0xFF64748B))
+                                          : const Color(0xB3FFFFFF))
+                                    : (isDark
+                                          ? const Color(0xFF64748B)
+                                          : const Color(0xFF9AA4B8)),
+                              ),
+                            ),
                     ),
                   ],
                 ),
@@ -1084,7 +1410,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          _ComposerIconButton(
+          ChatComposerIconButton(
             icon: Icons.add_rounded,
             isDark: isDark,
             onTap: () => _showAttachmentOptions(context),
@@ -1124,7 +1450,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
             ),
           ),
           const SizedBox(width: 8),
-          _SendButton(
+          ChatSendButton(
             key: const Key('discussion_send_button'),
             enabled: !_c.sending,
             highlighted: _canSend,
@@ -1141,180 +1467,5 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     final minute = t.minute.toString().padLeft(2, '0');
     final ampm = t.hour >= 12 ? 'PM' : 'AM';
     return '$hour:$minute $ampm';
-  }
-}
-
-/// Plays a short fade+rise exactly once (when [play] is true on first
-/// build); subsequent rebuilds of the same element (e.g. the surrounding
-/// list scrolling, a sibling's setState) just show the child statically —
-/// an [AnimatedBuilder] here would be wrong, since it would replay on
-/// every rebuild rather than once per message.
-class _EntranceFade extends StatefulWidget {
-  const _EntranceFade({required this.play, required this.child});
-
-  final bool play;
-  final Widget child;
-
-  @override
-  State<_EntranceFade> createState() => _EntranceFadeState();
-}
-
-class _EntranceFadeState extends State<_EntranceFade>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 260),
-  );
-  late final Animation<double> _fade = CurvedAnimation(
-    parent: _controller,
-    curve: Curves.easeOut,
-  );
-  late final Animation<Offset> _slide = Tween<Offset>(
-    begin: const Offset(0, 0.06),
-    end: Offset.zero,
-  ).animate(_fade);
-
-  @override
-  void initState() {
-    super.initState();
-    if (widget.play) {
-      _controller.forward();
-    } else {
-      _controller.value = 1;
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FadeTransition(
-      opacity: _fade,
-      child: SlideTransition(position: _slide, child: widget.child),
-    );
-  }
-}
-
-/// A compact circular tonal icon button for the composer's leading "add"
-/// action — a soft-filled circle rather than a bare [IconButton].
-class _ComposerIconButton extends StatelessWidget {
-  const _ComposerIconButton({
-    required this.icon,
-    required this.isDark,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final bool isDark;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: isDark ? const Color(0xFF1E293B) : Colors.white,
-      shape: const CircleBorder(
-        side: BorderSide(color: Color(0x00000000)),
-      ),
-      child: InkWell(
-        customBorder: const CircleBorder(),
-        onTap: onTap,
-        child: Container(
-          width: 44,
-          height: 44,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(
-              color: isDark ? const Color(0xFF334155) : const Color(0xFFE5E9F2),
-            ),
-          ),
-          child: Icon(
-            icon,
-            color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// The composer's circular send button: gradient-filled and highlighted
-/// only once there is text to send, with a light press-scale.
-class _SendButton extends StatefulWidget {
-  const _SendButton({
-    required this.enabled,
-    required this.highlighted,
-    required this.busy,
-    required this.onPressed,
-    super.key,
-  });
-
-  /// Whether the button responds to taps at all (false only while sending).
-  final bool enabled;
-
-  /// Whether it shows the gradient (has text to send) vs. a flat muted fill.
-  final bool highlighted;
-  final bool busy;
-  final VoidCallback onPressed;
-
-  @override
-  State<_SendButton> createState() => _SendButtonState();
-}
-
-class _SendButtonState extends State<_SendButton> {
-  bool _pressed = false;
-
-  void _setPressed(bool v) {
-    if (!widget.enabled) return;
-    setState(() => _pressed = v);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return GestureDetector(
-      onTapDown: (_) => _setPressed(true),
-      onTapUp: (_) => _setPressed(false),
-      onTapCancel: () => _setPressed(false),
-      onTap: widget.enabled ? widget.onPressed : null,
-      child: AnimatedScale(
-        scale: _pressed ? 0.9 : 1.0,
-        duration: const Duration(milliseconds: 120),
-        curve: Curves.easeOut,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          width: 44,
-          height: 44,
-          decoration: BoxDecoration(
-            gradient: widget.highlighted ? AppColors.primaryGradient : null,
-            color: widget.highlighted
-                ? null
-                : (isDark ? const Color(0xFF334155) : const Color(0xFFD7DCE8)),
-            shape: BoxShape.circle,
-          ),
-          alignment: Alignment.center,
-          child: widget.busy
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Colors.white,
-                  ),
-                )
-              : AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 150),
-                  child: Icon(
-                    Icons.arrow_upward_rounded,
-                    key: ValueKey(widget.highlighted),
-                    color: Colors.white,
-                  ),
-                ),
-        ),
-      ),
-    );
   }
 }

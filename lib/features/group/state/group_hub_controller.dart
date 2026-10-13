@@ -129,13 +129,31 @@ class GroupHubController extends DisposableNotifier {
   bool _sending = false;
   bool _hasOlder = false;
 
-  List<GroupMessage> get messages => _messages;
+  /// Optimistic UI (Phase 1): the one message currently being sent or that
+  /// just failed to send, shown appended after the real window until the
+  /// server confirms it (then [_loadMessages] picks up the real row and
+  /// this is cleared). Single-flight, same as [sending] — only one send is
+  /// ever in the air, so only one pending slot is needed.
+  GroupMessage? _pendingMessage;
+  bool _pendingFailed = false;
+
+  /// The real window plus the in-flight/failed optimistic row, if any.
+  List<GroupMessage> get messages =>
+      _pendingMessage == null ? _messages : [..._messages, _pendingMessage!];
   bool get messagesLoading => _messagesLoading;
   bool get olderMessagesLoading => _olderLoading;
   String? get messagesError => _messagesError;
   bool get sending => _sending;
   bool get hasOlderMessages => _hasOlder;
   bool get hasMessages => _messages.isNotEmpty;
+
+  /// True while [id] names the current optimistic row and it hasn't failed.
+  bool isMessageSending(String id) =>
+      _pendingMessage?.id == id && !_pendingFailed;
+
+  /// True while [id] names the current optimistic row and it failed.
+  bool isMessageFailed(String id) =>
+      _pendingMessage?.id == id && _pendingFailed;
 
   // ── Realtime (Group Hub redesign): live INSERT/UPDATE on group_messages,
   // via Supabase Realtime (already publishes this table server-side — see
@@ -1415,31 +1433,78 @@ class GroupHubController extends DisposableNotifier {
   }
 
   /// Sends one message. Single-flight; the sender is always the signed-in
-  /// user (the repository sets it, the live INSERT policy enforces it). The
-  /// window is re-read from the server after success **and** failure — no
-  /// optimistic row is ever kept.
+  /// user (the repository sets it, the live INSERT policy enforces it).
+  /// Shows an optimistic row immediately ([_pendingMessage]); on success the
+  /// window is re-read and the real row replaces it, on failure the row
+  /// stays (marked failed) until [retryPendingMessage] or a later send.
+  ///
+  /// Client-side spam guard: a new send is refused within [_minSendGap] of
+  /// the last one — a courtesy against accidental double-taps/spam, not a
+  /// security boundary (the server has its own rate limiting, if any).
   Future<bool> sendMessage(String body) async {
     if (_sending || _busy) return false;
+    if (_pendingFailed) {
+      _error = 'Retry or dismiss the previous message first.';
+      notifyListeners();
+      return false;
+    }
+    final now = _now();
+    final last = _lastSendAttemptAt;
+    if (last != null && now.difference(last) < _minSendGap) {
+      _error = "You're sending messages too fast. Please slow down.";
+      notifyListeners();
+      return false;
+    }
     final invalid = validateMessage(body);
     if (invalid != null) {
       _error = invalid;
       notifyListeners();
       return false;
     }
+    _lastSendAttemptAt = now;
+    _pendingMessage = GroupMessage(
+      id: 'local-${now.microsecondsSinceEpoch}',
+      groupId: groupId,
+      senderId: _currentUserId,
+      body: body.trim(),
+      createdAt: now,
+    );
+    _pendingFailed = false;
+    return _flushPendingMessage();
+  }
+
+  DateTime? _lastSendAttemptAt;
+  static const _minSendGap = Duration(milliseconds: 800);
+
+  /// Re-attempts the one failed optimistic row, reusing its local id so the
+  /// UI's keyed widget doesn't flicker.
+  Future<bool> retryPendingMessage() async {
+    if (_pendingMessage == null || !_pendingFailed || _sending || _busy) {
+      return false;
+    }
+    _pendingFailed = false;
+    return _flushPendingMessage();
+  }
+
+  Future<bool> _flushPendingMessage() async {
+    final pending = _pendingMessage!;
     _sending = true;
     _error = null;
     notifyListeners();
     try {
-      await _repo.sendMessage(groupId: groupId, body: body.trim());
+      await _repo.sendMessage(groupId: groupId, body: pending.body);
+      _pendingMessage = null;
       await _loadMessages();
       return true;
     } on AppError catch (e) {
       _error = e.message;
+      _pendingFailed = true;
       await _loadMessages();
       return false;
     } catch (e, st) {
       AppLogger.error('Send message failed: $e', stackTrace: st);
       _error = GroupErrors.map(e.toString(), context: GroupErrorContext.chat);
+      _pendingFailed = true;
       await _loadMessages();
       return false;
     } finally {

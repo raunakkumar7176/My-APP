@@ -287,16 +287,34 @@ void main() {
       expect(c.messages.length, 4);
     });
 
-    test('server rejection is mapped and the window is re-read', () async {
-      final repo = _repo();
-      final c = _hub(repo);
-      await c.load();
-      repo.failNextWith = const DataError(message: 'row-level security');
-      expect(await c.sendMessage('Blocked'), isFalse);
-      expect(c.error, 'row-level security');
-      expect(c.messages.length, 4, reason: 'no optimistic row survives');
-      expect(c.sending, isFalse);
-    });
+    test(
+      'server rejection is mapped, the window is re-read, and the failed '
+      'row stays as an optimistic "tap to retry" row (Phase 1)',
+      () async {
+        final repo = _repo();
+        final c = _hub(repo);
+        await c.load();
+        repo.failNextWith = const DataError(message: 'row-level security');
+        expect(await c.sendMessage('Blocked'), isFalse);
+        expect(c.error, 'row-level security');
+        expect(c.messages.length, 5, reason: 'the failed row stays visible');
+        final failed = c.messages.last;
+        expect(failed.body, 'Blocked');
+        expect(c.isMessageFailed(failed.id), isTrue);
+        expect(c.isMessageSending(failed.id), isFalse);
+        expect(c.sending, isFalse);
+
+        // A second send while one has failed is refused until retried.
+        expect(await c.sendMessage('Another'), isFalse);
+        expect(c.messages.length, 5);
+
+        // Retrying re-sends the exact same body under the same local id.
+        expect(await c.retryPendingMessage(), isTrue);
+        expect(c.messages.length, 5);
+        expect(c.messages.last.body, 'Blocked');
+        expect(c.isMessageFailed(c.messages.last.id), isFalse);
+      },
+    );
   });
 
   group('TEST 8 — single-flight', () {
