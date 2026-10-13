@@ -203,7 +203,7 @@ void main() {
       c.dispose();
     });
 
-    testWidgets('owner hub: leave button hidden, blocked reason shown',
+    testWidgets('owner hub: leave button and blocked-reason text both absent',
         (tester) async {
       _tallView(tester);
       final repo = InMemoryGroupRepository(currentUser: 'u-me')
@@ -213,9 +213,12 @@ void main() {
         MaterialApp(home: GroupInfoScreen(groupId: 'g-1', controller: c)),
       );
       await tester.pumpAndSettle();
+      // Phase 1: the owner sees no Leave affordance at all, not even the
+      // explanatory text — the server-side reason is still available via
+      // c.leaveBlockedReason, just never rendered for the owner.
       expect(find.byKey(const Key('leave_group_button')), findsNothing);
-      expect(find.byKey(const Key('leave_blocked_note')), findsOneWidget);
-      expect(find.textContaining('own this group'), findsOneWidget);
+      expect(find.byKey(const Key('leave_blocked_note')), findsNothing);
+      expect(c.leaveBlockedReason, contains('own this group'));
       await tester.pumpWidget(const SizedBox());
       c.dispose();
     });

@@ -108,7 +108,9 @@ class GroupLeaderboardController extends DisposableNotifier {
         if (_test == null) {
           _accessDenied = true;
         } else {
-          _members = await _groups.members(groupId);
+          // limit: the live group cap (migration 0109) — the leaderboard
+          // needs the whole roster, never a partial page.
+          _members = await _groups.members(groupId, limit: 500);
           if (isOwner) {
             _canSeeFullLeaderboard = true;
           } else {

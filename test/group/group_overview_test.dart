@@ -159,8 +159,11 @@ void main() {
     });
   });
 
-  group('GroupHubScreen: Overview section rendering', () {
-    testWidgets('shows live/upcoming/completed counts and the next upcoming test card', (tester) async {
+  group('GroupHubScreen: Tests section rendering', () {
+    testWidgets('shows the Active/Past counts and the upcoming test row', (tester) async {
+      tester.view.physicalSize = const Size(800, 2600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
       final f = _fixture();
       f.tests.rows['t-soon'] = _t(
         't-soon',
@@ -173,28 +176,32 @@ void main() {
       await tester.pumpWidget(MaterialApp(home: GroupInfoScreen(groupId: 'g-1', controller: c)));
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('overview_stats_row')), findsOneWidget);
-      expect(find.byKey(const Key('overview_upcoming_test_t-soon')), findsOneWidget);
+      expect(find.byKey(const Key('group_tests_tab_active')), findsOneWidget);
+      expect(find.byKey(const Key('group_tests_tab_past')), findsOneWidget);
+      expect(find.byKey(const Key('group_test_row_t-soon')), findsOneWidget);
       expect(find.text('Test t-soon'), findsOneWidget);
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();
     });
 
-    testWidgets('shows the empty-upcoming-test message when there is none', (tester) async {
+    testWidgets('shows the empty-active-tests message when there is none', (tester) async {
+      tester.view.physicalSize = const Size(800, 2600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
       final f = _fixture();
       final c = _hub(f, 'u-me');
 
       await tester.pumpWidget(MaterialApp(home: GroupInfoScreen(groupId: 'g-1', controller: c)));
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('overview_no_upcoming_test')), findsOneWidget);
+      expect(find.byKey(const Key('group_tests_active_empty')), findsOneWidget);
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();
     });
 
-    testWidgets('tapping View Test navigates to /tests/:id', (tester) async {
+    testWidgets('tapping a test row navigates to /tests/:id', (tester) async {
       tester.view.physicalSize = const Size(800, 2600);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
@@ -224,7 +231,7 @@ void main() {
       await tester.pumpWidget(MaterialApp.router(routerConfig: router));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const Key('overview_view_test_t-soon')));
+      await tester.tap(find.byKey(const Key('group_test_row_t-soon')));
       await tester.pumpAndSettle();
 
       expect(find.text('Test detail: t-soon'), findsOneWidget);

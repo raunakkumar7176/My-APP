@@ -616,9 +616,10 @@ void main() {
       expect(find.byKey(const Key('remove_u-2')), findsOneWidget);
       // The owner's own row is never removable.
       expect(find.byKey(const Key('remove_u-me')), findsNothing);
-      // And the owner cannot leave — the reason is shown, not a dead button.
+      // And the owner cannot leave — no button, no explanatory text either
+      // (Phase 1: the owner sees no Leave affordance at all).
       expect(find.byKey(const Key('leave_group_button')), findsNothing);
-      expect(find.byKey(const Key('leave_blocked_note')), findsOneWidget);
+      expect(find.byKey(const Key('leave_blocked_note')), findsNothing);
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();

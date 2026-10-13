@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -9,18 +10,19 @@ import '../../../core/theme/app_radius.dart';
 import '../../../core/models/group.dart';
 import '../../../core/services/supabase_service.dart';
 import '../../test/data/test_repository.dart';
-import '../../test/domain/test_lifecycle.dart';
-import '../../test/widgets/test_formatters.dart';
 import '../data/notification_repository.dart';
 import '../state/group_hub_controller.dart';
+import '../state/invite_code_controller.dart';
+import '../widgets/group_action_row.dart';
 import '../widgets/group_announcements_section.dart';
 import '../widgets/group_avatar.dart';
+import '../widgets/group_leaderboard_section.dart';
 import '../widgets/group_management_section.dart';
+import '../widgets/group_media_section.dart';
+import '../widgets/group_members_section.dart';
 import '../widgets/group_rules_section.dart';
+import '../widgets/group_tests_section.dart';
 import '../widgets/invite_member_sheet.dart';
-import '../widgets/join_request_queue.dart';
-import '../widgets/member_tile.dart';
-import '../widgets/outgoing_invitations_section.dart';
 import '../widgets/role_permissions_sheet.dart';
 
 /// Dedicated WhatsApp/Telegram-style Group Info & Management Screen.
@@ -108,11 +110,96 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
     if (mounted) await _c.refresh();
   }
 
+  Future<void> _openRequests() async {
+    await context.push('/groups/${widget.groupId}/requests');
+    if (mounted) await _c.refresh();
+  }
+
+  /// A real invite-code sheet (load, copy, rotate) — the same
+  /// [InviteCodeController] the Settings screen uses, not a duplicate of
+  /// its logic.
+  Future<void> _shareInvite() async {
+    final invite = InviteCodeController(groupId: widget.groupId);
+    await invite.load();
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => AnimatedBuilder(
+        animation: invite,
+        builder: (ctx, _) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Invite code',
+                  style: Theme.of(ctx).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 12),
+                if (invite.isLoading)
+                  const Center(child: CircularProgressIndicator())
+                else if (invite.code == null)
+                  Text(invite.error ?? 'Could not load the invite code.')
+                else
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 10,
+                          ),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                            borderRadius: AppRadius.mdBorder,
+                          ),
+                          child: Text(
+                            invite.code!,
+                            key: const Key('group_info_invite_code'),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              letterSpacing: 1.2,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        key: const Key('group_info_copy_invite'),
+                        tooltip: 'Copy',
+                        icon: const Icon(Icons.copy_rounded),
+                        onPressed: () {
+                          Clipboard.setData(ClipboardData(text: invite.code!));
+                          _snack('Invite code copied');
+                        },
+                      ),
+                    ],
+                  ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    onPressed: invite.isBusy ? null : invite.rotate,
+                    child: Text(invite.isRotating ? 'Rotating…' : 'Rotate code'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    invite.dispose();
+  }
+
   Future<void> _leave() async {
-    if (!_c.canLeave) {
-      _snack(_c.leaveBlockedReason, error: true);
-      return;
-    }
+    if (!_c.canLeave) return;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -385,13 +472,6 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
               ),
               onPressed: _openNotifications,
             ),
-          if (_c.canEditBasics)
-            IconButton(
-              key: const Key('group_settings_action'),
-              tooltip: 'Group settings',
-              icon: const Icon(Icons.settings_outlined),
-              onPressed: _openSettings,
-            ),
         ],
       ),
       body: RefreshIndicator(
@@ -403,13 +483,12 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
             _buildHeaderCard(context, group, isDark),
             const SizedBox(height: 16),
 
-            // Section 1: Quick Stats (Tests hosted, Total members)
-            _buildStatsSection(context, group, isDark),
-            const SizedBox(height: 20),
-
-            // "What's happening" — live/upcoming/completed test counts, the
-            // next scheduled test, and the caller's own recent activity.
-            _overviewSection(context),
+            // Quick actions: Mute/Unmute, Share invite, Settings.
+            GroupActionRow(
+              controller: _c,
+              onShareInvite: _shareInvite,
+              onOpenSettings: _openSettings,
+            ),
             const SizedBox(height: 20),
 
             // One surface routing to every management screen this caller's
@@ -426,12 +505,30 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
               const SizedBox(height: 20),
             ],
 
-            // Section 2: Member List with Role Badges
-            _buildMembersSection(context, isDark),
+            // Members (search + local paging).
+            GroupMembersSection(
+              controller: _c,
+              onInvite: _inviteMember,
+              onOpenRolePermissions: _openRolePermissions,
+              onOpenRequests: _openRequests,
+            ),
             const SizedBox(height: 20),
 
-            // Section: Announcements — visible to all members; manager
-            // controls (Post/Edit/Delete) are inside the section itself.
+            // Tests (Active / Past).
+            GroupTestsSection(controller: _c, onOpenAllTests: _openTests),
+            const SizedBox(height: 20),
+
+            // Media & Files (honest empty state — no backend yet).
+            const GroupMediaSection(),
+            const SizedBox(height: 20),
+
+            // Leaderboard (routes into per-test leaderboards; there is no
+            // group-wide leaderboard).
+            GroupLeaderboardSection(onOpenTests: _openTests),
+            const SizedBox(height: 20),
+
+            // Announcements — visible to all members; manager controls
+            // (Post/Edit/Delete) are inside the section itself.
             _sectionShell(
               isDark: isDark,
               icon: Icons.campaign_rounded,
@@ -440,7 +537,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
             ),
             const SizedBox(height: 20),
 
-            // Section: Group rules — same visibility model as Announcements.
+            // Group rules — same visibility model as Announcements.
             _sectionShell(
               isDark: isDark,
               icon: Icons.gavel_rounded,
@@ -462,15 +559,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
               const SizedBox(height: 20),
             ],
 
-            // Section 3: Pending Invitations & Join Requests (Managers only)
-            if (_c.canManageMembers) ...[
-              JoinRequestQueue(controller: _c),
-              const SizedBox(height: 16),
-              OutgoingInvitationsSection(controller: _c),
-              const SizedBox(height: 20),
-            ],
-
-            // Section 4: Danger Zone (Leave / Delete)
+            // Danger Zone (Leave / Delete).
             _buildDangerZone(context, isDark),
             const SizedBox(height: 32),
           ],
@@ -621,179 +710,6 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
     );
   }
 
-  /// "What's happening in my study group?" — active/upcoming/completed test
-  /// counts, the next upcoming test (if any), and the caller's own recent
-  /// notifications for this group. Every count/row is real data already
-  /// loaded by the hub controller — nothing here is invented or guessed.
-  Widget _overviewSection(BuildContext context) {
-    final theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Overview', style: theme.textTheme.titleMedium),
-        const SizedBox(height: 8),
-        Row(
-          key: const Key('overview_stats_row'),
-          children: [
-            Expanded(
-              child: _overviewStatCard(
-                theme,
-                'Live',
-                _c.liveTestCount,
-                Icons.podcasts_outlined,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: _overviewStatCard(
-                theme,
-                'Upcoming',
-                _c.upcomingTestCount,
-                Icons.event_outlined,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: _overviewStatCard(
-                theme,
-                'Completed',
-                _c.previousTestCount,
-                Icons.check_circle_outline,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        _upcomingTestCard(context),
-        const SizedBox(height: 12),
-        _recentActivityCard(context),
-      ],
-    );
-  }
-
-  Widget _overviewStatCard(
-    ThemeData theme,
-    String label,
-    int count,
-    IconData icon,
-  ) {
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-        child: Column(
-          children: [
-            Icon(icon, size: 18, color: theme.colorScheme.primary),
-            const SizedBox(height: 6),
-            Text('$count', style: theme.textTheme.titleLarge),
-            Text(label, style: theme.textTheme.bodySmall),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _upcomingTestCard(BuildContext context) {
-    final theme = Theme.of(context);
-    final test = _c.upcomingTest;
-    if (test == null) {
-      return Card(
-        key: const Key('overview_no_upcoming_test'),
-        margin: EdgeInsets.zero,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Text(
-            "No tests yet\nYour group hasn't scheduled an upcoming test.",
-            style: theme.textTheme.bodySmall,
-          ),
-        ),
-      );
-    }
-    return Card(
-      key: Key('overview_upcoming_test_${test.id}'),
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Upcoming test', style: theme.textTheme.labelMedium),
-            const SizedBox(height: 4),
-            Text(test.title, style: theme.textTheme.titleSmall),
-            const SizedBox(height: 4),
-            Text(
-              '${TestLifecycle.statusLabel(test.status)} · '
-              '${TestFormatters.duration(test.durationSec)}'
-              '${test.startsAt != null ? ' · starts ${TestFormatters.dateTime(test.startsAt)}' : ''}',
-              style: theme.textTheme.bodySmall,
-            ),
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(
-                key: Key('overview_view_test_${test.id}'),
-                onPressed: () => context.push('/tests/${test.id}'),
-                child: const Text('View Test'),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// The caller's own recent notifications for this group. Labelled
-  /// honestly as personal activity — there is no member-readable,
-  /// cross-user activity log for group events, so this can never be a
-  /// shared "Alice joined / Bob completed a test" timeline without new
-  /// backend work.
-  Widget _recentActivityCard(BuildContext context) {
-    final theme = Theme.of(context);
-    final activity = _c.recentActivity;
-    if (activity == null) {
-      // Not loaded / failed — never worth a red error state on Overview.
-      return const SizedBox.shrink();
-    }
-    return Card(
-      key: const Key('overview_recent_activity'),
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Recent activity', style: theme.textTheme.labelMedium),
-            const SizedBox(height: 8),
-            if (activity.isEmpty)
-              Text(
-                'No recent activity',
-                key: const Key('overview_activity_empty'),
-                style: theme.textTheme.bodySmall,
-              )
-            else
-              for (final n in activity)
-                Padding(
-                  key: Key('overview_activity_${n.id}'),
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(n.title, style: theme.textTheme.bodyMedium),
-                      Text(
-                        n.body,
-                        style: theme.textTheme.bodySmall,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ),
-                ),
-          ],
-        ),
-      ),
-    );
-  }
-
   /// Wraps a section (Announcements, Rules, …) in the same premium card
   /// shell as the rest of this screen, plus a colored icon badge in its
   /// corner so sections read apart from each other at a glance instead of
@@ -915,215 +831,12 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
     );
   }
 
-  Widget _buildStatsSection(BuildContext context, Group group, bool isDark) {
-    final testsCount =
-        _c.liveTestCount + _c.upcomingTestCount + _c.previousTestCount;
-    final membersCount = _c.memberCount;
-
-    return Row(
-      children: [
-        Expanded(
-          child: _statCard(
-            context: context,
-            icon: Icons.people_alt_outlined,
-            title: 'Members',
-            value: '$membersCount',
-            isDark: isDark,
-            accent: const Color(0xFF2563EB),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: InkWell(
-            key: const Key('open_group_tests'),
-            onTap: _openTests,
-            borderRadius: AppRadius.xlBorder,
-            child: _statCard(
-              context: context,
-              icon: Icons.quiz_outlined,
-              title: 'Group Tests',
-              value: '$testsCount',
-              actionLabel: 'View Tests ➔',
-              isDark: isDark,
-              accent: const Color(0xFF7C3AED),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _statCard({
-    required BuildContext context,
-    required IconData icon,
-    required String title,
-    required String value,
-    String? actionLabel,
-    required bool isDark,
-    Color accent = const Color(0xFF2563EB),
-  }) {
-    final theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1E293B) : Colors.white,
-        borderRadius: AppRadius.xlBorder,
-        border: Border.all(
-          color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 26,
-                height: 26,
-                decoration: BoxDecoration(
-                  color: accent.withValues(alpha: isDark ? 0.22 : 0.12),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(icon, size: 14, color: accent),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
-                    color: isDark
-                        ? const Color(0xFF94A3B8)
-                        : const Color(0xFF64748B),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            style: theme.textTheme.headlineMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          if (actionLabel != null) ...[
-            const SizedBox(height: 4),
-            Text(
-              actionLabel,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: theme.colorScheme.primary,
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMembersSection(BuildContext context, bool isDark) {
-    final members = _c.members;
-    final canManage = _c.canManageMembers;
-
-    return Container(
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1E293B) : Colors.white,
-        borderRadius: AppRadius.xlBorder,
-        border: Border.all(
-          color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
-        ),
-      ),
-      clipBehavior: Clip.antiAlias,
-      // MemberTile's ListTile paints its background/ink on the nearest
-      // Material ancestor — without this, Flutter asserts.
-      child: Material(
-        color: Colors.transparent,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Members (${members.length})',
-                    key: const Key('hub_members_heading'),
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (_c.canManageRoles)
-                        IconButton(
-                          tooltip: 'Role permissions',
-                          icon: const Icon(
-                            Icons.admin_panel_settings_outlined,
-                            size: 20,
-                          ),
-                          onPressed: _openRolePermissions,
-                        ),
-                      if (canManage)
-                        TextButton.icon(
-                          key: const Key('invite_member_action'),
-                          onPressed: _inviteMember,
-                          icon: const Icon(Icons.person_add_alt, size: 16),
-                          label: const Text('Invite'),
-                        ),
-                    ],
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              if (members.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 12),
-                  child: Text('No members found.'),
-                )
-              else
-                ListView.separated(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: members.length,
-                  separatorBuilder: (_, _) => Divider(
-                    height: 1,
-                    color: isDark
-                        ? const Color(0xFF334155)
-                        : const Color(0xFFF1F5F9),
-                  ),
-                  itemBuilder: (context, index) {
-                    final m = members[index];
-                    return _FadeInListItem(
-                      index: index,
-                      child: MemberTile(
-                        key: ValueKey('member_tile_${m.userId}'),
-                        member: m,
-                        controller: _c,
-                        onTap: () => MemberDetailSheet.show(
-                          context,
-                          member: m,
-                          groupName: _c.group?.name ?? '',
-                          isMe: m.userId == _c.currentUserId,
-                        ),
-                      ),
-                    );
-                  },
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _buildDangerZone(BuildContext context, bool isDark) {
     final isOwner = _c.isOwner;
+
+    // The owner sees no leave button or explanatory text at all — ownership
+    // must be transferred (not modelled yet) before an owner can leave.
+    if (isOwner && !_c.canDeleteGroup) return const SizedBox.shrink();
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1168,7 +881,11 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
           const SizedBox(height: 14),
           // Leave and Delete are independent actions (an owner who can
           // always delete still can't leave without transferring
-          // ownership first) — rendered separately, not else-if.
+          // ownership first) — rendered separately, not else-if. The owner
+          // sees Leave at all only if canLeave somehow becomes true later
+          // (e.g. ownership transfer); today that's never the case, which
+          // is why the whole zone is skipped above when there's nothing an
+          // owner can do here except delete.
           if (_c.canLeave)
             SizedBox(
               width: double.infinity,
@@ -1186,20 +903,9 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                   style: TextStyle(fontWeight: FontWeight.bold),
                 ),
               ),
-            )
-          else
-            Text(
-              _c.leaveBlockedReason,
-              key: const Key('leave_blocked_note'),
-              style: TextStyle(
-                fontSize: 12.5,
-                color: isDark
-                    ? const Color(0xFFFCA5A5)
-                    : const Color(0xFF991B1B),
-              ),
             ),
           if (_c.canDeleteGroup) ...[
-            const SizedBox(height: 10),
+            if (_c.canLeave) const SizedBox(height: 10),
             SizedBox(
               width: double.infinity,
               child: FilledButton.icon(
@@ -1219,48 +925,6 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
             ),
           ],
         ],
-      ),
-    );
-  }
-}
-
-/// A short, staggered fade + slide entrance for a list row — the "smooth
-/// 200-300ms" list-item animation from the redesign spec, built with plain
-/// implicit Flutter animations (no new package needed).
-class _FadeInListItem extends StatefulWidget {
-  const _FadeInListItem({required this.index, required this.child});
-
-  final int index;
-  final Widget child;
-
-  @override
-  State<_FadeInListItem> createState() => _FadeInListItemState();
-}
-
-class _FadeInListItemState extends State<_FadeInListItem> {
-  bool _visible = false;
-
-  @override
-  void initState() {
-    super.initState();
-    // Capped stagger so a long member list doesn't keep animating for ages.
-    final delayMs = (widget.index * 35).clamp(0, 300);
-    Future.delayed(Duration(milliseconds: delayMs), () {
-      if (mounted) setState(() => _visible = true);
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedOpacity(
-      opacity: _visible ? 1 : 0,
-      duration: const Duration(milliseconds: 250),
-      curve: Curves.easeOut,
-      child: AnimatedSlide(
-        offset: _visible ? Offset.zero : const Offset(0, 0.08),
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeOut,
-        child: widget.child,
       ),
     );
   }

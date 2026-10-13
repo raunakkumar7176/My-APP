@@ -8,7 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:my_praperation/core/errors/app_error.dart';
 import 'package:my_praperation/core/models/group_join_request.dart';
-import 'package:my_praperation/features/group/screens/group_info_screen.dart';
+import 'package:my_praperation/features/group/screens/group_requests_screen.dart';
 import 'package:my_praperation/features/group/state/group_hub_controller.dart';
 
 import 'fakes.dart';
@@ -230,7 +230,7 @@ void main() {
       final c = _hub(repo, user: user);
       await tester.pumpWidget(
         MaterialApp(
-          home: GroupInfoScreen(groupId: 'g-1', controller: c),
+          home: GroupRequestsScreen(groupId: 'g-1', controller: c),
         ),
       );
       await tester.pumpAndSettle();
@@ -249,7 +249,7 @@ void main() {
         final c = _hub(repo);
         await tester.pumpWidget(
           MaterialApp(
-            home: GroupInfoScreen(groupId: 'g-1', controller: c),
+            home: GroupRequestsScreen(groupId: 'g-1', controller: c),
           ),
         );
         await tester.pump();
@@ -281,15 +281,15 @@ void main() {
       final repo = _repo();
       final id = repo.seedJoinRequest(groupId: 'g-1', userId: 'u-req');
       final c = await pump(tester, repo);
-      expect(find.text('Members (1)'), findsOneWidget);
+      expect(c.members.length, 1);
       await tester.tap(find.byKey(Key('approve_request_$id')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('confirm_approve_request')));
       await tester.pumpAndSettle();
       expect(find.byKey(Key('join_request_$id')), findsNothing);
       expect(find.byKey(const Key('join_requests_empty')), findsOneWidget);
-      expect(find.text('Members (2)'), findsOneWidget);
-      expect(find.byKey(const Key('member_u-req')), findsOneWidget);
+      expect(c.members.length, 2);
+      expect(c.members.any((m) => m.userId == 'u-req'), isTrue);
       await tester.pumpWidget(const SizedBox());
       c.dispose();
     });
@@ -317,7 +317,7 @@ void main() {
         await tester.tap(find.byKey(const Key('confirm_decline_request')));
         await tester.pumpAndSettle();
         expect(find.byKey(Key('join_request_$id')), findsNothing);
-        expect(find.text('Members (1)'), findsOneWidget);
+        expect(c.members.length, 1);
         await tester.pumpWidget(const SizedBox());
         c.dispose();
       },

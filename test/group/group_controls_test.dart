@@ -124,7 +124,9 @@ void main() {
       expect(find.byKey(const Key('role_menu_u-mem')), findsOneWidget);
       expect(find.byKey(const Key('remove_u-owner')), findsNothing);
       expect(find.byKey(const Key('role_menu_u-owner')), findsNothing);
-      expect(find.byKey(const Key('leave_blocked_note')), findsOneWidget);
+      // Phase 1: the owner sees no Leave affordance at all, not even the
+      // explanatory text.
+      expect(find.byKey(const Key('leave_blocked_note')), findsNothing);
       await tester.pumpWidget(const SizedBox());
       c.dispose();
     });
@@ -266,13 +268,12 @@ void main() {
       expect(c.hasManagementControls, isFalse);
       expect(c.controls.testCapabilities, isEmpty);
       expect(find.byKey(const Key('group_management_section')), findsNothing);
-      expect(find.byKey(const Key('group_settings_action')), findsNothing);
+      expect(find.byKey(const Key('group_info_settings_action_row')), findsNothing);
       expect(find.byKey(const Key('invite_member_action')), findsNothing);
       expect(find.byKey(const Key('remove_u-mod')), findsNothing);
       expect(find.byKey(const Key('role_menu_u-mod')), findsNothing);
-      // Non-management navigation stays: tests, chat, announcements, members
-      // (shown inline on GroupInfoScreen, no separate "View all" link).
-      expect(find.byKey(const Key('open_group_tests')), findsOneWidget);
+      // Non-management navigation stays: tests, chat, announcements, members.
+      expect(find.byKey(const Key('group_info_view_all_tests')), findsOneWidget);
       expect(find.byKey(const Key('member_u-mem')), findsOneWidget);
       expect(find.byKey(const Key('leave_group_button')), findsOneWidget);
       await tester.pumpWidget(const SizedBox());
@@ -572,7 +573,7 @@ void main() {
     testWidgets('G8 chat, G6 rules, G7 announcements, G10 tests and members entry points still render for a leader', (tester) async {
       final c = await _loaded('u-lead');
       await _pumpHub(tester, c);
-      expect(find.byKey(const Key('open_group_tests')), findsOneWidget);
+      expect(find.byKey(const Key('group_info_view_all_tests')), findsOneWidget);
       expect(find.byKey(const Key('invite_member_action')), findsOneWidget);
       expect(find.byKey(const Key('hub_members_heading')), findsOneWidget);
       expect(find.byKey(const Key('leave_group_button')), findsOneWidget);

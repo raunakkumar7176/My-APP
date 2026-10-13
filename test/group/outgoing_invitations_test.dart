@@ -9,7 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:my_praperation/core/errors/app_error.dart';
 import 'package:my_praperation/core/models/group_invitation.dart';
 import 'package:my_praperation/features/group/data/group_repository.dart';
-import 'package:my_praperation/features/group/screens/group_info_screen.dart';
+import 'package:my_praperation/features/group/screens/group_requests_screen.dart';
 import 'package:my_praperation/features/group/state/group_hub_controller.dart';
 
 import 'fakes.dart';
@@ -317,7 +317,7 @@ void main() {
       final c = _hub(repo, user: user);
       await tester.pumpWidget(
         MaterialApp(
-          home: GroupInfoScreen(groupId: 'g-1', controller: c),
+          home: GroupRequestsScreen(groupId: 'g-1', controller: c),
         ),
       );
       await tester.pumpAndSettle();

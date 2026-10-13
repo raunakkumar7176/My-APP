@@ -20,6 +20,7 @@ import '../features/group/screens/group_leaderboard_screen.dart';
 import '../features/group/screens/group_list_screen.dart';
 import '../features/group/screens/group_members_screen.dart';
 import '../features/group/screens/group_notifications_screen.dart';
+import '../features/group/screens/group_requests_screen.dart';
 import '../features/group/screens/group_settings_screen.dart';
 import '../features/group/screens/group_test_results_screen.dart';
 import '../features/group/screens/group_tests_screen.dart';
@@ -464,6 +465,13 @@ final class AppRouter {
                 path: 'settings',
                 name: 'group-settings',
                 builder: (context, state) => GroupSettingsScreen(
+                  groupId: state.pathParameters['groupId']!,
+                ),
+              ),
+              GoRoute(
+                path: 'requests',
+                name: 'group-requests',
+                builder: (context, state) => GroupRequestsScreen(
                   groupId: state.pathParameters['groupId']!,
                 ),
               ),

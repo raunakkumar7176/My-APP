@@ -375,12 +375,16 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('confirm_send_invitation')));
         await tester.pumpAndSettle();
-        // Sheet closed, hub refreshed: new pending outgoing row visible.
+        // Sheet closed, hub refreshed: new pending outgoing row recorded.
+        // (The Outgoing invitations list itself now lives on the dedicated
+        // Requests screen, not Info — see outgoing_invitations_test.dart.)
         expect(find.byKey(const Key('invite_code_input')), findsNothing);
-        final row = repo.invitations.firstWhere(
-          (i) => i.inviteeId == 'u-alice',
+        expect(
+          repo.invitations.any(
+            (i) => i.inviteeId == 'u-alice' && i.status == 'pending',
+          ),
+          isTrue,
         );
-        expect(find.byKey(Key('outgoing_${row.id}')), findsOneWidget);
         await tester.pumpWidget(const SizedBox());
         c.dispose();
       },

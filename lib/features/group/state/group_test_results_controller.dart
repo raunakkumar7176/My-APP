@@ -152,7 +152,9 @@ class GroupTestResultsController extends DisposableNotifier {
         if (_test == null) {
           _accessDenied = true;
         } else {
-          _members = await _groups.members(groupId);
+          // limit: the live group cap (migration 0109) — results need the
+          // whole roster, never a partial page.
+          _members = await _groups.members(groupId, limit: 500);
           await _readResults();
         }
       }

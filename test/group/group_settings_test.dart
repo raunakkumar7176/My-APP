@@ -367,10 +367,10 @@ void main() {
       );
       await tester.pumpWidget(MaterialApp.router(routerConfig: router));
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('group_settings_action')), findsOneWidget);
+      expect(find.byKey(const Key('group_info_settings_action_row')), findsOneWidget);
       expect(find.text('Physics Group'), findsWidgets);
 
-      await tester.tap(find.byKey(const Key('group_settings_action')));
+      await tester.tap(find.byKey(const Key('group_info_settings_action_row')));
       await tester.pumpAndSettle();
       await tester.enterText(
         find.byKey(const Key('settings_name_field')),
@@ -407,7 +407,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('group_header_meta')), findsOneWidget);
       expect(find.text('2 members · Member · Public'), findsOneWidget);
-      expect(find.byKey(const Key('group_settings_action')), findsNothing);
+      expect(find.byKey(const Key('group_info_settings_action_row')), findsNothing);
       await tester.pumpWidget(const SizedBox());
       c.dispose();
     });

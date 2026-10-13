@@ -317,6 +317,26 @@ class GroupHubController extends DisposableNotifier {
         .length;
   }
 
+  /// The group's tests in one section (live/upcoming/previous), newest
+  /// `startsAt` first — for the Info screen's "Tests" list, same section
+  /// logic as [upcomingTest]/[_countInSection].
+  List<Test> testsInSection(GroupTestSection s) {
+    final now = _now();
+    final rows = [
+      for (final t in _groupTests)
+        if (GroupTestManagement.sectionFor(t, now) == s) t,
+    ];
+    rows.sort((a, b) {
+      final as_ = a.startsAt;
+      final bs = b.startsAt;
+      if (as_ == null && bs == null) return 0;
+      if (as_ == null) return 1;
+      if (bs == null) return -1;
+      return bs.compareTo(as_);
+    });
+    return rows;
+  }
+
   int get liveTestCount => _countInSection(GroupTestSection.live);
   int get upcomingTestCount => _countInSection(GroupTestSection.upcoming);
   int get previousTestCount => _countInSection(GroupTestSection.previous);
@@ -629,7 +649,10 @@ class GroupHubController extends DisposableNotifier {
       } else {
         _group = group;
         _accessDenied = false;
-        _members = await _repo.members(groupId);
+        // limit: the live group cap (migration 0109) — the hub always
+        // needs the whole roster (role checks, mention lookups, filtering),
+        // never a partial page.
+        _members = await _repo.members(groupId, limit: 500);
         // G14: every live permission is probed (one `fn_has_permission`
         // call each, in parallel) so the Manage section shows exactly what
         // the server grants — test, results and analytics controls included.
