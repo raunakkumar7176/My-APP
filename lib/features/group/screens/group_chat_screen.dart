@@ -1488,7 +1488,21 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                 decoration: const InputDecoration(
                   hintText: 'Type a message or ask a doubt…',
                   hintStyle: TextStyle(fontSize: 14.5),
+                  // The outer Container above already draws the one pill
+                  // border for this composer. Every one of these must be
+                  // set, not just `border`: enabledBorder/focusedBorder/
+                  // etc. — when non-null (as this app's global
+                  // InputDecorationTheme sets them) — take priority over
+                  // the generic `border` fallback, so setting only
+                  // `border: InputBorder.none` left the theme's own
+                  // outline drawn on top, i.e. a second border.
                   border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  disabledBorder: InputBorder.none,
+                  errorBorder: InputBorder.none,
+                  focusedErrorBorder: InputBorder.none,
+                  filled: false,
                   isDense: true,
                   counterText: '',
                   contentPadding: EdgeInsets.symmetric(vertical: 11),
