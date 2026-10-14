@@ -15,6 +15,7 @@ import 'package:my_praperation/core/errors/app_error.dart';
 import 'package:my_praperation/core/models/app_notification.dart';
 import 'package:my_praperation/core/models/group.dart';
 import 'package:my_praperation/core/models/group_announcement.dart';
+import 'package:my_praperation/core/models/group_doubt_summary.dart';
 import 'package:my_praperation/core/models/group_invitation.dart';
 import 'package:my_praperation/core/models/group_join_request.dart';
 import 'package:my_praperation/core/models/group_member.dart';
@@ -1252,6 +1253,7 @@ class InMemoryGroupRepository implements GroupRepository {
     String messageType = 'text',
     Map<String, dynamic> metadata = const {},
     String? replyToId,
+    bool isDoubt = false,
   }) {
     _messageSeq++;
     // Default clock: strictly after the group's newest message (the server's
@@ -1271,6 +1273,7 @@ class InMemoryGroupRepository implements GroupRepository {
       messageType: messageType,
       metadata: metadata,
       replyToId: replyToId,
+      isDoubt: isDoubt && replyToId == null,
     );
     groups[groupId]!.messages.add(m);
     return m;
@@ -1300,11 +1303,13 @@ class InMemoryGroupRepository implements GroupRepository {
     required String groupId,
     required String body,
     String? replyToId,
+    bool isDoubt = false,
   }) => insertMessageAs(
     groupId: groupId,
     senderId: currentUser,
     body: body,
     replyToId: replyToId,
+    isDoubt: isDoubt,
   );
 
   /// The INSERT policy as the server evaluates it, with the row's
@@ -1315,6 +1320,7 @@ class InMemoryGroupRepository implements GroupRepository {
     required String senderId,
     required String body,
     String? replyToId,
+    bool isDoubt = false,
   }) async {
     calls.add('sendMessage:$groupId');
     _maybeFail();
@@ -1331,6 +1337,7 @@ class InMemoryGroupRepository implements GroupRepository {
       senderId: senderId,
       body: b,
       replyToId: replyToId,
+      isDoubt: isDoubt,
     );
   }
 
@@ -1353,6 +1360,15 @@ class InMemoryGroupRepository implements GroupRepository {
       throw _notAuthorized(GroupErrorContext.chat);
     }
     g.messages[idx] = old.copyWith(deletedAt: DateTime.now());
+
+    // Mirrors fn_reopen_doubt_on_reply_delete (0122): deleting a doubt's
+    // accepted reply flips that doubt back to open.
+    final doubtIdx = g.messages.indexWhere(
+      (m) => m.doubtSolved && m.solvedReplyId == messageId,
+    );
+    if (doubtIdx != -1) {
+      g.messages[doubtIdx] = g.messages[doubtIdx].clearDoubtState();
+    }
   }
 
   /// Mirrors fn_edit_group_message (0120): own message, within 15 minutes.
@@ -1439,10 +1455,186 @@ class InMemoryGroupRepository implements GroupRepository {
         metadata: old.metadata,
         replyToId: old.replyToId,
         editedAt: old.editedAt,
+        isDoubt: old.isDoubt,
+        doubtSolved: old.doubtSolved,
+        solvedBy: old.solvedBy,
+        solvedReplyId: old.solvedReplyId,
+        solvedAt: old.solvedAt,
       );
       return;
     }
     throw const DataError(message: 'MESSAGE_NOT_FOUND');
+  }
+
+  /// Mirrors fn_mark_message_as_doubt (0122): sender marks own top-level
+  /// message; sender or admin/owner unmarks (unmark clears solved state).
+  @override
+  Future<void> markMessageAsDoubt({
+    required String messageId,
+    required bool isDoubt,
+  }) async {
+    calls.add('markMessageAsDoubt:$messageId:$isDoubt');
+    _maybeFail();
+    for (final g in groups.values) {
+      final idx = g.messages.indexWhere((m) => m.id == messageId);
+      if (idx == -1) continue;
+      final old = g.messages[idx];
+      if (old.deletedAt != null) {
+        throw const DataError(message: 'MESSAGE_DELETED');
+      }
+      if (old.replyToId != null) {
+        throw const DataError(
+          message: 'VALIDATION_ERROR: replies cannot be marked as doubts',
+        );
+      }
+      final role = g.roles[currentUser];
+      if (isDoubt) {
+        if (old.senderId != currentUser) {
+          throw _notAuthorized(GroupErrorContext.chat);
+        }
+      } else {
+        if (old.senderId != currentUser && role != 'owner' && role != 'admin') {
+          throw _notAuthorized(GroupErrorContext.chat);
+        }
+      }
+      if (old.isDoubt == isDoubt) return;
+      g.messages[idx] = isDoubt
+          ? old.copyWith(isDoubt: true)
+          : old.clearDoubtState(clearIsDoubt: true);
+      return;
+    }
+    throw const DataError(message: 'MESSAGE_NOT_FOUND');
+  }
+
+  /// Mirrors fn_mark_doubt_solved (0122): asker or admin/owner accepts a
+  /// reply that belongs to this exact doubt and isn't deleted.
+  @override
+  Future<void> markDoubtSolved({
+    required String messageId,
+    required String replyId,
+  }) async {
+    calls.add('markDoubtSolved:$messageId:$replyId');
+    _maybeFail();
+    for (final g in groups.values) {
+      final idx = g.messages.indexWhere((m) => m.id == messageId);
+      if (idx == -1) continue;
+      final doubt = g.messages[idx];
+      if (!doubt.isDoubt) throw const DataError(message: 'NOT_A_DOUBT');
+      if (doubt.deletedAt != null) {
+        throw const DataError(message: 'MESSAGE_DELETED');
+      }
+      final reply = g.messages.where((m) => m.id == replyId).firstOrNull;
+      if (reply == null) throw const DataError(message: 'REPLY_NOT_FOUND');
+      if (reply.replyToId != messageId) {
+        throw const DataError(
+          message: 'VALIDATION_ERROR: reply does not belong to this doubt',
+        );
+      }
+      if (reply.deletedAt != null) {
+        throw const DataError(
+          message: 'VALIDATION_ERROR: cannot accept a deleted reply',
+        );
+      }
+      final role = g.roles[currentUser];
+      if (doubt.senderId != currentUser && role != 'owner' && role != 'admin') {
+        throw _notAuthorized(GroupErrorContext.chat);
+      }
+      g.messages[idx] = doubt.copyWith(
+        doubtSolved: true,
+        solvedBy: currentUser,
+        solvedReplyId: replyId,
+        solvedAt: DateTime.now(),
+      );
+      return;
+    }
+    throw const DataError(message: 'MESSAGE_NOT_FOUND');
+  }
+
+  /// Mirrors fn_unmark_doubt_solved (0122): same authorization as
+  /// [markDoubtSolved].
+  @override
+  Future<void> unmarkDoubtSolved({required String messageId}) async {
+    calls.add('unmarkDoubtSolved:$messageId');
+    _maybeFail();
+    for (final g in groups.values) {
+      final idx = g.messages.indexWhere((m) => m.id == messageId);
+      if (idx == -1) continue;
+      final doubt = g.messages[idx];
+      if (!doubt.isDoubt) throw const DataError(message: 'NOT_A_DOUBT');
+      final role = g.roles[currentUser];
+      if (doubt.senderId != currentUser && role != 'owner' && role != 'admin') {
+        throw _notAuthorized(GroupErrorContext.chat);
+      }
+      g.messages[idx] = doubt.clearDoubtState();
+      return;
+    }
+    throw const DataError(message: 'MESSAGE_NOT_FOUND');
+  }
+
+  /// Mirrors fn_list_group_doubts (0122): member-only, open/solved split,
+  /// newest-first, optional "mine only" filter. No real keyset pagination
+  /// in the fake (tests don't seed enough doubts per group to need it) —
+  /// [beforeCreatedAt]/[beforeId] are honored as a simple cutoff for
+  /// completeness but every existing test fits on one page.
+  @override
+  Future<List<GroupDoubtSummary>> listDoubts({
+    required String groupId,
+    required bool solved,
+    bool mineOnly = false,
+    DateTime? beforeCreatedAt,
+    String? beforeId,
+    int limit = 20,
+  }) async {
+    calls.add('listDoubts:$groupId:$solved:$mineOnly');
+    if (!_isMemberOf(groupId)) {
+      throw _notAuthorized(GroupErrorContext.load);
+    }
+    final g = groups[groupId];
+    if (g == null) return const [];
+    final rows =
+        g.messages.where((m) {
+          if (!m.isDoubt || m.deletedAt != null) return false;
+          if (m.doubtSolved != solved) return false;
+          if (mineOnly && m.senderId != currentUser) return false;
+          if (beforeCreatedAt != null &&
+              !m.createdAt.isBefore(beforeCreatedAt)) {
+            return false;
+          }
+          return true;
+        }).toList()
+          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return [
+      for (final m in rows.take(limit))
+        GroupDoubtSummary(
+          id: m.id,
+          body: m.body,
+          senderId: m.senderId ?? '',
+          senderName: 'Member',
+          createdAt: m.createdAt,
+          replyCount: g.messages
+              .where((r) => r.replyToId == m.id && r.deletedAt == null)
+              .length,
+          doubtSolved: m.doubtSolved,
+          solvedReplyId: m.solvedReplyId,
+          solvedAt: m.solvedAt,
+        ),
+    ];
+  }
+
+  /// Mirrors fn_get_group_doubt_counts (0122): member-only.
+  @override
+  Future<GroupDoubtCounts> doubtCounts(String groupId) async {
+    calls.add('doubtCounts:$groupId');
+    if (!_isMemberOf(groupId)) {
+      throw _notAuthorized(GroupErrorContext.load);
+    }
+    final g = groups[groupId];
+    if (g == null) return GroupDoubtCounts.zero;
+    final doubts = g.messages.where((m) => m.isDoubt && m.deletedAt == null);
+    return GroupDoubtCounts(
+      open: doubts.where((m) => !m.doubtSolved).length,
+      solved: doubts.where((m) => m.doubtSolved).length,
+    );
   }
 
   final List<Map<String, String?>> rawMessageReports = [];

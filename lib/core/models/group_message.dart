@@ -4,6 +4,11 @@
 /// inserted without an actor). `deleted_at`/`deleted_by` let the client show a
 /// truthful "Message deleted" placeholder. `reply_to_id`/`edited_at` (0062)
 /// and `pinned_at`/`pinned_by` (0120) back reply/edit/pin (Phase 3A).
+/// `is_doubt`/`doubt_solved`/`solved_by`/`solved_reply_id`/`solved_at` (0122)
+/// back Doubts (Phase 3B) — server CHECK constraints guarantee `is_doubt`
+/// forbids `reply_to_id`, and the solved fields imply `doubt_solved` implies
+/// `is_doubt`, so the client never needs to defend against those
+/// combinations being inconsistent.
 final class GroupMessage {
   const GroupMessage({
     required this.id,
@@ -19,6 +24,11 @@ final class GroupMessage {
     this.editedAt,
     this.pinnedAt,
     this.pinnedBy,
+    this.isDoubt = false,
+    this.doubtSolved = false,
+    this.solvedBy,
+    this.solvedReplyId,
+    this.solvedAt,
   });
 
   /// Live CHECK: `char_length(body) BETWEEN 1 AND 2000`.
@@ -66,6 +76,20 @@ final class GroupMessage {
   final DateTime? pinnedAt;
   final String? pinnedBy;
 
+  /// Marked a doubt by its sender (own top-level message only, 0122).
+  final bool isDoubt;
+
+  /// True once the asker or an admin/owner has accepted a reply.
+  final bool doubtSolved;
+
+  /// Who accepted the reply (asker or admin/owner).
+  final String? solvedBy;
+
+  /// The accepted reply's message id. Server-side, deleting that reply
+  /// clears this and flips [doubtSolved] back to false (0122 trigger).
+  final String? solvedReplyId;
+  final DateTime? solvedAt;
+
   bool get isSystem =>
       senderId == null ||
       messageType == 'system_event' ||
@@ -77,6 +101,8 @@ final class GroupMessage {
   bool get isEdited => editedAt != null;
   bool get isPinned => pinnedAt != null;
   bool get isReply => replyToId != null;
+  bool get isOpenDoubt => isDoubt && !doubtSolved;
+  bool get isSolvedDoubt => isDoubt && doubtSolved;
 
   factory GroupMessage.fromJson(Map<String, dynamic> json) {
     return GroupMessage(
@@ -99,6 +125,13 @@ final class GroupMessage {
           ? null
           : DateTime.parse(json['pinned_at'] as String).toLocal(),
       pinnedBy: json['pinned_by'] as String?,
+      isDoubt: json['is_doubt'] as bool? ?? false,
+      doubtSolved: json['doubt_solved'] as bool? ?? false,
+      solvedBy: json['solved_by'] as String?,
+      solvedReplyId: json['solved_reply_id'] as String?,
+      solvedAt: json['solved_at'] == null
+          ? null
+          : DateTime.parse(json['solved_at'] as String).toLocal(),
     );
   }
 
@@ -116,6 +149,11 @@ final class GroupMessage {
     if (editedAt != null) 'edited_at': editedAt!.toUtc().toIso8601String(),
     if (pinnedAt != null) 'pinned_at': pinnedAt!.toUtc().toIso8601String(),
     if (pinnedBy != null) 'pinned_by': pinnedBy,
+    if (isDoubt) 'is_doubt': isDoubt,
+    if (doubtSolved) 'doubt_solved': doubtSolved,
+    if (solvedBy != null) 'solved_by': solvedBy,
+    if (solvedReplyId != null) 'solved_reply_id': solvedReplyId,
+    if (solvedAt != null) 'solved_at': solvedAt!.toUtc().toIso8601String(),
   };
 
   /// `null` for a nullable field means "keep the current value" — pass the
@@ -129,6 +167,11 @@ final class GroupMessage {
     DateTime? editedAt,
     DateTime? pinnedAt,
     String? pinnedBy,
+    bool? isDoubt,
+    bool? doubtSolved,
+    String? solvedBy,
+    String? solvedReplyId,
+    DateTime? solvedAt,
   }) => GroupMessage(
     id: id,
     groupId: groupId,
@@ -143,6 +186,35 @@ final class GroupMessage {
     editedAt: editedAt ?? this.editedAt,
     pinnedAt: pinnedAt ?? this.pinnedAt,
     pinnedBy: pinnedBy ?? this.pinnedBy,
+    isDoubt: isDoubt ?? this.isDoubt,
+    doubtSolved: doubtSolved ?? this.doubtSolved,
+    solvedBy: solvedBy ?? this.solvedBy,
+    solvedReplyId: solvedReplyId ?? this.solvedReplyId,
+    solvedAt: solvedAt ?? this.solvedAt,
+  );
+
+  /// Clears is_doubt/doubt_solved/solved_* to their unmarked/unsolved
+  /// state. Same reason pin-clear bypasses [copyWith] elsewhere in this
+  /// class: `?? this.x` can never express "set back to null/false".
+  GroupMessage clearDoubtState({bool clearIsDoubt = false}) => GroupMessage(
+    id: id,
+    groupId: groupId,
+    senderId: senderId,
+    body: body,
+    createdAt: createdAt,
+    messageType: messageType,
+    deletedAt: deletedAt,
+    deletedBy: deletedBy,
+    metadata: metadata,
+    replyToId: replyToId,
+    editedAt: editedAt,
+    pinnedAt: pinnedAt,
+    pinnedBy: pinnedBy,
+    isDoubt: clearIsDoubt ? false : isDoubt,
+    doubtSolved: false,
+    solvedBy: null,
+    solvedReplyId: null,
+    solvedAt: null,
   );
 
   @override

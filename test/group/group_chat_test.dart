@@ -1173,12 +1173,14 @@ class _SlowChatRepository extends InMemoryGroupRepository {
     required String groupId,
     required String body,
     String? replyToId,
+    bool isDoubt = false,
   }) async {
     await Future<void>.delayed(const Duration(milliseconds: 10));
     return super.sendMessage(
       groupId: groupId,
       body: body,
       replyToId: replyToId,
+      isDoubt: isDoubt,
     );
   }
 }

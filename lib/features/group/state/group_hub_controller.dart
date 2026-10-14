@@ -5,6 +5,7 @@ import '../../../core/logging/app_logger.dart';
 import '../../../core/models/app_notification.dart';
 import '../../../core/models/group.dart';
 import '../../../core/models/group_announcement.dart';
+import '../../../core/models/group_doubt_summary.dart';
 import '../../../core/models/group_invitation.dart';
 import '../../../core/models/group_join_request.dart';
 import '../../../core/models/group_member.dart';
@@ -216,16 +217,25 @@ class GroupHubController extends DisposableNotifier {
         return byTime != 0 ? byTime : a.id.compareTo(b.id);
       });
     notifyListeners();
+    // A brand-new doubt, or a reply (which can change an existing doubt's
+    // reply_count and first-reply state) — refresh the Doubts section the
+    // same way the acting client's own mutations do.
+    if (message.isDoubt || message.isReply) {
+      unawaited(_refreshDoubtsFromRealtime());
+    }
   }
 
   /// Applies a realtime UPDATE — soft-delete (`deleted_at`), edit
-  /// (`body`/`edited_at`), or pin/unpin (`pinned_at`/`pinned_by`) — to the
-  /// matching loaded message, in place. `group_messages` has `REPLICA
-  /// IDENTITY FULL` (0037/0062), so the payload always carries every
-  /// column regardless of what any query `.select()`s.
+  /// (`body`/`edited_at`), pin/unpin (`pinned_at`/`pinned_by`), or
+  /// doubt/solved changes (`is_doubt`/`doubt_solved`/`solved_*`, 0122) —
+  /// to the matching loaded message, in place. `group_messages` has
+  /// `REPLICA IDENTITY FULL` (0037/0062), so the payload always carries
+  /// every column regardless of what any query `.select()`s — doubt chips
+  /// in an open chat update live with no extra wiring needed here.
   void _onRealtimeUpdate(GroupMessage message) {
     if (message.groupId != groupId) return;
     final idx = _messages.indexWhere((m) => m.id == message.id);
+    final old = idx != -1 ? _messages[idx] : null;
     if (idx != -1) {
       _messages = [
         for (var i = 0; i < _messages.length; i++)
@@ -234,6 +244,25 @@ class GroupHubController extends DisposableNotifier {
     }
     _syncPinnedFromRealtime(message);
     if (idx != -1) notifyListeners();
+    // Covers both directions: a doubt newly marked/solved, AND one just
+    // unmarked/un-solved by another client (old's state, not just the
+    // new one, must be checked — the new row alone can't tell us a
+    // doubt just stopped being one).
+    if (message.isDoubt ||
+        message.isReply ||
+        (old?.isDoubt ?? false) ||
+        (old?.doubtSolved ?? false)) {
+      unawaited(_refreshDoubtsFromRealtime());
+    }
+  }
+
+  /// Refreshes the Doubts section's counts always, and re-fetches whichever
+  /// tab(s) the viewer has actually opened this session (an empty tab's
+  /// list is left alone — no point querying a tab nobody has looked at).
+  Future<void> _refreshDoubtsFromRealtime() async {
+    await _loadDoubtCounts();
+    if (_openDoubts.isNotEmpty) await loadDoubtsPage(solved: false, reset: true);
+    if (_solvedDoubts.isNotEmpty) await loadDoubtsPage(solved: true, reset: true);
   }
 
   /// Keeps [_pinnedMessages] in sync with a pin/unpin made by ANOTHER
@@ -722,6 +751,9 @@ class GroupHubController extends DisposableNotifier {
         await _loadPinnedMessages();
         // Report moderation (Settings): admin/owner only, no-op otherwise.
         await _loadMessageReports();
+        // Doubts (Group Info): just the tab counts up front — the actual
+        // Open/Solved lists load lazily when that section is opened.
+        await _loadDoubtCounts();
         // G16: unread badge (own `notifications` rows; one count request).
         await _loadUnreadNotifications();
         // Overview: upcoming-test preview + recent (own) activity — both
@@ -1587,7 +1619,14 @@ class GroupHubController extends DisposableNotifier {
   /// Client-side spam guard: a new send is refused within [_minSendGap] of
   /// the last one — a courtesy against accidental double-taps/spam, not a
   /// security boundary (the server has its own rate limiting, if any).
-  Future<bool> sendMessage(String body, {String? replyToId}) async {
+  /// [isDoubt] is ignored when [replyToId] is set — only a top-level
+  /// message can be a doubt (0122 CHECK constraint); see
+  /// `GroupRepository.sendMessage`.
+  Future<bool> sendMessage(
+    String body, {
+    String? replyToId,
+    bool isDoubt = false,
+  }) async {
     if (_sending || _busy) return false;
     if (_pendingFailed) {
       _error = 'Retry or dismiss the previous message first.';
@@ -1615,6 +1654,7 @@ class GroupHubController extends DisposableNotifier {
       body: body.trim(),
       createdAt: now,
       replyToId: replyToId,
+      isDoubt: isDoubt && replyToId == null,
     );
     _pendingFailed = false;
     return _flushPendingMessage();
@@ -1643,7 +1683,9 @@ class GroupHubController extends DisposableNotifier {
         groupId: groupId,
         body: pending.body,
         replyToId: pending.replyToId,
+        isDoubt: pending.isDoubt,
       );
+      if (pending.isDoubt) _invalidateDoubtsLists();
       _pendingMessage = null;
       await _loadMessages();
       return true;
@@ -1676,6 +1718,10 @@ class GroupHubController extends DisposableNotifier {
         (m) => m.copyWith(deletedAt: DateTime.now()),
       );
       await _loadPinnedMessages();
+      // Deleting a doubt removes it from the lists; deleting the accepted
+      // reply reopens its doubt server-side (0122 trigger) — either way
+      // the cached Open/Solved pages and counts may now be stale.
+      if (message.isDoubt || message.isReply) _invalidateDoubtsLists();
       return true;
     } on AppError catch (e) {
       _error = e.message;
@@ -1807,6 +1853,117 @@ class GroupHubController extends DisposableNotifier {
   bool canReportMessage(GroupMessage message) =>
       message.senderId != _currentUserId && !message.isDeleted;
 
+  /// Marks/unmarks a message as a doubt. Server-enforced (0122): only the
+  /// sender may mark; sender or admin/owner may unmark, which also clears
+  /// any solved state. UI reflection only (`canMarkAsDoubt`/
+  /// `canUnmarkAsDoubt`).
+  Future<bool> markAsDoubt(GroupMessage message, bool isDoubt) async {
+    if (_busy) return false;
+    try {
+      await _repo.markMessageAsDoubt(messageId: message.id, isDoubt: isDoubt);
+      _replaceMessageLocally(
+        message.id,
+        (m) => isDoubt
+            ? m.copyWith(isDoubt: true)
+            : m.clearDoubtState(clearIsDoubt: true),
+      );
+      _invalidateDoubtsLists();
+      return true;
+    } on AppError catch (e) {
+      _error = e.message;
+      notifyListeners();
+      return false;
+    } catch (e, st) {
+      AppLogger.error('Mark as doubt failed: $e', stackTrace: st);
+      _error = GroupErrors.map(e.toString(), context: GroupErrorContext.chat);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Accepts [reply] as the solution to [doubt]. Server-enforced (0122):
+  /// caller must be the asker or admin/owner; [reply] must actually reply
+  /// to [doubt] and not be deleted.
+  Future<bool> markDoubtSolved(GroupMessage doubt, GroupMessage reply) async {
+    if (_busy) return false;
+    try {
+      await _repo.markDoubtSolved(messageId: doubt.id, replyId: reply.id);
+      final now = _now();
+      _replaceMessageLocally(
+        doubt.id,
+        (m) => m.copyWith(
+          doubtSolved: true,
+          solvedBy: _currentUserId,
+          solvedReplyId: reply.id,
+          solvedAt: now,
+        ),
+      );
+      _invalidateDoubtsLists();
+      return true;
+    } on AppError catch (e) {
+      _error = e.message;
+      notifyListeners();
+      return false;
+    } catch (e, st) {
+      AppLogger.error('Mark doubt solved failed: $e', stackTrace: st);
+      _error = GroupErrors.map(e.toString(), context: GroupErrorContext.chat);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Reverts [doubt] to open. Same authorization as [markDoubtSolved].
+  Future<bool> unmarkDoubtSolved(GroupMessage doubt) async {
+    if (_busy) return false;
+    try {
+      await _repo.unmarkDoubtSolved(messageId: doubt.id);
+      _replaceMessageLocally(doubt.id, (m) => m.clearDoubtState());
+      _invalidateDoubtsLists();
+      return true;
+    } on AppError catch (e) {
+      _error = e.message;
+      notifyListeners();
+      return false;
+    } catch (e, st) {
+      AppLogger.error('Unmark doubt solved failed: $e', stackTrace: st);
+      _error = GroupErrors.map(e.toString(), context: GroupErrorContext.chat);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// UI reflection of `fn_mark_message_as_doubt` (0122): only the sender
+  /// may mark, and only a top-level message (never a reply).
+  bool canMarkAsDoubt(GroupMessage message) =>
+      message.senderId == _currentUserId &&
+      !message.isReply &&
+      !message.isDeleted &&
+      !message.isDoubt;
+
+  /// UI reflection of `fn_mark_message_as_doubt` (0122): sender or
+  /// admin/owner may unmark.
+  bool canUnmarkAsDoubt(GroupMessage message) =>
+      message.isDoubt &&
+      !message.isDeleted &&
+      (message.senderId == _currentUserId || isOwner || myRole.isAdmin);
+
+  /// UI reflection of `fn_mark_doubt_solved` (0122): the asker or
+  /// admin/owner, on an open doubt, for a reply that belongs to it.
+  bool canSolveDoubt(GroupMessage doubt, GroupMessage reply) =>
+      doubt.isDoubt &&
+      !doubt.isDeleted &&
+      !doubt.doubtSolved &&
+      reply.replyToId == doubt.id &&
+      !reply.isDeleted &&
+      (doubt.senderId == _currentUserId || isOwner || myRole.isAdmin);
+
+  /// UI reflection of `fn_unmark_doubt_solved` (0122): same authorization
+  /// as [canSolveDoubt], on an already-solved doubt.
+  bool canUnsolveDoubt(GroupMessage doubt) =>
+      doubt.isDoubt &&
+      doubt.doubtSolved &&
+      (doubt.senderId == _currentUserId || isOwner || myRole.isAdmin);
+
   List<GroupMessage> _pinnedMessages = const [];
   List<GroupMessage> get pinnedMessages => _pinnedMessages;
   bool get hasPinnedMessages => _pinnedMessages.isNotEmpty;
@@ -1866,6 +2023,107 @@ class GroupHubController extends DisposableNotifier {
       _error = GroupErrors.map(e.toString(), context: GroupErrorContext.chat);
       notifyListeners();
       return false;
+    }
+  }
+
+  // ── Doubts (Phase 3B, 0122) — Group Info section: Open/Solved tabs
+  // with counts, keyset-paginated, optional "mine only" filter. ──
+
+  static const _doubtsPageSize = 20;
+
+  GroupDoubtCounts _doubtCounts = GroupDoubtCounts.zero;
+  GroupDoubtCounts get doubtCounts => _doubtCounts;
+
+  Future<void> _loadDoubtCounts() async {
+    try {
+      _doubtCounts = await _repo.doubtCounts(groupId);
+    } catch (e) {
+      AppLogger.warning('Doubt counts reload failed: $e');
+    }
+    notifyListeners();
+  }
+
+  /// Refreshes the tab counts and drops the cached Open/Solved pages after
+  /// any action that could change doubt state (mark/unmark, solve/unsolve,
+  /// delete). Simpler and less error-prone than patching the cached lists
+  /// in place for every possible transition; the section just re-fetches
+  /// its first page next time it's opened.
+  void _invalidateDoubtsLists() {
+    _openDoubts.clear();
+    _solvedDoubts.clear();
+    _openDoubtsHasMore = true;
+    _solvedDoubtsHasMore = true;
+    unawaited(_loadDoubtCounts());
+  }
+
+  final List<GroupDoubtSummary> _openDoubts = [];
+  final List<GroupDoubtSummary> _solvedDoubts = [];
+  bool _openDoubtsHasMore = true;
+  bool _solvedDoubtsHasMore = true;
+  bool _doubtsLoading = false;
+  String? _doubtsError;
+  bool _doubtsMineOnly = false;
+
+  List<GroupDoubtSummary> get openDoubts => _openDoubts;
+  List<GroupDoubtSummary> get solvedDoubts => _solvedDoubts;
+  bool get doubtsLoading => _doubtsLoading;
+  String? get doubtsError => _doubtsError;
+  bool get doubtsMineOnly => _doubtsMineOnly;
+  bool hasMoreDoubts(bool solved) =>
+      solved ? _solvedDoubtsHasMore : _openDoubtsHasMore;
+
+  /// Toggles the "My doubts" filter and reloads both tabs from the start.
+  Future<void> setDoubtsMineOnly(bool mineOnly) async {
+    if (_doubtsMineOnly == mineOnly) return;
+    _doubtsMineOnly = mineOnly;
+    _openDoubts.clear();
+    _solvedDoubts.clear();
+    _openDoubtsHasMore = true;
+    _solvedDoubtsHasMore = true;
+    notifyListeners();
+    await loadDoubtsPage(solved: false, reset: true);
+    await loadDoubtsPage(solved: true, reset: true);
+  }
+
+  /// Loads the next keyset page for the Open ([solved] = false) or Solved
+  /// ([solved] = true) tab. [reset] starts that tab over from the top —
+  /// used on first open and after [setDoubtsMineOnly].
+  Future<void> loadDoubtsPage({required bool solved, bool reset = false}) async {
+    if (_doubtsLoading) return;
+    final list = solved ? _solvedDoubts : _openDoubts;
+    if (!reset && !(solved ? _solvedDoubtsHasMore : _openDoubtsHasMore)) {
+      return;
+    }
+    _doubtsLoading = true;
+    _doubtsError = null;
+    notifyListeners();
+    try {
+      final page = await _repo.listDoubts(
+        groupId: groupId,
+        solved: solved,
+        mineOnly: _doubtsMineOnly,
+        beforeCreatedAt: reset || list.isEmpty ? null : list.last.createdAt,
+        beforeId: reset || list.isEmpty ? null : list.last.id,
+        limit: _doubtsPageSize,
+      );
+      if (reset) list.clear();
+      list.addAll(page);
+      if (solved) {
+        _solvedDoubtsHasMore = page.length >= _doubtsPageSize;
+      } else {
+        _openDoubtsHasMore = page.length >= _doubtsPageSize;
+      }
+    } on AppError catch (e) {
+      _doubtsError = e.message;
+    } catch (e, st) {
+      AppLogger.error('Load doubts page failed: $e', stackTrace: st);
+      _doubtsError = GroupErrors.map(
+        e.toString(),
+        context: GroupErrorContext.load,
+      );
+    } finally {
+      _doubtsLoading = false;
+      notifyListeners();
     }
   }
 

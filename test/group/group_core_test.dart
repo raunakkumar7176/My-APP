@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:my_praperation/core/errors/app_error.dart';
 import 'package:my_praperation/core/models/group.dart';
 import 'package:my_praperation/core/models/group_announcement.dart';
+import 'package:my_praperation/core/models/group_doubt_summary.dart';
 import 'package:my_praperation/core/models/group_invitation.dart';
 import 'package:my_praperation/core/models/group_join_request.dart';
 import 'package:my_praperation/core/models/group_member.dart';
@@ -839,6 +840,7 @@ class _FailingRepository implements GroupRepository {
     required String groupId,
     required String body,
     String? replyToId,
+    bool isDoubt = false,
   }) async {}
   @override
   Future<void> editMessage({
@@ -864,6 +866,30 @@ class _FailingRepository implements GroupRepository {
       const [];
   @override
   Future<void> dismissReports({required String messageId}) async {}
+  @override
+  Future<void> markMessageAsDoubt({
+    required String messageId,
+    required bool isDoubt,
+  }) async {}
+  @override
+  Future<void> markDoubtSolved({
+    required String messageId,
+    required String replyId,
+  }) async {}
+  @override
+  Future<void> unmarkDoubtSolved({required String messageId}) async {}
+  @override
+  Future<List<GroupDoubtSummary>> listDoubts({
+    required String groupId,
+    required bool solved,
+    bool mineOnly = false,
+    DateTime? beforeCreatedAt,
+    String? beforeId,
+    int limit = 20,
+  }) async => const [];
+  @override
+  Future<GroupDoubtCounts> doubtCounts(String groupId) async =>
+      GroupDoubtCounts.zero;
   @override
   Future<GroupPermissions> permissionsFor(
     String groupId, {

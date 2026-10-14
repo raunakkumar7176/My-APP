@@ -64,6 +64,7 @@ class ChatComposerIconButton extends StatelessWidget {
     required this.icon,
     required this.isDark,
     required this.onTap,
+    this.active = false,
     super.key,
   });
 
@@ -71,8 +72,13 @@ class ChatComposerIconButton extends StatelessWidget {
   final bool isDark;
   final VoidCallback onTap;
 
+  /// Tints the button amber — used by the composer's "Doubt" toggle to
+  /// show it's currently on. No other caller sets this.
+  final bool active;
+
   @override
   Widget build(BuildContext context) {
+    final activeColor = isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309);
     return Material(
       color: isDark ? const Color(0xFF1E293B) : Colors.white,
       shape: const CircleBorder(
@@ -87,12 +93,17 @@ class ChatComposerIconButton extends StatelessWidget {
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             border: Border.all(
-              color: isDark ? const Color(0xFF334155) : const Color(0xFFE5E9F2),
+              color: active
+                  ? activeColor
+                  : (isDark ? const Color(0xFF334155) : const Color(0xFFE5E9F2)),
+              width: active ? 1.5 : 1,
             ),
           ),
           child: Icon(
             icon,
-            color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+            color: active
+                ? activeColor
+                : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
           ),
         ),
       ),

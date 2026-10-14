@@ -6,6 +6,7 @@ import '../../../core/errors/app_error.dart';
 import '../../../core/logging/app_logger.dart';
 import '../../../core/models/group.dart';
 import '../../../core/models/group_announcement.dart';
+import '../../../core/models/group_doubt_summary.dart';
 import '../../../core/models/group_invitation.dart';
 import '../../../core/models/group_join_request.dart';
 import '../../../core/models/group_member.dart';
@@ -345,10 +346,15 @@ abstract interface class GroupRepository {
   /// fn_is_active_member(group_id, uid)` (plus the admin-only-chat gate,
   /// 0110) — the server rejects any other sender and any group the caller
   /// is not in. [replyToId] is optional (Phase 3A, 0120 schema from 0062).
+  /// [isDoubt] is ignored (never sent) when [replyToId] is set — the 0122
+  /// CHECK constraint forbids a reply from being a doubt, and the
+  /// composer's doubt toggle is only ever shown while not replying, so
+  /// this is just defensive, not a path the UI actually exercises.
   Future<void> sendMessage({
     required String groupId,
     required String body,
     String? replyToId,
+    bool isDoubt = false,
   });
 
   /// Soft-deletes a message via `fn_delete_group_message` (0120: own
@@ -395,6 +401,47 @@ abstract interface class GroupRepository {
   /// Clears every report row for [messageId] ("Dismiss"). RLS restricts
   /// the DELETE to admin/owner (0120).
   Future<void> dismissReports({required String messageId});
+
+  // ── Doubts (Phase 3B, 0122) ──
+
+  /// Marks/unmarks [messageId] as a doubt via `fn_mark_message_as_doubt`.
+  /// Server-enforced: only the sender may mark; sender or admin/owner may
+  /// unmark; a reply (`reply_to_id` set) is always refused.
+  Future<void> markMessageAsDoubt({
+    required String messageId,
+    required bool isDoubt,
+  });
+
+  /// Accepts [replyId] as the solution to the doubt [messageId], via
+  /// `fn_mark_doubt_solved`. Server-enforced: caller must be the asker or
+  /// admin/owner; [replyId] must reply to exactly this doubt and not be
+  /// deleted.
+  Future<void> markDoubtSolved({
+    required String messageId,
+    required String replyId,
+  });
+
+  /// Reverts [messageId] to open via `fn_unmark_doubt_solved`. Same
+  /// authorization as [markDoubtSolved].
+  Future<void> unmarkDoubtSolved({required String messageId});
+
+  /// Open or solved doubts for [groupId], newest first, keyset-paginated
+  /// by `(created_at, id)` — pass the last page's final row as
+  /// [beforeCreatedAt]/[beforeId] to load the next page. [mineOnly]
+  /// filters to the caller's own doubts ("My doubts" chip). RLS-equivalent
+  /// membership check happens server-side in `fn_list_group_doubts`.
+  Future<List<GroupDoubtSummary>> listDoubts({
+    required String groupId,
+    required bool solved,
+    bool mineOnly = false,
+    DateTime? beforeCreatedAt,
+    String? beforeId,
+    int limit = 20,
+  });
+
+  /// `{open, solved}` counts for the Group Info tabs, via
+  /// `fn_get_group_doubt_counts`.
+  Future<GroupDoubtCounts> doubtCounts(String groupId);
 
   /// Subscribes to live INSERT/UPDATE events on `group_messages` for
   /// [groupId] via the existing Supabase Realtime publication (already
@@ -533,10 +580,7 @@ class SupabaseGroupRepository implements GroupRepository {
           .maybeSingle();
       if (row == null) return null;
 
-      return Group.fromJson({
-        ...row,
-        'user_role': membership['role'],
-      });
+      return Group.fromJson({...row, 'user_role': membership['role']});
     },
   );
 
@@ -793,19 +837,23 @@ class SupabaseGroupRepository implements GroupRepository {
       });
 
   @override
-  Future<InviteLimits> inviteLimits(String groupId) =>
-      _guard(GroupErrorContext.inviteCode, () async {
-        final row = await _client
-            .from('groups')
-            .select('invite_code, invite_expires_at, invite_max_uses, invite_use_count')
-            .eq('id', groupId)
-            .maybeSingle();
-        final code = row?['invite_code'];
-        if (row == null || code is! String || code.isEmpty) {
-          throw const DataError(message: 'Invite details are not available.');
-        }
-        return InviteLimits.fromJson(row); // never logged
-      });
+  Future<InviteLimits> inviteLimits(String groupId) => _guard(
+    GroupErrorContext.inviteCode,
+    () async {
+      final row = await _client
+          .from('groups')
+          .select(
+            'invite_code, invite_expires_at, invite_max_uses, invite_use_count',
+          )
+          .eq('id', groupId)
+          .maybeSingle();
+      final code = row?['invite_code'];
+      if (row == null || code is! String || code.isEmpty) {
+        throw const DataError(message: 'Invite details are not available.');
+      }
+      return InviteLimits.fromJson(row); // never logged
+    },
+  );
 
   @override
   Future<void> setInviteLimits({
@@ -1256,7 +1304,8 @@ class SupabaseGroupRepository implements GroupRepository {
   /// cards and style system/announcement rows distinctly from ordinary text.
   static const _messageColumns =
       'id, group_id, sender_id, body, created_at, deleted_at, deleted_by, '
-      'message_type, metadata, reply_to_id, edited_at, pinned_at, pinned_by';
+      'message_type, metadata, reply_to_id, edited_at, pinned_at, pinned_by, '
+      'is_doubt, doubt_solved, solved_by, solved_reply_id, solved_at';
 
   @override
   Future<List<GroupMessage>> messages(
@@ -1287,6 +1336,7 @@ class SupabaseGroupRepository implements GroupRepository {
     required String groupId,
     required String body,
     String? replyToId,
+    bool isDoubt = false,
   }) => _guard(GroupErrorContext.chat, () async {
     final uid = _uid;
     if (uid == null) {
@@ -1296,7 +1346,8 @@ class SupabaseGroupRepository implements GroupRepository {
       'group_id': groupId,
       'sender_id': uid, // must equal auth.uid() or the policy rejects it
       'body': body.trim(),
-      if (replyToId != null) 'reply_to_id': replyToId,
+      'reply_to_id': ?replyToId,
+      if (isDoubt && replyToId == null) 'is_doubt': true,
     });
   });
 
@@ -1316,15 +1367,13 @@ class SupabaseGroupRepository implements GroupRepository {
   });
 
   @override
-  Future<void> editMessage({
-    required String messageId,
-    required String body,
-  }) => _guard(GroupErrorContext.chat, () async {
-    await _client.rpc(
-      'fn_edit_group_message',
-      params: {'p_message_id': messageId, 'p_body': body.trim()},
-    );
-  });
+  Future<void> editMessage({required String messageId, required String body}) =>
+      _guard(GroupErrorContext.chat, () async {
+        await _client.rpc(
+          'fn_edit_group_message',
+          params: {'p_message_id': messageId, 'p_body': body.trim()},
+        );
+      });
 
   @override
   Future<void> pinMessage({required String messageId}) =>
@@ -1446,6 +1495,73 @@ class SupabaseGroupRepository implements GroupRepository {
       });
 
   @override
+  Future<void> markMessageAsDoubt({
+    required String messageId,
+    required bool isDoubt,
+  }) => _guard(GroupErrorContext.chat, () async {
+    await _client.rpc(
+      'fn_mark_message_as_doubt',
+      params: {'p_message_id': messageId, 'p_is_doubt': isDoubt},
+    );
+  });
+
+  @override
+  Future<void> markDoubtSolved({
+    required String messageId,
+    required String replyId,
+  }) => _guard(GroupErrorContext.chat, () async {
+    await _client.rpc(
+      'fn_mark_doubt_solved',
+      params: {'p_message_id': messageId, 'p_reply_id': replyId},
+    );
+  });
+
+  @override
+  Future<void> unmarkDoubtSolved({required String messageId}) =>
+      _guard(GroupErrorContext.chat, () async {
+        await _client.rpc(
+          'fn_unmark_doubt_solved',
+          params: {'p_message_id': messageId},
+        );
+      });
+
+  @override
+  Future<List<GroupDoubtSummary>> listDoubts({
+    required String groupId,
+    required bool solved,
+    bool mineOnly = false,
+    DateTime? beforeCreatedAt,
+    String? beforeId,
+    int limit = 20,
+  }) => _guard(GroupErrorContext.load, () async {
+    final rows = await _client.rpc(
+      'fn_list_group_doubts',
+      params: {
+        'p_group': groupId,
+        'p_solved': solved,
+        'p_mine_only': mineOnly,
+        'p_before_created_at': beforeCreatedAt?.toUtc().toIso8601String(),
+        'p_before_id': beforeId,
+        'p_limit': limit,
+      },
+    );
+    return [
+      for (final r in rows as List)
+        GroupDoubtSummary.fromJson(r as Map<String, dynamic>),
+    ];
+  });
+
+  @override
+  Future<GroupDoubtCounts> doubtCounts(String groupId) =>
+      _guard(GroupErrorContext.load, () async {
+        final result = await _client.rpc(
+          'fn_get_group_doubt_counts',
+          params: {'p_group': groupId},
+        );
+        return GroupDoubtCounts.fromJson(result as Map<String, dynamic>);
+      });
+
+  @override
   GroupMessageSubscription subscribeToMessages({
     required String groupId,
     required void Function(GroupMessage message) onInsert,
@@ -1473,10 +1589,7 @@ class SupabaseGroupRepository implements GroupRepository {
           );
         } catch (_) {
           try {
-            await _client.rpc(
-              'rpc_delete_group',
-              params: {'p_group': groupId},
-            );
+            await _client.rpc('rpc_delete_group', params: {'p_group': groupId});
           } catch (_) {
             await _client.from('groups').delete().eq('id', groupId);
           }

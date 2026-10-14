@@ -24,10 +24,20 @@ import '../widgets/group_avatar.dart';
 /// morphing send button, and a first-appearance fade+rise for new messages
 /// (tracked by id, so scrolling back into view never replays it).
 class GroupChatScreen extends StatefulWidget {
-  const GroupChatScreen({required this.groupId, this.controller, super.key});
+  const GroupChatScreen({
+    required this.groupId,
+    this.controller,
+    this.initialJumpToMessageId,
+    super.key,
+  });
 
   final String groupId;
   final GroupHubController? controller;
+
+  /// Set when arriving from the Group Info Doubts section (Phase 3B) — once
+  /// the controller has a loaded window, this message is scrolled to the
+  /// same way a reply-quote or pinned-bar tap would ([_scrollToMessage]).
+  final String? initialJumpToMessageId;
 
   @override
   State<GroupChatScreen> createState() => _GroupChatScreenState();
@@ -64,6 +74,11 @@ class _GroupChatScreenState extends State<GroupChatScreen>
   /// Set while composing a reply — shown as a cancellable preview above
   /// the composer; cleared on send or explicit cancel.
   GroupMessage? _replyingTo;
+
+  /// Composer's "Doubt" toggle (Phase 3B). Only meaningful while NOT
+  /// replying — a reply can never be a doubt (0122 CHECK constraint) —
+  /// so this is force-cleared whenever [_replyingTo] becomes non-null.
+  bool _doubtToggleOn = false;
 
   /// Which pinned message the slim pinned bar currently shows (cycled by
   /// the arrow button), clamped to the current pinned list's bounds.
@@ -127,8 +142,21 @@ class _GroupChatScreenState extends State<GroupChatScreen>
           tests: const SupabaseTestRepository(),
         );
     _c.addListener(_onChanged);
+    final jumpTarget = widget.initialJumpToMessageId;
     if (_ownsController) {
-      _c.load();
+      final loaded = _c.load();
+      if (jumpTarget != null) {
+        loaded.then((_) {
+          if (!mounted) return;
+          WidgetsBinding.instance.addPostFrameCallback(
+            (_) => _scrollToMessage(jumpTarget),
+          );
+        });
+      }
+    } else if (jumpTarget != null) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _scrollToMessage(jumpTarget),
+      );
     }
     _loadLocalState();
     _input.addListener(_onInputChanged);
@@ -303,15 +331,23 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     if (text.trim().isEmpty) return;
     HapticFeedback.lightImpact();
     final replyToId = _replyingTo?.id;
+    final isDoubt = _doubtToggleOn && replyToId == null;
     // Optimistic: the input clears and the pending bubble appears right
     // away, regardless of how the send resolves — a failure leaves a
     // "Failed · Tap to retry" row instead of restoring the typed text.
     _input.clear();
-    setState(() => _replyingTo = null);
+    setState(() {
+      _replyingTo = null;
+      _doubtToggleOn = false;
+    });
     WidgetsBinding.instance.addPostFrameCallback(
       (_) => _scrollToBottom(animate: true),
     );
-    final ok = await _c.sendMessage(text, replyToId: replyToId);
+    final ok = await _c.sendMessage(
+      text,
+      replyToId: replyToId,
+      isDoubt: isDoubt,
+    );
     if (!mounted) return;
 
     if (!ok) {
@@ -405,6 +441,65 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     );
   }
 
+  /// "Doubt" (amber) or "Solved" (green) chip on a doubt's own bubble.
+  Widget _doubtChip(GroupMessage m, bool mine, bool isDark) {
+    final solved = m.doubtSolved;
+    final color = solved
+        ? AppColors.success
+        : (isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309));
+    return Container(
+      key: Key('discussion_doubt_chip_${m.id}'),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: mine ? 0.25 : 0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            solved ? Icons.check_circle_rounded : Icons.help_outline_rounded,
+            size: 12,
+            color: mine ? Colors.white : color,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            solved ? 'Solved' : 'Doubt',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: mine ? Colors.white : color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Small check badge shown on the reply bubble a doubt's asker/admin has
+  /// accepted as the solution.
+  Widget _acceptedAnswerBadge(bool mine, bool isDark) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          Icons.check_circle_rounded,
+          size: 12,
+          color: mine ? Colors.white : AppColors.success,
+        ),
+        const SizedBox(width: 4),
+        Text(
+          'Accepted answer',
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: mine ? Colors.white : AppColors.success,
+          ),
+        ),
+      ],
+    );
+  }
+
   Future<void> _onMessageLongPress(GroupMessage m) async {
     if (m.isSystem) return;
     // A still-sending or failed row has no server id yet — nothing to copy
@@ -440,9 +535,84 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                     isDark: isDark,
                     onTap: () {
                       Navigator.pop(ctx);
-                      setState(() => _replyingTo = m);
+                      setState(() {
+                        _replyingTo = m;
+                        _doubtToggleOn = false;
+                      });
                     },
                   ),
+                if (_c.canMarkAsDoubt(m) || _c.canUnmarkAsDoubt(m))
+                  _sheetAction(
+                    key: Key('${m.isDoubt ? 'unmark' : 'mark'}_doubt_${m.id}'),
+                    icon: m.isDoubt
+                        ? Icons.help_rounded
+                        : Icons.help_outline_rounded,
+                    iconColor: isDark
+                        ? const Color(0xFFFBBF24)
+                        : const Color(0xFFB45309),
+                    label: m.isDoubt ? 'Unmark as doubt' : 'Mark as doubt',
+                    isDark: isDark,
+                    onTap: () async {
+                      Navigator.pop(ctx);
+                      final ok = await _c.markAsDoubt(m, !m.isDoubt);
+                      if (!mounted) return;
+                      if (!ok) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(_c.error ?? 'Could not update the doubt.'),
+                            backgroundColor: AppColors.error,
+                          ),
+                        );
+                      }
+                    },
+                  ),
+                if (m.replyToId != null && !m.isDeleted)
+                  () {
+                    // Synchronous lookup only — the parent must already be
+                    // in the loaded window for this tile to appear. If it
+                    // scrolled out of range, "Mark as solution" simply
+                    // doesn't show here; the asker/admin can still do it
+                    // from the Doubts section's jump-to-message instead.
+                    final parent = _c.messages
+                        .where((p) => p.id == m.replyToId)
+                        .firstOrNull;
+                    if (parent == null) return const SizedBox.shrink();
+                    final isAccepted = parent.solvedReplyId == m.id;
+                    if (!_c.canSolveDoubt(parent, m) &&
+                        !(isAccepted && _c.canUnsolveDoubt(parent))) {
+                      return const SizedBox.shrink();
+                    }
+                    return _sheetAction(
+                      key: Key(
+                        '${isAccepted ? 'unsolve' : 'solve'}_doubt_${parent.id}',
+                      ),
+                      icon: isAccepted
+                          ? Icons.check_circle_rounded
+                          : Icons.check_circle_outline_rounded,
+                      iconColor: AppColors.success,
+                      label: isAccepted
+                          ? 'Unmark as solution'
+                          : 'Mark as solution',
+                      isDark: isDark,
+                      onTap: () async {
+                        Navigator.pop(ctx);
+                        final ok = isAccepted
+                            ? await _c.unmarkDoubtSolved(parent)
+                            : await _c.markDoubtSolved(parent, m);
+                        if (!mounted) return;
+                        if (!ok) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                _c.error ?? 'Could not update the doubt.',
+                              ),
+                              backgroundColor: AppColors.error,
+                            ),
+                          );
+                        }
+                      },
+                    );
+                  }(),
                 if (!m.isDeleted)
                   _sheetAction(
                     icon: Icons.copy_rounded,
@@ -1654,6 +1824,22 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                   children: [
                     if (m.replyToId != null && !m.isDeleted)
                       _replyQuotePreview(m, mine, isDark),
+                    if (m.isDoubt && !m.isDeleted) ...[
+                      _doubtChip(m, mine, isDark),
+                      const SizedBox(height: 4),
+                    ] else if (m.replyToId != null && !m.isDeleted)
+                      Builder(builder: (context) {
+                        final parent = _c.messages
+                            .where((p) => p.id == m.replyToId)
+                            .firstOrNull;
+                        if (parent?.solvedReplyId != m.id) {
+                          return const SizedBox.shrink();
+                        }
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: _acceptedAnswerBadge(mine, isDark),
+                        );
+                      }),
                     if (!mine && !isConsecutive) ...[
                       Row(
                         mainAxisSize: MainAxisSize.min,
@@ -1929,6 +2115,16 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                 onTap: () => _showAttachmentOptions(context),
               ),
           const SizedBox(width: 6),
+          if (replyingTo == null) ...[
+            ChatComposerIconButton(
+              key: const Key('discussion_doubt_toggle'),
+              icon: Icons.help_outline_rounded,
+              isDark: isDark,
+              active: _doubtToggleOn,
+              onTap: () => setState(() => _doubtToggleOn = !_doubtToggleOn),
+            ),
+            const SizedBox(width: 6),
+          ],
           Expanded(
             child: Container(
               constraints: const BoxConstraints(minHeight: 44),

@@ -415,8 +415,12 @@ final class AppRouter {
           GoRoute(
             path: ':groupId',
             name: 'group-hub',
-            builder: (context, state) =>
-                GroupChatScreen(groupId: state.pathParameters['groupId']!),
+            builder: (context, state) => GroupChatScreen(
+              groupId: state.pathParameters['groupId']!,
+              initialJumpToMessageId: state.extra is String
+                  ? state.extra as String
+                  : null,
+            ),
             routes: [
               GoRoute(
                 path: 'info',
@@ -427,8 +431,12 @@ final class AppRouter {
               GoRoute(
                 path: 'chat',
                 name: 'group-chat',
-                builder: (context, state) =>
-                    GroupChatScreen(groupId: state.pathParameters['groupId']!),
+                builder: (context, state) => GroupChatScreen(
+                  groupId: state.pathParameters['groupId']!,
+                  initialJumpToMessageId: state.extra is String
+                      ? state.extra as String
+                      : null,
+                ),
               ),
               GoRoute(
                 path: 'discussion',

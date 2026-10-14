@@ -16,6 +16,7 @@ import '../state/invite_code_controller.dart';
 import '../widgets/group_action_row.dart';
 import '../widgets/group_announcements_section.dart';
 import '../widgets/group_avatar.dart';
+import '../widgets/group_doubts_section.dart';
 import '../widgets/group_leaderboard_section.dart';
 import '../widgets/group_media_section.dart';
 import '../widgets/group_members_section.dart';
@@ -464,6 +465,22 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
               icon: Icons.gavel_rounded,
               iconColor: const Color(0xFF7C3AED),
               child: GroupRulesSection(controller: _c, readOnly: true),
+            ),
+            const SizedBox(height: 20),
+
+            // Doubts (Phase 3B): Open/Solved tabs, tap jumps into chat.
+            _sectionShell(
+              isDark: isDark,
+              icon: Icons.help_outline_rounded,
+              iconColor: const Color(0xFFB45309),
+              child: GroupDoubtsSection(
+                controller: _c,
+                onJumpToMessage: (messageId) => context.goNamed(
+                  'group-hub',
+                  pathParameters: {'groupId': widget.groupId},
+                  extra: messageId,
+                ),
+              ),
             ),
             const SizedBox(height: 32),
           ],
