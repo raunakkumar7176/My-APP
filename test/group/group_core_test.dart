@@ -837,7 +837,27 @@ class _FailingRepository implements GroupRepository {
   Future<void> sendMessage({
     required String groupId,
     required String body,
+    String? replyToId,
   }) async {}
+  @override
+  Future<void> editMessage({
+    required String messageId,
+    required String body,
+  }) async {}
+  @override
+  Future<void> pinMessage({required String messageId}) async {}
+  @override
+  Future<void> unpinMessage({required String messageId}) async {}
+  @override
+  Future<void> reportMessage({
+    required String messageId,
+    required String reason,
+    String? details,
+  }) async {}
+  @override
+  Future<List<GroupMessage>> pinnedMessages(String groupId) async => const [];
+  @override
+  Future<GroupMessage?> messageById(String messageId) async => null;
   @override
   Future<GroupPermissions> permissionsFor(
     String groupId, {

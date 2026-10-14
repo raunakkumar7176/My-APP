@@ -747,6 +747,362 @@ void main() {
       },
     );
   });
+
+  group('Phase 3A — message actions', () {
+    group('controller: canXxx role/ownership reflection', () {
+      test('canDeleteMessage: own always; others only for owner/admin', () async {
+        final repo = _repo();
+        final c = _hub(repo);
+        await c.load();
+        final own = c.messages.firstWhere((m) => m.senderId == 'u-me');
+        final others = c.messages.firstWhere((m) => m.senderId == 'u-b');
+        expect(c.canDeleteMessage(own), isTrue);
+        expect(c.canDeleteMessage(others), isFalse);
+
+        final adminRepo = _repo()..groups['g-1']!.roles['u-me'] = 'admin';
+        final adminC = _hub(adminRepo);
+        await adminC.load();
+        final othersAsAdmin = adminC.messages.firstWhere(
+          (m) => m.senderId == 'u-b',
+        );
+        expect(adminC.canDeleteMessage(othersAsAdmin), isTrue);
+      });
+
+      test('canEditMessage: own + within 15 minutes only', () async {
+        final repo = _repo(user: 'u-owner');
+        final now = DateTime.now();
+        repo.seedMessage(
+          groupId: 'g-1',
+          senderId: 'u-owner',
+          body: 'fresh',
+          at: now.subtract(const Duration(minutes: 1)),
+        );
+        repo.seedMessage(
+          groupId: 'g-1',
+          senderId: 'u-owner',
+          body: 'stale',
+          at: now.subtract(const Duration(minutes: 20)),
+        );
+        final c = _hub(repo, user: 'u-owner');
+        await c.load();
+        final fresh = c.messages.firstWhere((m) => m.body == 'fresh');
+        final stale = c.messages.firstWhere((m) => m.body == 'stale');
+        final others = c.messages.firstWhere((m) => m.senderId == 'u-b');
+        expect(c.canEditMessage(fresh), isTrue);
+        expect(c.canEditMessage(stale), isFalse);
+        expect(c.canEditMessage(others), isFalse);
+      });
+
+      test('canPinMessages: admin/owner only', () async {
+        final memberC = _hub(_repo());
+        await memberC.load();
+        expect(memberC.canPinMessages, isFalse);
+
+        final ownerRepo = _repo(user: 'u-owner');
+        final ownerC = _hub(ownerRepo, user: 'u-owner');
+        await ownerC.load();
+        expect(ownerC.canPinMessages, isTrue);
+      });
+
+      test('canReportMessage: never own, never deleted', () async {
+        final repo = _repo(user: 'u-owner');
+        final c = _hub(repo, user: 'u-owner');
+        await c.load();
+        final own = c.messages.firstWhere((m) => m.senderId == 'u-owner');
+        final others = c.messages.firstWhere((m) => m.senderId == 'u-b');
+        expect(c.canReportMessage(own), isFalse);
+        expect(c.canReportMessage(others), isTrue);
+        // Owner can delete any message; prove the now-deleted message is no
+        // longer reportable.
+        expect(await c.deleteMessage(others), isTrue);
+        final deleted = c.messages.firstWhere((m) => m.id == others.id);
+        expect(c.canReportMessage(deleted), isFalse);
+      });
+    });
+
+    group('controller: edit / pin / unpin / report', () {
+      test('editMessage updates body and editedAt on success', () async {
+        final repo = _repo();
+        // The fixtures seed historical timestamps; edit needs a message
+        // sent within the server's 15-minute window.
+        repo.seedMessage(
+          groupId: 'g-1',
+          senderId: 'u-me',
+          body: 'fresh for editing',
+          at: DateTime.now().subtract(const Duration(minutes: 1)),
+        );
+        final c = _hub(repo);
+        await c.load();
+        final own = c.messages.firstWhere((m) => m.body == 'fresh for editing');
+        expect(await c.editMessage(own, 'edited text'), isTrue);
+        final updated = c.messages.firstWhere((m) => m.id == own.id);
+        expect(updated.body, 'edited text');
+        expect(updated.isEdited, isTrue);
+      });
+
+      test('editMessage refuses someone else\'s message', () async {
+        final repo = _repo();
+        final c = _hub(repo);
+        await c.load();
+        final others = c.messages.firstWhere((m) => m.senderId == 'u-b');
+        expect(await c.editMessage(others, 'hijack'), isFalse);
+        expect(c.error, isNotNull);
+      });
+
+      test('pin / unpin round trip updates pinnedMessages', () async {
+        final repo = _repo(user: 'u-owner');
+        final c = _hub(repo, user: 'u-owner');
+        await c.load();
+        final target = c.messages.firstWhere((m) => m.senderId == 'u-owner');
+        expect(await c.pinMessage(target), isTrue);
+        expect(c.pinnedMessages.map((m) => m.id), [target.id]);
+        expect(await c.unpinMessage(target), isTrue);
+        expect(c.pinnedMessages, isEmpty);
+      });
+
+      test('pin refused for a plain member', () async {
+        final repo = _repo();
+        final c = _hub(repo);
+        await c.load();
+        final target = c.messages.firstWhere((m) => m.senderId == 'u-b');
+        expect(await c.pinMessage(target), isFalse);
+        expect(c.error, isNotNull);
+      });
+
+      test('pinning a 4th message is refused once 3 are pinned', () async {
+        final repo = _repo(user: 'u-owner');
+        final c = _hub(repo, user: 'u-owner');
+        await c.load();
+        final msgs = c.messages.where((m) => !m.isSystem).toList();
+        expect(msgs.length, greaterThanOrEqualTo(3));
+        for (final m in msgs.take(3)) {
+          expect(await c.pinMessage(m), isTrue);
+        }
+        repo.seedMessage(groupId: 'g-1', senderId: 'u-owner', body: 'extra');
+        await c.refreshMessages();
+        final fourth = c.messages.firstWhere((m) => m.body == 'extra');
+        expect(await c.pinMessage(fourth), isFalse);
+        expect(c.pinnedMessages.length, 3);
+      });
+
+      test('reportMessage succeeds once; a repeat call is still success (dedupe server-side)', () async {
+        final repo = _repo();
+        final c = _hub(repo);
+        await c.load();
+        final target = c.messages.firstWhere((m) => m.senderId == 'u-b');
+        expect(await c.reportMessage(target, 'spam'), isTrue);
+        expect(await c.reportMessage(target, 'spam'), isTrue);
+        expect(repo.messageReports.length, 1);
+      });
+    });
+
+    group('controller: reply', () {
+      test('sendMessage threads replyToId through to the repository', () async {
+        final repo = _repo();
+        final c = _hub(repo);
+        await c.load();
+        final parent = c.messages.firstWhere((m) => m.senderId == 'u-b');
+        expect(await c.sendMessage('a reply', replyToId: parent.id), isTrue);
+        final reply = c.messages.firstWhere((m) => m.body == 'a reply');
+        expect(reply.replyToId, parent.id);
+      });
+
+      test('resolveReplyPreview returns the loaded message directly', () async {
+        final repo = _repo();
+        final c = _hub(repo);
+        await c.load();
+        final parent = c.messages.firstWhere((m) => m.senderId == 'u-b');
+        final resolved = await c.resolveReplyPreview(parent.id);
+        expect(resolved?.id, parent.id);
+        expect(repo.calls.any((x) => x.startsWith('messageById')), isFalse);
+      });
+
+      test('resolveReplyPreview fetches and caches when not in the loaded window', () async {
+        final repo = _repo();
+        final c = _hub(repo);
+        await c.load();
+        // Seeded AFTER load, so it's in the backing store but not in the
+        // controller's already-loaded `_messages` window.
+        final older = repo.seedMessage(
+          groupId: 'g-1',
+          senderId: 'u-b',
+          body: 'ancient',
+          at: DateTime(2026, 9, 1),
+        );
+        final resolved = await c.resolveReplyPreview(older.id);
+        expect(resolved?.id, older.id);
+        expect(repo.calls.where((x) => x == 'messageById:${older.id}').length, 1);
+        await c.resolveReplyPreview(older.id); // cached, no second fetch
+        expect(repo.calls.where((x) => x == 'messageById:${older.id}').length, 1);
+      });
+    });
+
+    group('widget: long-press menu reflects role/ownership', () {
+      Future<GroupHubController> pump3a(
+        WidgetTester tester,
+        InMemoryGroupRepository repo, {
+        String user = 'u-me',
+      }) async {
+        tester.view.physicalSize = const Size(800, 1600);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        final c = _hub(repo, user: user);
+        await c.load();
+        await tester.pumpWidget(
+          MaterialApp(home: GroupChatScreen(groupId: 'g-1', controller: c)),
+        );
+        await tester.pumpAndSettle();
+        return c;
+      }
+
+      testWidgets('member on own message: Reply/Copy/Edit/Report/Delete, no Pin', (
+        tester,
+      ) async {
+        final repo = _repo();
+        // Edit requires a message within the 15-minute window.
+        repo.seedMessage(
+          groupId: 'g-1',
+          senderId: 'u-me',
+          body: 'fresh own message',
+          at: DateTime.now().subtract(const Duration(minutes: 1)),
+        );
+        final c = await pump3a(tester, repo);
+        final own = c.messages.firstWhere((m) => m.body == 'fresh own message');
+        await tester.longPress(find.text(own.body));
+        await tester.pumpAndSettle();
+        expect(find.byKey(Key('reply_message_${own.id}')), findsOneWidget);
+        expect(find.text('Copy message'), findsOneWidget);
+        expect(find.byKey(Key('edit_message_${own.id}')), findsOneWidget);
+        expect(find.byKey(const Key('delete_message_for_everyone')), findsOneWidget);
+        expect(find.byKey(Key('report_message_${own.id}')), findsNothing);
+        expect(find.byKey(Key('pin_message_${own.id}')), findsNothing);
+        await tester.pumpWidget(const SizedBox());
+        c.dispose();
+      });
+
+      testWidgets('member on someone else\'s message: Report shown, Delete/Edit/Pin hidden', (
+        tester,
+      ) async {
+        final repo = _repo();
+        final c = await pump3a(tester, repo);
+        final others = c.messages.firstWhere((m) => m.senderId == 'u-b');
+        await tester.longPress(find.text(others.body));
+        await tester.pumpAndSettle();
+        expect(find.byKey(Key('report_message_${others.id}')), findsOneWidget);
+        expect(find.byKey(const Key('delete_message_for_everyone')), findsNothing);
+        expect(find.byKey(Key('edit_message_${others.id}')), findsNothing);
+        expect(find.byKey(Key('pin_message_${others.id}')), findsNothing);
+        await tester.pumpWidget(const SizedBox());
+        c.dispose();
+      });
+
+      testWidgets('admin sees Pin on any message and can delete any message', (
+        tester,
+      ) async {
+        final repo = _repo()..groups['g-1']!.roles['u-me'] = 'admin';
+        final c = await pump3a(tester, repo);
+        final others = c.messages.firstWhere((m) => m.senderId == 'u-b');
+        await tester.longPress(find.text(others.body));
+        await tester.pumpAndSettle();
+        expect(find.byKey(Key('pin_message_${others.id}')), findsOneWidget);
+        expect(find.byKey(const Key('delete_message_for_everyone')), findsOneWidget);
+        await tester.pumpWidget(const SizedBox());
+        c.dispose();
+      });
+
+      testWidgets('tapping Pin shows the pinned bar; tapping its close unpins', (
+        tester,
+      ) async {
+        final repo = _repo()..currentUser = 'u-owner';
+        final c = await pump3a(tester, repo, user: 'u-owner');
+        final target = c.messages.firstWhere((m) => m.senderId == 'u-b');
+        await tester.longPress(find.text(target.body));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(Key('pin_message_${target.id}')));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('discussion_pinned_bar')), findsOneWidget);
+
+        await tester.tap(find.byKey(Key('discussion_unpin_${target.id}')));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('discussion_pinned_bar')), findsNothing);
+        await tester.pumpWidget(const SizedBox());
+        c.dispose();
+      });
+
+      testWidgets('Reply opens the reply bar; Cancel clears it; sending attaches replyToId', (
+        tester,
+      ) async {
+        final repo = _repo();
+        final c = await pump3a(tester, repo);
+        final target = c.messages.firstWhere((m) => m.senderId == 'u-b');
+        await tester.longPress(find.text(target.body));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(Key('reply_message_${target.id}')));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('discussion_reply_bar')), findsOneWidget);
+
+        await tester.enterText(
+          find.byKey(const Key('discussion_message_field')),
+          'my reply',
+        );
+        await tester.tap(find.byKey(const Key('discussion_send_button')));
+        await tester.pumpAndSettle();
+        final sent = c.messages.firstWhere((m) => m.body == 'my reply');
+        expect(sent.replyToId, target.id);
+        expect(find.byKey(const Key('discussion_reply_bar')), findsNothing);
+        await tester.pumpWidget(const SizedBox());
+        c.dispose();
+      });
+
+      testWidgets('Edit dialog saves a new body and shows the edited label', (
+        tester,
+      ) async {
+        final repo = _repo();
+        repo.seedMessage(
+          groupId: 'g-1',
+          senderId: 'u-me',
+          body: 'fresh for editing',
+          at: DateTime.now().subtract(const Duration(minutes: 1)),
+        );
+        final c = await pump3a(tester, repo);
+        final own = c.messages.firstWhere((m) => m.body == 'fresh for editing');
+        await tester.longPress(find.text(own.body));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(Key('edit_message_${own.id}')));
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byKey(const Key('edit_message_field')),
+          'updated body',
+        );
+        await tester.tap(find.byKey(const Key('confirm_edit_message')));
+        await tester.pumpAndSettle();
+        expect(find.text('updated body'), findsOneWidget);
+        expect(find.textContaining('edited'), findsOneWidget);
+        await tester.pumpWidget(const SizedBox());
+        c.dispose();
+      });
+
+      testWidgets('Report dialog: pick a reason, confirm, success snackbar', (
+        tester,
+      ) async {
+        final repo = _repo();
+        final c = await pump3a(tester, repo);
+        final others = c.messages.firstWhere((m) => m.senderId == 'u-b');
+        await tester.longPress(find.text(others.body));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(Key('report_message_${others.id}')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('report_reason_abuse')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('confirm_report_message')));
+        await tester.pumpAndSettle();
+        expect(find.text('Message reported.'), findsOneWidget);
+        expect(repo.messageReports.single['reason'], 'abuse');
+        await tester.pumpWidget(const SizedBox());
+        c.dispose();
+      });
+    });
+  });
 }
 
 class _FailingChatRepository extends InMemoryGroupRepository {
@@ -776,8 +1132,16 @@ class _SlowChatRepository extends InMemoryGroupRepository {
   }
 
   @override
-  Future<void> sendMessage({required String groupId, required String body}) async {
+  Future<void> sendMessage({
+    required String groupId,
+    required String body,
+    String? replyToId,
+  }) async {
     await Future<void>.delayed(const Duration(milliseconds: 10));
-    return super.sendMessage(groupId: groupId, body: body);
+    return super.sendMessage(
+      groupId: groupId,
+      body: body,
+      replyToId: replyToId,
+    );
   }
 }

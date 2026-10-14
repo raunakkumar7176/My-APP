@@ -689,6 +689,8 @@ class GroupHubController extends DisposableNotifier {
         await _loadAnnouncements();
         // Chat: latest window for all members (RLS: member-only read).
         await _loadMessages();
+        // Pinned bar: up to 3 pinned messages, independent of the window.
+        await _loadPinnedMessages();
         // G16: unread badge (own `notifications` rows; one count request).
         await _loadUnreadNotifications();
         // Overview: upcoming-test preview + recent (own) activity — both
@@ -1508,7 +1510,7 @@ class GroupHubController extends DisposableNotifier {
   /// Client-side spam guard: a new send is refused within [_minSendGap] of
   /// the last one — a courtesy against accidental double-taps/spam, not a
   /// security boundary (the server has its own rate limiting, if any).
-  Future<bool> sendMessage(String body) async {
+  Future<bool> sendMessage(String body, {String? replyToId}) async {
     if (_sending || _busy) return false;
     if (_pendingFailed) {
       _error = 'Retry or dismiss the previous message first.';
@@ -1535,6 +1537,7 @@ class GroupHubController extends DisposableNotifier {
       senderId: _currentUserId,
       body: body.trim(),
       createdAt: now,
+      replyToId: replyToId,
     );
     _pendingFailed = false;
     return _flushPendingMessage();
@@ -1559,7 +1562,11 @@ class GroupHubController extends DisposableNotifier {
     _error = null;
     notifyListeners();
     try {
-      await _repo.sendMessage(groupId: groupId, body: pending.body);
+      await _repo.sendMessage(
+        groupId: groupId,
+        body: pending.body,
+        replyToId: pending.replyToId,
+      );
       _pendingMessage = null;
       await _loadMessages();
       return true;
@@ -1580,30 +1587,18 @@ class GroupHubController extends DisposableNotifier {
     }
   }
 
-  /// Soft-deletes a message for everyone. Author or moderator only.
+  /// Soft-deletes a message for everyone. Own message, or role owner/admin
+  /// for any message (0120) — enforced server-side; this is UI reflection
+  /// only (`canDeleteMessage`).
   Future<bool> deleteMessage(GroupMessage message) async {
     if (_busy) return false;
     try {
       await _repo.deleteMessage(groupId: groupId, messageId: message.id);
-      // Local optimistic update while realtime broadcast propagates:
-      final idx = _messages.indexWhere((m) => m.id == message.id);
-      if (idx != -1) {
-        _messages = [
-          for (var i = 0; i < _messages.length; i++)
-            if (i == idx)
-              GroupMessage(
-                id: message.id,
-                groupId: message.groupId,
-                senderId: message.senderId,
-                body: message.body,
-                createdAt: message.createdAt,
-                deletedAt: DateTime.now(),
-              )
-            else
-              _messages[i],
-        ];
-        notifyListeners();
-      }
+      _replaceMessageLocally(
+        message.id,
+        (m) => m.copyWith(deletedAt: DateTime.now()),
+      );
+      await _loadPinnedMessages();
       return true;
     } on AppError catch (e) {
       _error = e.message;
@@ -1615,6 +1610,173 @@ class GroupHubController extends DisposableNotifier {
       notifyListeners();
       return false;
     }
+  }
+
+  /// Edits the caller's own message. Server-enforced 15-minute window
+  /// (`fn_edit_group_message`, 0120); this is UI reflection only
+  /// (`canEditMessage`).
+  Future<bool> editMessage(GroupMessage message, String newBody) async {
+    if (_busy) return false;
+    final invalid = validateMessage(newBody);
+    if (invalid != null) {
+      _error = invalid;
+      notifyListeners();
+      return false;
+    }
+    try {
+      await _repo.editMessage(messageId: message.id, body: newBody);
+      _replaceMessageLocally(
+        message.id,
+        (m) => m.copyWith(body: newBody.trim(), editedAt: DateTime.now()),
+      );
+      return true;
+    } on AppError catch (e) {
+      _error = e.message;
+      notifyListeners();
+      return false;
+    } catch (e, st) {
+      AppLogger.error('Edit message failed: $e', stackTrace: st);
+      _error = GroupErrors.map(e.toString(), context: GroupErrorContext.chat);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Pins a message. Admin/owner only, max 3 per group — both server-
+  /// enforced (`fn_pin_group_message`, 0120); this is UI reflection only.
+  Future<bool> pinMessage(GroupMessage message) async {
+    if (_busy) return false;
+    try {
+      await _repo.pinMessage(messageId: message.id);
+      await _loadPinnedMessages();
+      return true;
+    } on AppError catch (e) {
+      _error = e.message;
+      notifyListeners();
+      return false;
+    } catch (e, st) {
+      AppLogger.error('Pin message failed: $e', stackTrace: st);
+      _error = GroupErrors.map(e.toString(), context: GroupErrorContext.chat);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Unpins a message. Admin/owner only (`fn_unpin_group_message`, 0120).
+  Future<bool> unpinMessage(GroupMessage message) async {
+    if (_busy) return false;
+    try {
+      await _repo.unpinMessage(messageId: message.id);
+      await _loadPinnedMessages();
+      return true;
+    } on AppError catch (e) {
+      _error = e.message;
+      notifyListeners();
+      return false;
+    } catch (e, st) {
+      AppLogger.error('Unpin message failed: $e', stackTrace: st);
+      _error = GroupErrors.map(e.toString(), context: GroupErrorContext.chat);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Reports a message. Any active member; one report per caller per
+  /// message — a repeat call is a silent no-op server-side (0120).
+  Future<bool> reportMessage(
+    GroupMessage message,
+    String reason, {
+    String? details,
+  }) async {
+    if (_busy) return false;
+    try {
+      await _repo.reportMessage(
+        messageId: message.id,
+        reason: reason,
+        details: details,
+      );
+      return true;
+    } on AppError catch (e) {
+      _error = e.message;
+      notifyListeners();
+      return false;
+    } catch (e, st) {
+      AppLogger.error('Report message failed: $e', stackTrace: st);
+      _error = GroupErrors.map(e.toString(), context: GroupErrorContext.chat);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// UI reflection of the server rule in `fn_delete_group_message` (0120):
+  /// own message, or role owner/admin for any message.
+  bool canDeleteMessage(GroupMessage message) =>
+      message.senderId == _currentUserId || isOwner || myRole.isAdmin;
+
+  /// UI reflection of `fn_edit_group_message` (0120): own message, within
+  /// 15 minutes of send. The server re-checks the window authoritatively;
+  /// this local check only avoids offering an edit that would be refused.
+  bool canEditMessage(GroupMessage message) =>
+      message.senderId == _currentUserId &&
+      !message.isDeleted &&
+      _now().difference(message.createdAt) < const Duration(minutes: 15);
+
+  /// UI reflection of `fn_pin_group_message`/`fn_unpin_group_message`
+  /// (0120): admin/owner only.
+  bool get canPinMessages => isOwner || myRole.isAdmin;
+
+  /// UI reflection of `fn_report_group_message` (0120): any active member,
+  /// never on your own message or an already-deleted one.
+  bool canReportMessage(GroupMessage message) =>
+      message.senderId != _currentUserId && !message.isDeleted;
+
+  List<GroupMessage> _pinnedMessages = const [];
+  List<GroupMessage> get pinnedMessages => _pinnedMessages;
+  bool get hasPinnedMessages => _pinnedMessages.isNotEmpty;
+
+  Future<void> _loadPinnedMessages() async {
+    try {
+      _pinnedMessages = await _repo.pinnedMessages(groupId);
+    } catch (e) {
+      AppLogger.warning('Pinned messages reload failed: $e');
+    }
+    notifyListeners();
+  }
+
+  /// `message_id -> resolved parent` cache for reply previews whose parent
+  /// has scrolled out of the loaded chat window. `null` cached means "not
+  /// found or deleted-and-gone" — never refetched again for that id.
+  final Map<String, GroupMessage?> _replyPreviewCache = {};
+
+  /// Resolves the message [replyToId] refers to: checks the loaded window
+  /// first, then the cache, then fetches once via the repository.
+  Future<GroupMessage?> resolveReplyPreview(String replyToId) async {
+    final loaded = _messages.where((m) => m.id == replyToId).firstOrNull;
+    if (loaded != null) return loaded;
+    if (_replyPreviewCache.containsKey(replyToId)) {
+      return _replyPreviewCache[replyToId];
+    }
+    GroupMessage? fetched;
+    try {
+      fetched = await _repo.messageById(replyToId);
+    } catch (e) {
+      AppLogger.warning('Reply preview fetch failed: $e');
+    }
+    _replyPreviewCache[replyToId] = fetched;
+    return fetched;
+  }
+
+  void _replaceMessageLocally(
+    String messageId,
+    GroupMessage Function(GroupMessage) update,
+  ) {
+    final idx = _messages.indexWhere((m) => m.id == messageId);
+    if (idx == -1) return;
+    _messages = [
+      for (var i = 0; i < _messages.length; i++)
+        if (i == idx) update(_messages[i]) else _messages[i],
+    ];
+    notifyListeners();
   }
 
   /// Updates the group's logo URL in database.

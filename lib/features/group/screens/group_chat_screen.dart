@@ -61,6 +61,40 @@ class _GroupChatScreenState extends State<GroupChatScreen>
   /// message back into view must never replay it.
   final Set<String> _animatedOnce = {};
 
+  /// Set while composing a reply — shown as a cancellable preview above
+  /// the composer; cleared on send or explicit cancel.
+  GroupMessage? _replyingTo;
+
+  /// Which pinned message the slim pinned bar currently shows (cycled by
+  /// the arrow button), clamped to the current pinned list's bounds.
+  int _pinnedBarIndex = 0;
+
+  /// `message id -> bubble key`, so the pinned bar / reply-quote tap can
+  /// attempt to scroll a message into view. Best-effort: `ListView.builder`
+  /// only keeps nearby items alive, so this only succeeds when the target
+  /// is already built (near the current scroll position or within the
+  /// cache extent) — a known gap, documented in the Phase 3A report.
+  final Map<String, GlobalKey> _bubbleKeys = {};
+  GlobalKey _bubbleKeyFor(String id) =>
+      _bubbleKeys.putIfAbsent(id, () => GlobalKey());
+
+  void _scrollToMessage(String id) {
+    final ctx = _bubbleKeys[id]?.currentContext;
+    if (ctx == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Scroll up to find that message.'),
+        ),
+      );
+      return;
+    }
+    Scrollable.ensureVisible(
+      ctx,
+      duration: const Duration(milliseconds: 300),
+      alignment: 0.5,
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -249,14 +283,16 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     final text = _input.text;
     if (text.trim().isEmpty) return;
     HapticFeedback.lightImpact();
+    final replyToId = _replyingTo?.id;
     // Optimistic: the input clears and the pending bubble appears right
     // away, regardless of how the send resolves — a failure leaves a
     // "Failed · Tap to retry" row instead of restoring the typed text.
     _input.clear();
+    setState(() => _replyingTo = null);
     WidgetsBinding.instance.addPostFrameCallback(
       (_) => _scrollToBottom(animate: true),
     );
-    final ok = await _c.sendMessage(text);
+    final ok = await _c.sendMessage(text, replyToId: replyToId);
     if (!mounted) return;
 
     if (!ok) {
@@ -278,7 +314,79 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     return null;
   }
 
-  Future<void> _onMessageLongPress(GroupMessage m, bool isMine) async {
+  Widget _replyQuotePreview(GroupMessage m, bool mine, bool isDark) {
+    return FutureBuilder<GroupMessage?>(
+      key: Key('discussion_reply_preview_${m.id}'),
+      future: _c.resolveReplyPreview(m.replyToId!),
+      builder: (context, snap) {
+        final parent = snap.data;
+        final label = parent == null
+            ? 'Original message deleted'
+            : (parent.isDeleted
+                  ? 'This message was deleted'
+                  : (parent.senderId == null
+                        ? 'System'
+                        : (_senderOf(parent)?.fullName ?? 'Member')));
+        final preview = parent == null || parent.isDeleted ? '' : parent.body;
+        final accent = Theme.of(context).colorScheme.primary;
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: GestureDetector(
+            onTap: parent == null ? null : () => _scrollToMessage(parent.id),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: (mine ? Colors.white : accent).withValues(
+                  alpha: isDark ? 0.12 : 0.08,
+                ),
+                borderRadius: BorderRadius.circular(8),
+                border: Border(
+                  left: BorderSide(
+                    color: mine ? Colors.white70 : accent,
+                    width: 2.5,
+                  ),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                      color: mine
+                          ? Colors.white70
+                          : (isDark
+                                ? const Color(0xFF93A4F0)
+                                : const Color(0xFF5B6CDB)),
+                    ),
+                  ),
+                  if (preview.isNotEmpty)
+                    Text(
+                      preview,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: mine
+                            ? Colors.white.withValues(alpha: 0.85)
+                            : (isDark
+                                  ? const Color(0xFFCBD5E1)
+                                  : const Color(0xFF475569)),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _onMessageLongPress(GroupMessage m) async {
     if (m.isSystem) return;
     // A still-sending or failed row has no server id yet — nothing to copy
     // or delete server-side. Tapping it (when failed) retries instead.
@@ -304,6 +412,20 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                 const SizedBox(height: 8),
                 if (!m.isDeleted)
                   _sheetAction(
+                    key: Key('reply_message_${m.id}'),
+                    icon: Icons.reply_rounded,
+                    iconColor: isDark
+                        ? const Color(0xFF93A4F0)
+                        : const Color(0xFF5B6CDB),
+                    label: 'Reply',
+                    isDark: isDark,
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      setState(() => _replyingTo = m);
+                    },
+                  ),
+                if (!m.isDeleted)
+                  _sheetAction(
                     icon: Icons.copy_rounded,
                     iconColor: isDark
                         ? const Color(0xFF60A5FA)
@@ -321,7 +443,62 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                       );
                     },
                   ),
-                if (isMine && !m.isDeleted)
+                if (_c.canEditMessage(m))
+                  _sheetAction(
+                    key: Key('edit_message_${m.id}'),
+                    icon: Icons.edit_outlined,
+                    iconColor: isDark
+                        ? const Color(0xFF60A5FA)
+                        : const Color(0xFF2563EB),
+                    label: 'Edit',
+                    isDark: isDark,
+                    onTap: () async {
+                      Navigator.pop(ctx);
+                      await _editMessage(m);
+                    },
+                  ),
+                if (_c.canPinMessages && !m.isDeleted)
+                  _sheetAction(
+                    key: Key('${m.isPinned ? 'unpin' : 'pin'}_message_${m.id}'),
+                    icon: m.isPinned
+                        ? Icons.push_pin_outlined
+                        : Icons.push_pin,
+                    iconColor: isDark
+                        ? const Color(0xFFFBBF24)
+                        : const Color(0xFFB45309),
+                    label: m.isPinned ? 'Unpin' : 'Pin',
+                    isDark: isDark,
+                    onTap: () async {
+                      Navigator.pop(ctx);
+                      final ok = m.isPinned
+                          ? await _c.unpinMessage(m)
+                          : await _c.pinMessage(m);
+                      if (!mounted) return;
+                      if (!ok) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(_c.error ?? 'Could not update the pin.'),
+                            backgroundColor: AppColors.error,
+                          ),
+                        );
+                      }
+                    },
+                  ),
+                if (_c.canReportMessage(m))
+                  _sheetAction(
+                    key: Key('report_message_${m.id}'),
+                    icon: Icons.flag_outlined,
+                    iconColor: isDark
+                        ? const Color(0xFFFBBF24)
+                        : const Color(0xFFB45309),
+                    label: 'Report',
+                    isDark: isDark,
+                    onTap: () async {
+                      Navigator.pop(ctx);
+                      await _reportMessage(m);
+                    },
+                  ),
+                if (_c.canDeleteMessage(m) && !m.isDeleted)
                   _sheetAction(
                     key: const Key('delete_message_for_everyone'),
                     icon: Icons.delete_forever_rounded,
@@ -437,6 +614,110 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     }
   }
 
+  Future<void> _editMessage(GroupMessage m) async {
+    final controller = TextEditingController(text: m.body);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: const RoundedRectangleBorder(borderRadius: AppRadius.lgBorder),
+        title: const Text('Edit message'),
+        content: TextField(
+          key: const Key('edit_message_field'),
+          controller: controller,
+          autofocus: true,
+          minLines: 1,
+          maxLines: 4,
+          maxLength: GroupMessage.maxBodyLength,
+          decoration: const InputDecoration(hintText: 'Edit your message'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const Key('confirm_edit_message'),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+    final ok = await _c.editMessage(m, controller.text);
+    if (!mounted) return;
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_c.error ?? 'Could not edit message.'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+  }
+
+  static const _reportReasons = {
+    'spam': 'Spam',
+    'abuse': 'Abuse',
+    'off_topic': 'Off-topic',
+    'other': 'Other',
+  };
+
+  Future<void> _reportMessage(GroupMessage m) async {
+    var selected = 'spam';
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          shape: const RoundedRectangleBorder(borderRadius: AppRadius.lgBorder),
+          title: const Text('Report message'),
+          content: RadioGroup<String>(
+            groupValue: selected,
+            onChanged: (v) => setDialogState(() => selected = v!),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (final entry in _reportReasons.entries)
+                  RadioListTile<String>(
+                    key: Key('report_reason_${entry.key}'),
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(entry.value),
+                    value: entry.key,
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              key: const Key('confirm_report_message'),
+              style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+              onPressed: () => Navigator.of(ctx).pop(selected),
+              child: const Text('Report'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (reason == null || !mounted) return;
+    final ok = await _c.reportMessage(m, reason);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          ok ? 'Message reported.' : (_c.error ?? 'Could not report message.'),
+        ),
+        backgroundColor: ok ? null : AppColors.error,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -466,6 +747,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                 children: [
                   if (!_c.isRealtimeConnected) _reconnectingStrip(context, isDark),
                   _liveTestBanner(context, isDark),
+                  _pinnedBar(context, isDark),
                   Expanded(
                     child: Stack(
                       children: [
@@ -650,6 +932,95 @@ class _GroupChatScreenState extends State<GroupChatScreen>
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _pinnedBar(BuildContext context, bool isDark) {
+    final pinned = _c.pinnedMessages;
+    if (pinned.isEmpty) return const SizedBox.shrink();
+    final index = _pinnedBarIndex.clamp(0, pinned.length - 1);
+    final current = pinned[index];
+    final sender = current.senderId == null
+        ? 'System'
+        : (_senderOf(current)?.fullName ?? 'Member');
+
+    return Container(
+      key: const Key('discussion_pinned_bar'),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: (isDark ? const Color(0xFF1E293B) : Colors.white),
+        border: Border(
+          bottom: BorderSide(
+            color: isDark ? const Color(0xFF334155) : const Color(0xFFE5E9F2),
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.push_pin,
+            size: 16,
+            color: isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: InkWell(
+              key: const Key('discussion_pinned_bar_jump'),
+              onTap: () => _scrollToMessage(current.id),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    sender,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  Text(
+                    current.isDeleted
+                        ? 'This message was deleted'
+                        : current.body,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 12.5),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (pinned.length > 1)
+            IconButton(
+              key: const Key('discussion_pinned_bar_cycle'),
+              iconSize: 20,
+              constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+              icon: const Icon(Icons.expand_more_rounded),
+              tooltip: '${index + 1} of ${pinned.length} pinned',
+              onPressed: () => setState(
+                () => _pinnedBarIndex = (index + 1) % pinned.length,
+              ),
+            ),
+          if (_c.canPinMessages)
+            IconButton(
+              key: Key('discussion_unpin_${current.id}'),
+              iconSize: 18,
+              constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+              icon: const Icon(Icons.close_rounded),
+              tooltip: 'Unpin',
+              onPressed: () async {
+                final ok = await _c.unpinMessage(current);
+                if (!mounted || ok) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(_c.error ?? 'Could not unpin.'),
+                    backgroundColor: AppColors.error,
+                  ),
+                );
+              },
+            ),
+        ],
       ),
     );
   }
@@ -893,14 +1264,17 @@ class _GroupChatScreenState extends State<GroupChatScreen>
               ? _roleChangedRun(msgs, msgIndex)
               : null;
 
-          final bubbleWidget = ChatEntranceFade(
-            play: isFirstEverSeen,
-            child: _bubble(
-              context,
-              currentMsg,
-              isDark,
-              isConsecutive: isConsecutive,
-              mergedLines: mergedLines,
+          final bubbleWidget = KeyedSubtree(
+            key: _bubbleKeyFor(currentMsg.id),
+            child: ChatEntranceFade(
+              play: isFirstEverSeen,
+              child: _bubble(
+                context,
+                currentMsg,
+                isDark,
+                isConsecutive: isConsecutive,
+                mergedLines: mergedLines,
+              ),
             ),
           );
 
@@ -1222,7 +1596,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
           ],
           Flexible(
             child: GestureDetector(
-              onLongPress: () => _onMessageLongPress(m, mine),
+              onLongPress: () => _onMessageLongPress(m),
               onTap: isFailed ? () => _c.retryPendingMessage() : null,
               child: Container(
                 constraints: const BoxConstraints(maxWidth: 320),
@@ -1259,6 +1633,8 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    if (m.replyToId != null && !m.isDeleted)
+                      _replyQuotePreview(m, mine, isDark),
                     if (!mine && !isConsecutive) ...[
                       Row(
                         mainAxisSize: MainAxisSize.min,
@@ -1372,20 +1748,41 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                                 ),
                               ],
                             )
-                          : Text(
-                              _formatTime(m.createdAt),
-                              style: TextStyle(
-                                fontSize: 10.5,
-                                color: mine
-                                    ? (m.isDeleted
-                                          ? (isDark
-                                                ? const Color(0xFF94A3B8)
-                                                : const Color(0xFF64748B))
-                                          : const Color(0xB3FFFFFF))
-                                    : (isDark
-                                          ? const Color(0xFF64748B)
-                                          : const Color(0xFF9AA4B8)),
-                              ),
+                          : Row(
+                              key: Key('discussion_message_meta_${m.id}'),
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (m.isPinned)
+                                  Padding(
+                                    padding: const EdgeInsets.only(right: 4),
+                                    child: Icon(
+                                      Icons.push_pin,
+                                      size: 11,
+                                      color: mine
+                                          ? const Color(0xB3FFFFFF)
+                                          : (isDark
+                                                ? const Color(0xFF64748B)
+                                                : const Color(0xFF9AA4B8)),
+                                    ),
+                                  ),
+                                Text(
+                                  m.isEdited
+                                      ? '${_formatTime(m.createdAt)} · edited'
+                                      : _formatTime(m.createdAt),
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    color: mine
+                                        ? (m.isDeleted
+                                              ? (isDark
+                                                    ? const Color(0xFF94A3B8)
+                                                    : const Color(0xFF64748B))
+                                              : const Color(0xB3FFFFFF))
+                                        : (isDark
+                                              ? const Color(0xFF64748B)
+                                              : const Color(0xFF9AA4B8)),
+                                  ),
+                                ),
+                              ],
                             ),
                     ),
                   ],
@@ -1444,24 +1841,74 @@ class _GroupChatScreenState extends State<GroupChatScreen>
         ),
       );
     }
-    return Container(
-      padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF4F6FB),
-        border: Border(
-          top: BorderSide(
-            color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE5E9F2),
+    final replyingTo = _replyingTo;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (replyingTo != null)
+          Container(
+            key: const Key('discussion_reply_bar'),
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF4F6FB),
+              border: Border(
+                top: BorderSide(
+                  color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE5E9F2),
+                ),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.reply_rounded,
+                  size: 16,
+                  color: isDark ? const Color(0xFF93A4F0) : const Color(0xFF5B6CDB),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    replyingTo.isDeleted
+                        ? 'Replying to a deleted message'
+                        : 'Replying to: ${replyingTo.body}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 12.5),
+                  ),
+                ),
+                IconButton(
+                  key: const Key('discussion_cancel_reply'),
+                  iconSize: 18,
+                  constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                  icon: const Icon(Icons.close_rounded),
+                  tooltip: 'Cancel reply',
+                  onPressed: () => setState(() => _replyingTo = null),
+                ),
+              ],
+            ),
           ),
-        ),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          ChatComposerIconButton(
-            icon: Icons.add_rounded,
-            isDark: isDark,
-            onTap: () => _showAttachmentOptions(context),
+        Container(
+          padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF4F6FB),
+            border: Border(
+              top: replyingTo == null
+                  ? BorderSide(
+                      color: isDark
+                          ? const Color(0xFF1E293B)
+                          : const Color(0xFFE5E9F2),
+                    )
+                  : BorderSide.none,
+            ),
           ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              ChatComposerIconButton(
+                icon: Icons.add_rounded,
+                isDark: isDark,
+                onTap: () => _showAttachmentOptions(context),
+              ),
           const SizedBox(width: 6),
           Expanded(
             child: Container(
@@ -1510,16 +1957,18 @@ class _GroupChatScreenState extends State<GroupChatScreen>
               ),
             ),
           ),
-          const SizedBox(width: 8),
-          ChatSendButton(
-            key: const Key('discussion_send_button'),
-            enabled: !_c.sending,
-            highlighted: _canSend,
-            busy: _c.sending,
-            onPressed: _send,
+              const SizedBox(width: 8),
+              ChatSendButton(
+                key: const Key('discussion_send_button'),
+                enabled: !_c.sending,
+                highlighted: _canSend,
+                busy: _c.sending,
+                onPressed: _send,
+              ),
+            ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 

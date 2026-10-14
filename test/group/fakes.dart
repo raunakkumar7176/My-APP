@@ -1250,6 +1250,7 @@ class InMemoryGroupRepository implements GroupRepository {
     DateTime? at,
     String messageType = 'text',
     Map<String, dynamic> metadata = const {},
+    String? replyToId,
   }) {
     _messageSeq++;
     // Default clock: strictly after the group's newest message (the server's
@@ -1268,6 +1269,7 @@ class InMemoryGroupRepository implements GroupRepository {
       createdAt: at ?? newest.add(const Duration(minutes: 1)),
       messageType: messageType,
       metadata: metadata,
+      replyToId: replyToId,
     );
     groups[groupId]!.messages.add(m);
     return m;
@@ -1293,8 +1295,16 @@ class InMemoryGroupRepository implements GroupRepository {
   }
 
   @override
-  Future<void> sendMessage({required String groupId, required String body}) =>
-      insertMessageAs(groupId: groupId, senderId: currentUser, body: body);
+  Future<void> sendMessage({
+    required String groupId,
+    required String body,
+    String? replyToId,
+  }) => insertMessageAs(
+    groupId: groupId,
+    senderId: currentUser,
+    body: body,
+    replyToId: replyToId,
+  );
 
   /// The INSERT policy as the server evaluates it, with the row's
   /// `sender_id` explicit so tests can prove a forged sender is refused.
@@ -1303,6 +1313,7 @@ class InMemoryGroupRepository implements GroupRepository {
     required String groupId,
     required String senderId,
     required String body,
+    String? replyToId,
   }) async {
     calls.add('sendMessage:$groupId');
     _maybeFail();
@@ -1314,9 +1325,16 @@ class InMemoryGroupRepository implements GroupRepository {
     if (b.isEmpty || b.length > 2000) {
       throw const DataError(message: 'check constraint');
     }
-    seedMessage(groupId: groupId, senderId: senderId, body: b);
+    seedMessage(
+      groupId: groupId,
+      senderId: senderId,
+      body: b,
+      replyToId: replyToId,
+    );
   }
 
+  /// Mirrors fn_delete_group_message (0120): own message, or role
+  /// owner/admin for any message.
   @override
   Future<void> deleteMessage({
     required String groupId,
@@ -1327,7 +1345,86 @@ class InMemoryGroupRepository implements GroupRepository {
     final g = groups[groupId];
     if (g == null) throw _notAuthorized(GroupErrorContext.chat);
     final idx = g.messages.indexWhere((m) => m.id == messageId);
-    if (idx != -1) {
+    if (idx == -1) return;
+    final old = g.messages[idx];
+    final role = g.roles[currentUser];
+    if (old.senderId != currentUser && role != 'owner' && role != 'admin') {
+      throw _notAuthorized(GroupErrorContext.chat);
+    }
+    g.messages[idx] = old.copyWith(deletedAt: DateTime.now());
+  }
+
+  /// Mirrors fn_edit_group_message (0120): own message, within 15 minutes.
+  @override
+  Future<void> editMessage({
+    required String messageId,
+    required String body,
+  }) async {
+    calls.add('editMessage:$messageId');
+    _maybeFail();
+    for (final g in groups.values) {
+      final idx = g.messages.indexWhere((m) => m.id == messageId);
+      if (idx == -1) continue;
+      final old = g.messages[idx];
+      if (old.senderId != currentUser) {
+        throw _notAuthorized(GroupErrorContext.chat);
+      }
+      if (old.deletedAt != null) {
+        throw const DataError(message: 'MESSAGE_DELETED');
+      }
+      if (DateTime.now().difference(old.createdAt) >=
+          const Duration(minutes: 15)) {
+        throw const DataError(message: 'EDIT_WINDOW_EXPIRED');
+      }
+      final b = body.trim();
+      if (b.isEmpty || b.length > 4000) {
+        throw const DataError(message: 'check constraint');
+      }
+      g.messages[idx] = old.copyWith(body: b, editedAt: DateTime.now());
+      return;
+    }
+    throw const DataError(message: 'MESSAGE_NOT_FOUND');
+  }
+
+  /// Mirrors fn_pin_group_message (0120): admin/owner only, max 3 per group.
+  @override
+  Future<void> pinMessage({required String messageId}) async {
+    calls.add('pinMessage:$messageId');
+    _maybeFail();
+    for (final g in groups.values) {
+      final idx = g.messages.indexWhere((m) => m.id == messageId);
+      if (idx == -1) continue;
+      final role = g.roles[currentUser];
+      if (role != 'owner' && role != 'admin') {
+        throw _notAuthorized(GroupErrorContext.chat);
+      }
+      final old = g.messages[idx];
+      if (old.pinnedAt != null) return;
+      final pinnedCount = g.messages.where((m) => m.pinnedAt != null).length;
+      if (pinnedCount >= 3) {
+        throw const DataError(message: 'PIN_LIMIT_REACHED');
+      }
+      g.messages[idx] = old.copyWith(
+        pinnedAt: DateTime.now(),
+        pinnedBy: currentUser,
+      );
+      return;
+    }
+    throw const DataError(message: 'MESSAGE_NOT_FOUND');
+  }
+
+  /// Mirrors fn_unpin_group_message (0120): admin/owner only.
+  @override
+  Future<void> unpinMessage({required String messageId}) async {
+    calls.add('unpinMessage:$messageId');
+    _maybeFail();
+    for (final g in groups.values) {
+      final idx = g.messages.indexWhere((m) => m.id == messageId);
+      if (idx == -1) continue;
+      final role = g.roles[currentUser];
+      if (role != 'owner' && role != 'admin') {
+        throw _notAuthorized(GroupErrorContext.chat);
+      }
       final old = g.messages[idx];
       g.messages[idx] = GroupMessage(
         id: old.id,
@@ -1336,9 +1433,70 @@ class InMemoryGroupRepository implements GroupRepository {
         body: old.body,
         createdAt: old.createdAt,
         messageType: old.messageType,
-        deletedAt: DateTime.now(),
+        deletedAt: old.deletedAt,
+        deletedBy: old.deletedBy,
+        metadata: old.metadata,
+        replyToId: old.replyToId,
+        editedAt: old.editedAt,
       );
+      return;
     }
+    throw const DataError(message: 'MESSAGE_NOT_FOUND');
+  }
+
+  final List<Map<String, String?>> messageReports = [];
+
+  /// Mirrors fn_report_group_message (0120): active member, one report
+  /// per caller per message (repeat is a silent no-op, not an error).
+  @override
+  Future<void> reportMessage({
+    required String messageId,
+    required String reason,
+    String? details,
+  }) async {
+    calls.add('reportMessage:$messageId:$reason');
+    _maybeFail();
+    for (final g in groups.values) {
+      final idx = g.messages.indexWhere((m) => m.id == messageId);
+      if (idx == -1) continue;
+      if (!_isMemberOf(g.id)) {
+        throw _notAuthorized(GroupErrorContext.chat);
+      }
+      final already = messageReports.any(
+        (r) => r['message_id'] == messageId && r['reporter_id'] == currentUser,
+      );
+      if (!already) {
+        messageReports.add({
+          'message_id': messageId,
+          'reporter_id': currentUser,
+          'reason': reason,
+          'details': details,
+        });
+      }
+      return;
+    }
+    throw const DataError(message: 'MESSAGE_NOT_FOUND');
+  }
+
+  @override
+  Future<List<GroupMessage>> pinnedMessages(String groupId) async {
+    calls.add('pinnedMessages:$groupId');
+    if (!_isMemberOf(groupId)) return const [];
+    final g = groups[groupId];
+    if (g == null) return const [];
+    final pinned = g.messages.where((m) => m.pinnedAt != null).toList()
+      ..sort((a, b) => b.pinnedAt!.compareTo(a.pinnedAt!));
+    return pinned.take(3).toList(growable: false);
+  }
+
+  @override
+  Future<GroupMessage?> messageById(String messageId) async {
+    calls.add('messageById:$messageId');
+    for (final g in groups.values) {
+      final m = g.messages.where((m) => m.id == messageId).firstOrNull;
+      if (m != null) return _isMemberOf(g.id) ? m : null;
+    }
+    return null;
   }
 
   // ── Realtime (fake): tests drive events manually via the simulate*

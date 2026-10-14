@@ -339,17 +339,52 @@ abstract interface class GroupRepository {
     DateTime? before,
   });
 
-  /// Inserts `{group_id, sender_id = auth.uid(), body}`. RLS "member sends
-  /// messages": `sender_id = auth.uid() AND fn_is_member(group_id, uid)` —
-  /// the server rejects any other sender and any group the caller is not in.
-  Future<void> sendMessage({required String groupId, required String body});
+  /// Inserts `{group_id, sender_id = auth.uid(), body, reply_to_id}`. RLS
+  /// "member sends messages": `sender_id = auth.uid() AND
+  /// fn_is_active_member(group_id, uid)` (plus the admin-only-chat gate,
+  /// 0110) — the server rejects any other sender and any group the caller
+  /// is not in. [replyToId] is optional (Phase 3A, 0120 schema from 0062).
+  Future<void> sendMessage({
+    required String groupId,
+    required String body,
+    String? replyToId,
+  });
 
-  /// Soft-deletes a message via `fn_delete_group_message` (from 0025).
-  /// Verifies membership and author/moderation permissions server-side.
+  /// Soft-deletes a message via `fn_delete_group_message` (0120: own
+  /// message, or role owner/admin for any message). Server-side only.
   Future<void> deleteMessage({
     required String groupId,
     required String messageId,
   });
+
+  /// Edits the body of the caller's own message, server-enforced to within
+  /// 15 minutes of send (`fn_edit_group_message`, 0120).
+  Future<void> editMessage({required String messageId, required String body});
+
+  /// Pins a message (admin/owner only, max 3 per group — server-enforced,
+  /// `fn_pin_group_message`, 0120).
+  Future<void> pinMessage({required String messageId});
+
+  /// Unpins a message (admin/owner only, `fn_unpin_group_message`, 0120).
+  Future<void> unpinMessage({required String messageId});
+
+  /// Reports a message for [reason] (`'spam'|'abuse'|'off_topic'|'other'`).
+  /// One report per caller per message — a repeat call is a no-op server-
+  /// side (`fn_report_group_message`, 0120).
+  Future<void> reportMessage({
+    required String messageId,
+    required String reason,
+    String? details,
+  });
+
+  /// Up to 3 currently-pinned, non-deleted messages for [groupId], newest
+  /// pin first — independent of the paginated chat window (0120).
+  Future<List<GroupMessage>> pinnedMessages(String groupId);
+
+  /// A single message by id, for resolving a reply preview whose parent
+  /// has scrolled out of the loaded page. Returns null if the row is gone
+  /// or the caller can no longer see it (RLS).
+  Future<GroupMessage?> messageById(String messageId);
 
   /// Subscribes to live INSERT/UPDATE events on `group_messages` for
   /// [groupId] via the existing Supabase Realtime publication (already
@@ -1210,7 +1245,8 @@ class SupabaseGroupRepository implements GroupRepository {
   /// post-dates both) — selected so the client can render test-announcement
   /// cards and style system/announcement rows distinctly from ordinary text.
   static const _messageColumns =
-      'id, group_id, sender_id, body, created_at, deleted_at, message_type, metadata';
+      'id, group_id, sender_id, body, created_at, deleted_at, deleted_by, '
+      'message_type, metadata, reply_to_id, edited_at, pinned_at, pinned_by';
 
   @override
   Future<List<GroupMessage>> messages(
@@ -1237,18 +1273,22 @@ class SupabaseGroupRepository implements GroupRepository {
   });
 
   @override
-  Future<void> sendMessage({required String groupId, required String body}) =>
-      _guard(GroupErrorContext.chat, () async {
-        final uid = _uid;
-        if (uid == null) {
-          throw const AuthError(message: 'Please sign in again.');
-        }
-        await _client.from('group_messages').insert({
-          'group_id': groupId,
-          'sender_id': uid, // must equal auth.uid() or the policy rejects it
-          'body': body.trim(),
-        });
-      });
+  Future<void> sendMessage({
+    required String groupId,
+    required String body,
+    String? replyToId,
+  }) => _guard(GroupErrorContext.chat, () async {
+    final uid = _uid;
+    if (uid == null) {
+      throw const AuthError(message: 'Please sign in again.');
+    }
+    await _client.from('group_messages').insert({
+      'group_id': groupId,
+      'sender_id': uid, // must equal auth.uid() or the policy rejects it
+      'body': body.trim(),
+      if (replyToId != null) 'reply_to_id': replyToId,
+    });
+  });
 
   @override
   Future<void> deleteMessage({
@@ -1264,6 +1304,78 @@ class SupabaseGroupRepository implements GroupRepository {
       params: {'p_message_id': messageId},
     );
   });
+
+  @override
+  Future<void> editMessage({
+    required String messageId,
+    required String body,
+  }) => _guard(GroupErrorContext.chat, () async {
+    await _client.rpc(
+      'fn_edit_group_message',
+      params: {'p_message_id': messageId, 'p_body': body.trim()},
+    );
+  });
+
+  @override
+  Future<void> pinMessage({required String messageId}) =>
+      _guard(GroupErrorContext.chat, () async {
+        await _client.rpc(
+          'fn_pin_group_message',
+          params: {'p_message_id': messageId},
+        );
+      });
+
+  @override
+  Future<void> unpinMessage({required String messageId}) =>
+      _guard(GroupErrorContext.chat, () async {
+        await _client.rpc(
+          'fn_unpin_group_message',
+          params: {'p_message_id': messageId},
+        );
+      });
+
+  @override
+  Future<void> reportMessage({
+    required String messageId,
+    required String reason,
+    String? details,
+  }) => _guard(GroupErrorContext.chat, () async {
+    await _client.rpc(
+      'fn_report_group_message',
+      params: {
+        'p_message_id': messageId,
+        'p_reason': reason,
+        'p_details': details,
+      },
+    );
+  });
+
+  @override
+  Future<List<GroupMessage>> pinnedMessages(String groupId) =>
+      _guard(GroupErrorContext.load, () async {
+        final rows = await _client
+            .from('group_messages')
+            .select(_messageColumns)
+            .eq('group_id', groupId)
+            .not('pinned_at', 'is', null)
+            .order('pinned_at', ascending: false)
+            .limit(3);
+        return [
+          for (final r in rows as List)
+            GroupMessage.fromJson(r as Map<String, dynamic>),
+        ];
+      });
+
+  @override
+  Future<GroupMessage?> messageById(String messageId) =>
+      _guard(GroupErrorContext.load, () async {
+        final row = await _client
+            .from('group_messages')
+            .select(_messageColumns)
+            .eq('id', messageId)
+            .maybeSingle();
+        return row == null ? null : GroupMessage.fromJson(row);
+      });
 
   @override
   GroupMessageSubscription subscribeToMessages({

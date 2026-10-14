@@ -1,11 +1,9 @@
-/// One row of `public.group_messages` — only the base columns the migration
-/// set has carried since 0001_init:
-/// `id, group_id, sender_id, body, created_at`.
-/// Later optional columns (message_type, metadata) are never selected, so the
-/// client stays correct whether or not they exist live. `sender_id` is nullable
-/// live (0047 dropped NOT NULL so system notices such as "History Cleared" can
-/// be inserted without an actor). `deleted_at` is selected so the client can
-/// show a truthful "Message deleted" placeholder instead of the original body.
+/// One row of `public.group_messages`. Base columns since 0001_init:
+/// `id, group_id, sender_id, body, created_at`. `sender_id` is nullable live
+/// (0047 dropped NOT NULL so system notices such as "History Cleared" can be
+/// inserted without an actor). `deleted_at`/`deleted_by` let the client show a
+/// truthful "Message deleted" placeholder. `reply_to_id`/`edited_at` (0062)
+/// and `pinned_at`/`pinned_by` (0120) back reply/edit/pin (Phase 3A).
 final class GroupMessage {
   const GroupMessage({
     required this.id,
@@ -15,7 +13,12 @@ final class GroupMessage {
     required this.createdAt,
     this.messageType = 'text',
     this.deletedAt,
+    this.deletedBy,
     this.metadata = const {},
+    this.replyToId,
+    this.editedAt,
+    this.pinnedAt,
+    this.pinnedBy,
   });
 
   /// Live CHECK: `char_length(body) BETWEEN 1 AND 2000`.
@@ -47,6 +50,22 @@ final class GroupMessage {
   /// content.
   final DateTime? deletedAt;
 
+  /// Who deleted it (own-message delete or admin/owner delete-any, 0120).
+  final String? deletedBy;
+
+  /// The message this one is replying to, if any (`reply_to_id`, 0062).
+  /// `ON DELETE SET NULL` server-side, so a reply whose parent was later
+  /// deleted simply has this become null — the client never assumes the
+  /// parent still exists just because this was once set.
+  final String? replyToId;
+
+  /// Set when the body was edited via `fn_edit_group_message` (0120).
+  final DateTime? editedAt;
+
+  /// Non-null while pinned (admin/owner only, max 3 per group, 0120).
+  final DateTime? pinnedAt;
+  final String? pinnedBy;
+
   bool get isSystem =>
       senderId == null ||
       messageType == 'system_event' ||
@@ -55,6 +74,9 @@ final class GroupMessage {
   bool get isAnnouncement => messageType == 'announcement';
   bool get isTestAnnouncement => messageType == 'test';
   bool get isDeleted => deletedAt != null;
+  bool get isEdited => editedAt != null;
+  bool get isPinned => pinnedAt != null;
+  bool get isReply => replyToId != null;
 
   factory GroupMessage.fromJson(Map<String, dynamic> json) {
     return GroupMessage(
@@ -67,7 +89,16 @@ final class GroupMessage {
       deletedAt: json['deleted_at'] == null
           ? null
           : DateTime.parse(json['deleted_at'] as String).toLocal(),
+      deletedBy: json['deleted_by'] as String?,
       metadata: (json['metadata'] as Map<String, dynamic>?) ?? const {},
+      replyToId: json['reply_to_id'] as String?,
+      editedAt: json['edited_at'] == null
+          ? null
+          : DateTime.parse(json['edited_at'] as String).toLocal(),
+      pinnedAt: json['pinned_at'] == null
+          ? null
+          : DateTime.parse(json['pinned_at'] as String).toLocal(),
+      pinnedBy: json['pinned_by'] as String?,
     );
   }
 
@@ -79,8 +110,40 @@ final class GroupMessage {
     'message_type': messageType,
     'created_at': createdAt.toUtc().toIso8601String(),
     if (deletedAt != null) 'deleted_at': deletedAt!.toUtc().toIso8601String(),
+    if (deletedBy != null) 'deleted_by': deletedBy,
     if (metadata.isNotEmpty) 'metadata': metadata,
+    if (replyToId != null) 'reply_to_id': replyToId,
+    if (editedAt != null) 'edited_at': editedAt!.toUtc().toIso8601String(),
+    if (pinnedAt != null) 'pinned_at': pinnedAt!.toUtc().toIso8601String(),
+    if (pinnedBy != null) 'pinned_by': pinnedBy,
   };
+
+  /// `null` for a nullable field means "keep the current value" — pass the
+  /// `Value`-wrapper-free sentinel pattern isn't worth it here since every
+  /// call site clearing a field (unpin, parent-deleted) does so by copying
+  /// the whole object fresh rather than via this helper.
+  GroupMessage copyWith({
+    String? body,
+    DateTime? deletedAt,
+    String? deletedBy,
+    DateTime? editedAt,
+    DateTime? pinnedAt,
+    String? pinnedBy,
+  }) => GroupMessage(
+    id: id,
+    groupId: groupId,
+    senderId: senderId,
+    body: body ?? this.body,
+    createdAt: createdAt,
+    messageType: messageType,
+    deletedAt: deletedAt ?? this.deletedAt,
+    deletedBy: deletedBy ?? this.deletedBy,
+    metadata: metadata,
+    replyToId: replyToId,
+    editedAt: editedAt ?? this.editedAt,
+    pinnedAt: pinnedAt ?? this.pinnedAt,
+    pinnedBy: pinnedBy ?? this.pinnedBy,
+  );
 
   @override
   bool operator ==(Object other) =>
