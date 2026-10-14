@@ -515,6 +515,198 @@ void main() {
       c.dispose();
     });
   });
+
+  group('Phase 3A finish-up — report moderation (0120)', () {
+    InMemoryGroupRepository repoWith({
+      Map<String, String> members = const {},
+      String user = 'u-me',
+    }) => InMemoryGroupRepository(currentUser: user)
+      ..seed(id: 'g-1', ownerId: 'u-owner', members: members);
+
+    group('controller', () {
+      test('canModerateReports: owner/admin only', () async {
+        final memberRepo = repoWith(members: {'u-me': 'member'});
+        final memberC = _hub(memberRepo);
+        await memberC.load();
+        expect(memberC.canModerateReports, isFalse);
+
+        final adminRepo = repoWith(members: {'u-me': 'admin'});
+        final adminC = _hub(adminRepo);
+        await adminC.load();
+        expect(adminC.canModerateReports, isTrue);
+
+        final ownerRepo = repoWith(user: 'u-owner');
+        final ownerC = _hub(ownerRepo, user: 'u-owner');
+        await ownerC.load();
+        expect(ownerC.canModerateReports, isTrue);
+      });
+
+      test('a plain member never loads reports; admin does', () async {
+        final repo = repoWith(members: {'u-me': 'member', 'u-reporter': 'member'});
+        final msg = repo.seedMessage(groupId: 'g-1', senderId: 'u-owner', body: 'reportable');
+        repo.currentUser = 'u-reporter';
+        await repo.reportMessage(messageId: msg.id, reason: 'spam');
+
+        repo.currentUser = 'u-me';
+        final memberC = _hub(repo);
+        await memberC.load();
+        expect(memberC.messageReports, isEmpty);
+        expect(memberC.pendingReportCount, 0);
+        expect(repo.calls.any((x) => x.startsWith('messageReports')), isFalse);
+
+        final adminRepo = repoWith(members: {'u-me': 'admin', 'u-reporter': 'member'});
+        final msg2 = adminRepo.seedMessage(groupId: 'g-1', senderId: 'u-owner', body: 'reportable 2');
+        adminRepo.currentUser = 'u-reporter';
+        await adminRepo.reportMessage(messageId: msg2.id, reason: 'abuse');
+        adminRepo.currentUser = 'u-me';
+        final adminC = _hub(adminRepo);
+        await adminC.load();
+        expect(adminC.pendingReportCount, 1);
+        expect(adminC.messageReports.single.messageId, msg2.id);
+        expect(adminC.messageReports.single.topReason, 'abuse');
+      });
+
+      test('dismissReports clears the report and removes it from the list', () async {
+        final repo = repoWith(members: {'u-admin': 'admin', 'u-reporter': 'member'});
+        final msg = repo.seedMessage(groupId: 'g-1', senderId: 'u-owner', body: 'reportable');
+        repo.currentUser = 'u-reporter';
+        await repo.reportMessage(messageId: msg.id, reason: 'spam');
+        repo.currentUser = 'u-admin';
+        final c = _hub(repo, user: 'u-admin');
+        await c.load();
+        expect(c.pendingReportCount, 1);
+
+        expect(await c.dismissReports(c.messageReports.single), isTrue);
+        expect(c.messageReports, isEmpty);
+        expect(repo.rawMessageReports, isEmpty);
+      });
+
+      test('deleteReportedMessage deletes the message and dismisses its reports', () async {
+        final repo = repoWith(members: {'u-admin': 'admin', 'u-reporter': 'member'});
+        final msg = repo.seedMessage(groupId: 'g-1', senderId: 'u-owner', body: 'reportable');
+        repo.currentUser = 'u-reporter';
+        await repo.reportMessage(messageId: msg.id, reason: 'spam');
+        repo.currentUser = 'u-admin';
+        final c = _hub(repo, user: 'u-admin');
+        await c.load();
+
+        expect(await c.deleteReportedMessage(c.messageReports.single), isTrue);
+        expect(c.messageReports, isEmpty);
+        expect(
+          repo.groups['g-1']!.messages.firstWhere((m) => m.id == msg.id).isDeleted,
+          isTrue,
+        );
+      });
+    });
+
+    group('widget', () {
+      Future<GroupHubController> pumpSettings(
+        WidgetTester tester,
+        InMemoryGroupRepository repo, {
+        String user = 'u-me',
+      }) async {
+        _tallView(tester);
+        final c = _hub(repo, user: user);
+        await tester.pumpWidget(
+          MaterialApp(home: GroupSettingsScreen(groupId: 'g-1', controller: c)),
+        );
+        await tester.pumpAndSettle();
+        return c;
+      }
+
+      testWidgets('member never sees the reports card', (tester) async {
+        final repo = repoWith(members: {'u-me': 'member'});
+        final c = await pumpSettings(tester, repo);
+        expect(find.byKey(const Key('settings_reports_card')), findsNothing);
+        await tester.pumpWidget(const SizedBox());
+        c.dispose();
+      });
+
+      testWidgets('admin sees the empty state when there are no reports', (
+        tester,
+      ) async {
+        final repo = repoWith(members: {'u-me': 'admin'});
+        final c = await pumpSettings(tester, repo);
+        expect(find.byKey(const Key('settings_reports_card')), findsOneWidget);
+        expect(find.byKey(const Key('reports_empty')), findsOneWidget);
+        expect(find.byKey(const Key('reports_pending_badge')), findsNothing);
+        await tester.pumpWidget(const SizedBox());
+        c.dispose();
+      });
+
+      testWidgets(
+        'admin sees a grouped report tile; Dismiss removes it',
+        (tester) async {
+          final repo = repoWith(members: {'u-me': 'admin', 'u-reporter': 'member'});
+          final msg = repo.seedMessage(groupId: 'g-1', senderId: 'u-owner', body: 'be nice');
+          repo.currentUser = 'u-reporter';
+          await repo.reportMessage(messageId: msg.id, reason: 'spam');
+          repo.currentUser = 'u-me';
+
+          final c = await pumpSettings(tester, repo);
+          expect(find.byKey(const Key('reports_pending_badge')), findsOneWidget);
+          expect(find.text('be nice'), findsOneWidget);
+          expect(find.textContaining('Spam'), findsOneWidget);
+
+          await tester.tap(find.byKey(Key('dismiss_reports_${msg.id}')));
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(Key('confirm_dismiss_${msg.id}')));
+          await tester.pumpAndSettle();
+
+          expect(find.byKey(const Key('reports_empty')), findsOneWidget);
+          expect(c.pendingReportCount, 0);
+          await tester.pumpWidget(const SizedBox());
+          c.dispose();
+        },
+      );
+
+      testWidgets(
+        'Delete message removes the message and clears the report tile',
+        (tester) async {
+          final repo = repoWith(members: {'u-me': 'admin', 'u-reporter': 'member'});
+          final msg = repo.seedMessage(groupId: 'g-1', senderId: 'u-owner', body: 'spam content');
+          repo.currentUser = 'u-reporter';
+          await repo.reportMessage(messageId: msg.id, reason: 'spam');
+          repo.currentUser = 'u-me';
+
+          await pumpSettings(tester, repo);
+          await tester.tap(find.byKey(Key('delete_reported_message_${msg.id}')));
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(Key('confirm_delete_reported_${msg.id}')));
+          await tester.pumpAndSettle();
+
+          expect(find.byKey(const Key('reports_empty')), findsOneWidget);
+          expect(
+            repo.groups['g-1']!.messages.firstWhere((m) => m.id == msg.id).isDeleted,
+            isTrue,
+          );
+          await tester.pumpWidget(const SizedBox());
+        },
+      );
+
+      testWidgets(
+        'Remove member removes the sender from the group',
+        (tester) async {
+          final repo = repoWith(
+            members: {'u-me': 'admin', 'u-sender': 'member', 'u-reporter': 'member'},
+          );
+          final msg = repo.seedMessage(groupId: 'g-1', senderId: 'u-sender', body: 'offensive');
+          repo.currentUser = 'u-reporter';
+          await repo.reportMessage(messageId: msg.id, reason: 'abuse');
+          repo.currentUser = 'u-me';
+
+          await pumpSettings(tester, repo);
+          await tester.tap(find.byKey(Key('remove_reported_member_${msg.id}')));
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(Key('confirm_remove_reported_${msg.id}')));
+          await tester.pumpAndSettle();
+
+          expect(repo.groups['g-1']!.roles.containsKey('u-sender'), isFalse);
+          await tester.pumpWidget(const SizedBox());
+        },
+      );
+    });
+  });
 }
 
 class _SlowUpdateRepository extends InMemoryGroupRepository {

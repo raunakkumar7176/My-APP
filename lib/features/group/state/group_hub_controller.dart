@@ -10,6 +10,7 @@ import '../../../core/models/group_join_request.dart';
 import '../../../core/models/group_member.dart';
 import '../../../core/models/group_message.dart';
 import '../../../core/models/group_rule.dart';
+import '../../../core/models/message_report_group.dart';
 import '../../../core/models/test.dart';
 import '../../../core/services/auth_service.dart';
 import '../../../core/services/push_notification_service.dart';
@@ -217,17 +218,45 @@ class GroupHubController extends DisposableNotifier {
     notifyListeners();
   }
 
-  /// Applies a realtime UPDATE (currently only soft-delete sets
-  /// `deleted_at`) to the matching loaded message, in place.
+  /// Applies a realtime UPDATE — soft-delete (`deleted_at`), edit
+  /// (`body`/`edited_at`), or pin/unpin (`pinned_at`/`pinned_by`) — to the
+  /// matching loaded message, in place. `group_messages` has `REPLICA
+  /// IDENTITY FULL` (0037/0062), so the payload always carries every
+  /// column regardless of what any query `.select()`s.
   void _onRealtimeUpdate(GroupMessage message) {
     if (message.groupId != groupId) return;
     final idx = _messages.indexWhere((m) => m.id == message.id);
-    if (idx == -1) return; // not in the currently-loaded window; ignore
-    _messages = [
-      for (var i = 0; i < _messages.length; i++)
-        if (i == idx) message else _messages[i],
-    ];
-    notifyListeners();
+    if (idx != -1) {
+      _messages = [
+        for (var i = 0; i < _messages.length; i++)
+          if (i == idx) message else _messages[i],
+      ];
+    }
+    _syncPinnedFromRealtime(message);
+    if (idx != -1) notifyListeners();
+  }
+
+  /// Keeps [_pinnedMessages] in sync with a pin/unpin made by ANOTHER
+  /// client, without a round-trip: derived from the same realtime row
+  /// that just updated [_messages].
+  void _syncPinnedFromRealtime(GroupMessage message) {
+    final pinnedIdx = _pinnedMessages.indexWhere((m) => m.id == message.id);
+    if (message.pinnedAt != null) {
+      final updated = [
+        for (final m in _pinnedMessages)
+          if (m.id == message.id) message else m,
+      ];
+      if (pinnedIdx == -1) updated.add(message);
+      updated.sort((a, b) => b.pinnedAt!.compareTo(a.pinnedAt!));
+      _pinnedMessages = updated;
+      notifyListeners();
+    } else if (pinnedIdx != -1) {
+      _pinnedMessages = [
+        for (final m in _pinnedMessages)
+          if (m.id != message.id) m,
+      ];
+      notifyListeners();
+    }
   }
 
   Future<void> _unsubscribeRealtime() async {
@@ -691,6 +720,8 @@ class GroupHubController extends DisposableNotifier {
         await _loadMessages();
         // Pinned bar: up to 3 pinned messages, independent of the window.
         await _loadPinnedMessages();
+        // Report moderation (Settings): admin/owner only, no-op otherwise.
+        await _loadMessageReports();
         // G16: unread badge (own `notifications` rows; one count request).
         await _loadUnreadNotifications();
         // Overview: upcoming-test preview + recent (own) activity — both
@@ -1490,6 +1521,52 @@ class GroupHubController extends DisposableNotifier {
     }
   }
 
+  /// Loads a window around [messageId] if it isn't already in [messages]
+  /// (reply-tap, pinned-bar tap, Doubts section jump — Phase 3A/3B).
+  /// Replaces the loaded window with one ending just after the target, so
+  /// it's visible in context; the caller then scrolls it into view once
+  /// built. Returns true once the message is present either way.
+  Future<bool> jumpToMessage(String messageId) async {
+    if (_messages.any((m) => m.id == messageId)) return true;
+    if (_messagesLoading) return false;
+    GroupMessage? target;
+    try {
+      target = await _repo.messageById(messageId);
+    } catch (e) {
+      AppLogger.warning('jumpToMessage lookup failed: $e');
+      return false;
+    }
+    if (target == null) return false;
+
+    _messagesLoading = true;
+    notifyListeners();
+    try {
+      final page = await _repo.messages(
+        groupId,
+        before: target.createdAt.add(const Duration(milliseconds: 1)),
+      );
+      final known = <String>{};
+      final merged = <GroupMessage>[];
+      for (final m in page.reversed) {
+        if (known.add(m.id)) merged.add(m);
+      }
+      if (known.add(target.id)) merged.add(target);
+      merged.sort((a, b) {
+        final byTime = a.createdAt.compareTo(b.createdAt);
+        return byTime != 0 ? byTime : a.id.compareTo(b.id);
+      });
+      _messages = merged;
+      _hasOlder = page.length >= messagePageSize;
+      return true;
+    } catch (e, st) {
+      AppLogger.error('jumpToMessage load failed: $e', stackTrace: st);
+      return false;
+    } finally {
+      _messagesLoading = false;
+      notifyListeners();
+    }
+  }
+
   /// Client mirror of the live CHECK (`char_length(body) BETWEEN 1 AND
   /// 2000` after trim). Returns the message to show, or null.
   static String? validateMessage(String body) {
@@ -1741,6 +1818,72 @@ class GroupHubController extends DisposableNotifier {
       AppLogger.warning('Pinned messages reload failed: $e');
     }
     notifyListeners();
+  }
+
+  /// UI reflection of "admins view/dismiss message reports" (0120):
+  /// admin/owner only.
+  bool get canModerateReports => isOwner || myRole.isAdmin;
+
+  List<MessageReportGroup> _messageReports = const [];
+
+  /// Reported messages, newest-first. Empty for anyone who isn't
+  /// admin/owner — the server returns nothing rather than erroring, so
+  /// this list is simply never loaded for a plain member.
+  List<MessageReportGroup> get messageReports => _messageReports;
+
+  /// For the Settings entry's badge — count of distinct reported
+  /// messages, not total report rows.
+  int get pendingReportCount => _messageReports.length;
+
+  Future<void> _loadMessageReports() async {
+    if (!canModerateReports) return;
+    try {
+      _messageReports = await _repo.messageReports(groupId);
+    } catch (e) {
+      AppLogger.warning('Message reports reload failed: $e');
+    }
+    notifyListeners();
+  }
+
+  /// Clears every report row for this message ("Dismiss"). Admin/owner
+  /// only — server-enforced (0120); this is UI reflection only.
+  Future<bool> dismissReports(MessageReportGroup report) async {
+    if (_busy) return false;
+    try {
+      await _repo.dismissReports(messageId: report.messageId);
+      _messageReports = [
+        for (final r in _messageReports)
+          if (r.messageId != report.messageId) r,
+      ];
+      notifyListeners();
+      return true;
+    } on AppError catch (e) {
+      _error = e.message;
+      notifyListeners();
+      return false;
+    } catch (e, st) {
+      AppLogger.error('Dismiss reports failed: $e', stackTrace: st);
+      _error = GroupErrors.map(e.toString(), context: GroupErrorContext.chat);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// "Delete message" from the reports list — same RPC and the same
+  /// own-OR-admin/owner rule [deleteMessage] already uses elsewhere; the
+  /// reported message's own report rows are also dismissed, since there's
+  /// nothing left to moderate once the content is gone.
+  Future<bool> deleteReportedMessage(MessageReportGroup report) async {
+    final fakeMessage = GroupMessage(
+      id: report.messageId,
+      groupId: report.groupId,
+      senderId: report.messageSenderId,
+      body: report.messageBody ?? '',
+      createdAt: report.latestReportAt,
+    );
+    final ok = await deleteMessage(fakeMessage);
+    if (ok) await dismissReports(report);
+    return ok;
   }
 
   /// `message_id -> resolved parent` cache for reply previews whose parent

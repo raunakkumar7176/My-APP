@@ -18,6 +18,7 @@ import '../widgets/group_rules_section.dart';
 import '../widgets/settings_danger_zone.dart';
 import '../widgets/settings_invite_card.dart';
 import '../widgets/settings_permissions_card.dart';
+import '../widgets/settings_reports_card.dart';
 import '../widgets/settings_requests_card.dart';
 
 /// Full group settings: profile/logo, privacy, invite (code/share/QR/
@@ -696,6 +697,15 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
                       icon: Icons.how_to_reg_outlined,
                       iconColor: const Color(0xFF2563EB),
                       child: SettingsRequestsCard(controller: _c),
+                    ),
+                  ],
+                  if (_c.canModerateReports) ...[
+                    const SizedBox(height: 16),
+                    _sectionCard(
+                      isDark: isDark,
+                      icon: Icons.flag_outlined,
+                      iconColor: AppColors.error,
+                      child: SettingsReportsCard(controller: _c),
                     ),
                   ],
                   const SizedBox(height: 16),

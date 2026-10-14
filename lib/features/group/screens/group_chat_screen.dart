@@ -78,13 +78,32 @@ class _GroupChatScreenState extends State<GroupChatScreen>
   GlobalKey _bubbleKeyFor(String id) =>
       _bubbleKeys.putIfAbsent(id, () => GlobalKey());
 
-  void _scrollToMessage(String id) {
+  /// Jumps to message [id]: if it's already in the loaded window, scrolls
+  /// straight to it; otherwise loads a window around it first (0121),
+  /// waits a frame for `ListView.builder` to actually build that item,
+  /// then scrolls. A couple of retries cover the case where the first
+  /// post-frame callback lands before layout has settled.
+  Future<void> _scrollToMessage(String id) async {
+    if (_bubbleKeys[id]?.currentContext == null) {
+      final loaded = await _c.jumpToMessage(id);
+      if (!mounted) return;
+      if (!loaded) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('That message could not be found.')),
+        );
+        return;
+      }
+      for (var attempt = 0; attempt < 3; attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        if (!mounted) return;
+        if (_bubbleKeys[id]?.currentContext != null) break;
+      }
+    }
     final ctx = _bubbleKeys[id]?.currentContext;
     if (ctx == null) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Scroll up to find that message.'),
-        ),
+        const SnackBar(content: Text('Scroll to find that message.')),
       );
       return;
     }

@@ -182,6 +182,97 @@ void main() {
       expect(c.messages.length, before);
       c.dispose();
     });
+
+    test('an UPDATE with an edited body + edited_at is applied in place (Phase 3A)', () async {
+      final repo = _repo();
+      final c = _hub(repo);
+      await c.load();
+      final original = c.messages.first;
+      final editedAt = DateTime(2026, 1, 1, 11, 0);
+
+      repo.simulateRealtimeUpdate(
+        'g-1',
+        GroupMessage(
+          id: original.id,
+          groupId: original.groupId,
+          senderId: original.senderId,
+          body: 'edited elsewhere',
+          createdAt: original.createdAt,
+          editedAt: editedAt,
+        ),
+      );
+
+      final updated = c.messages.firstWhere((m) => m.id == original.id);
+      expect(updated.body, 'edited elsewhere');
+      expect(updated.editedAt, editedAt);
+      c.dispose();
+    });
+
+    test('an UPDATE that pins a message adds it to pinnedMessages without a reload (Phase 3A)', () async {
+      final repo = _repo();
+      final c = _hub(repo);
+      await c.load();
+      expect(c.pinnedMessages, isEmpty);
+      final target = c.messages.first;
+      final pinnedAt = DateTime(2026, 1, 1, 12, 0);
+      final callsBefore = repo.calls.length;
+
+      repo.simulateRealtimeUpdate(
+        'g-1',
+        GroupMessage(
+          id: target.id,
+          groupId: target.groupId,
+          senderId: target.senderId,
+          body: target.body,
+          createdAt: target.createdAt,
+          pinnedAt: pinnedAt,
+          pinnedBy: 'u-owner',
+        ),
+      );
+
+      expect(c.pinnedMessages.map((m) => m.id), [target.id]);
+      expect(
+        repo.calls.length,
+        callsBefore,
+        reason: 'synced from the realtime payload directly, no extra fetch',
+      );
+      c.dispose();
+    });
+
+    test('an UPDATE that unpins a message removes it from pinnedMessages (Phase 3A)', () async {
+      final repo = _repo();
+      final c = _hub(repo);
+      await c.load();
+      final target = c.messages.first;
+
+      repo.simulateRealtimeUpdate(
+        'g-1',
+        GroupMessage(
+          id: target.id,
+          groupId: target.groupId,
+          senderId: target.senderId,
+          body: target.body,
+          createdAt: target.createdAt,
+          pinnedAt: DateTime(2026, 1, 1, 12, 0),
+          pinnedBy: 'u-owner',
+        ),
+      );
+      expect(c.pinnedMessages, isNotEmpty);
+
+      repo.simulateRealtimeUpdate(
+        'g-1',
+        GroupMessage(
+          id: target.id,
+          groupId: target.groupId,
+          senderId: target.senderId,
+          body: target.body,
+          createdAt: target.createdAt,
+        ),
+      );
+
+      expect(c.pinnedMessages, isEmpty);
+      c.dispose();
+    });
   });
 
   group('Connection status (Phase 14: "Reconnecting…")', () {

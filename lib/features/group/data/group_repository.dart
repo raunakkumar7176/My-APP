@@ -11,6 +11,7 @@ import '../../../core/models/group_join_request.dart';
 import '../../../core/models/group_member.dart';
 import '../../../core/models/group_message.dart';
 import '../../../core/models/group_rule.dart';
+import '../../../core/models/message_report_group.dart';
 import '../../../core/models/invite_limits.dart';
 import '../../../core/models/profile_match.dart';
 import '../../../core/services/auth_service.dart';
@@ -385,6 +386,15 @@ abstract interface class GroupRepository {
   /// has scrolled out of the loaded page. Returns null if the row is gone
   /// or the caller can no longer see it (RLS).
   Future<GroupMessage?> messageById(String messageId);
+
+  /// Every reported message in [groupId], aggregated per message. RLS
+  /// restricts `group_message_reports` SELECT to admin/owner (0120) — a
+  /// plain member's call simply returns an empty list, no error.
+  Future<List<MessageReportGroup>> messageReports(String groupId);
+
+  /// Clears every report row for [messageId] ("Dismiss"). RLS restricts
+  /// the DELETE to admin/owner (0120).
+  Future<void> dismissReports({required String messageId});
 
   /// Subscribes to live INSERT/UPDATE events on `group_messages` for
   /// [groupId] via the existing Supabase Realtime publication (already
@@ -1375,6 +1385,64 @@ class SupabaseGroupRepository implements GroupRepository {
             .eq('id', messageId)
             .maybeSingle();
         return row == null ? null : GroupMessage.fromJson(row);
+      });
+
+  @override
+  Future<List<MessageReportGroup>> messageReports(String groupId) =>
+      _guard(GroupErrorContext.load, () async {
+        final rows = await _client
+            .from('group_message_reports')
+            .select(
+              'message_id, group_id, reason, reporter_id, created_at, '
+              'group_messages(body, sender_id, deleted_at)',
+            )
+            .eq('group_id', groupId)
+            .order('created_at', ascending: false);
+        final byMessage = <String, List<Map<String, dynamic>>>{};
+        for (final r in rows as List) {
+          final row = r as Map<String, dynamic>;
+          (byMessage[row['message_id'] as String] ??= []).add(row);
+        }
+        return [
+          for (final entry in byMessage.entries)
+            _aggregateReportGroup(entry.key, entry.value),
+        ];
+      });
+
+  static MessageReportGroup _aggregateReportGroup(
+    String messageId,
+    List<Map<String, dynamic>> rows,
+  ) {
+    final reasonCounts = <String, int>{};
+    DateTime? latest;
+    final reporters = <String>{};
+    for (final r in rows) {
+      final reason = r['reason'] as String;
+      reasonCounts[reason] = (reasonCounts[reason] ?? 0) + 1;
+      final createdAt = DateTime.parse(r['created_at'] as String).toLocal();
+      if (latest == null || createdAt.isAfter(latest)) latest = createdAt;
+      reporters.add(r['reporter_id'] as String);
+    }
+    final msg = rows.first['group_messages'] as Map<String, dynamic>?;
+    return MessageReportGroup(
+      messageId: messageId,
+      groupId: rows.first['group_id'] as String,
+      messageBody: msg?['body'] as String?,
+      messageDeleted: msg?['deleted_at'] != null,
+      messageSenderId: msg?['sender_id'] as String?,
+      reasonCounts: reasonCounts,
+      reporterCount: reporters.length,
+      latestReportAt: latest!,
+    );
+  }
+
+  @override
+  Future<void> dismissReports({required String messageId}) =>
+      _guard(GroupErrorContext.update, () async {
+        await _client
+            .from('group_message_reports')
+            .delete()
+            .eq('message_id', messageId);
       });
 
   @override

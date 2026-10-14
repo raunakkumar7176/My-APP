@@ -103,6 +103,9 @@ class _GroupActionRowState extends State<GroupActionRow> {
           icon: Icons.settings_outlined,
           label: 'Settings',
           onTap: widget.onOpenSettings,
+          badgeCount: widget.controller.canModerateReports
+              ? widget.controller.pendingReportCount
+              : 0,
         ),
     ];
 
@@ -126,12 +129,16 @@ class _ActionRowItem {
     required this.icon,
     required this.label,
     required this.onTap,
+    this.badgeCount = 0,
   });
 
   final Key key;
   final IconData icon;
   final String label;
   final VoidCallback? onTap;
+
+  /// Pending-reports count shown as a small badge on the icon (0 hides it).
+  final int badgeCount;
 
   Widget _build(bool isDark) {
     return Container(
@@ -153,10 +160,15 @@ class _ActionRowItem {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
-                  icon,
-                  size: 20,
-                  color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF475569),
+                Badge(
+                  isLabelVisible: badgeCount > 0,
+                  label: Text('$badgeCount'),
+                  backgroundColor: AppColors.error,
+                  child: Icon(
+                    icon,
+                    size: 20,
+                    color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF475569),
+                  ),
                 ),
                 const SizedBox(height: 6),
                 Text(

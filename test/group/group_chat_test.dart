@@ -892,7 +892,7 @@ void main() {
         final target = c.messages.firstWhere((m) => m.senderId == 'u-b');
         expect(await c.reportMessage(target, 'spam'), isTrue);
         expect(await c.reportMessage(target, 'spam'), isTrue);
-        expect(repo.messageReports.length, 1);
+        expect(repo.rawMessageReports.length, 1);
       });
     });
 
@@ -934,6 +934,43 @@ void main() {
         expect(repo.calls.where((x) => x == 'messageById:${older.id}').length, 1);
         await c.resolveReplyPreview(older.id); // cached, no second fetch
         expect(repo.calls.where((x) => x == 'messageById:${older.id}').length, 1);
+      });
+    });
+
+    group('controller: jumpToMessage', () {
+      test('already-loaded message: returns true, no extra calls', () async {
+        final repo = _repo();
+        final c = _hub(repo);
+        await c.load();
+        final target = c.messages.first;
+        final callsBefore = repo.calls.length;
+        expect(await c.jumpToMessage(target.id), isTrue);
+        expect(repo.calls.length, callsBefore);
+      });
+
+      test('not-loaded message: fetches it and the window around it, merges in', () async {
+        final repo = _repo();
+        final c = _hub(repo);
+        await c.load();
+        final older = repo.seedMessage(
+          groupId: 'g-1',
+          senderId: 'u-b',
+          body: 'far back',
+          at: DateTime(2026, 9, 1),
+        );
+        expect(c.messages.any((m) => m.id == older.id), isFalse);
+
+        expect(await c.jumpToMessage(older.id), isTrue);
+        expect(c.messages.any((m) => m.id == older.id), isTrue);
+      });
+
+      test('unknown message id returns false and leaves the window untouched', () async {
+        final repo = _repo();
+        final c = _hub(repo);
+        await c.load();
+        final before = c.messages.map((m) => m.id).toList();
+        expect(await c.jumpToMessage('does-not-exist'), isFalse);
+        expect(c.messages.map((m) => m.id).toList(), before);
       });
     });
 
@@ -1097,7 +1134,7 @@ void main() {
         await tester.tap(find.byKey(const Key('confirm_report_message')));
         await tester.pumpAndSettle();
         expect(find.text('Message reported.'), findsOneWidget);
-        expect(repo.messageReports.single['reason'], 'abuse');
+        expect(repo.rawMessageReports.single['reason'], 'abuse');
         await tester.pumpWidget(const SizedBox());
         c.dispose();
       });

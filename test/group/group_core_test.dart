@@ -14,6 +14,7 @@ import 'package:my_praperation/core/models/group_join_request.dart';
 import 'package:my_praperation/core/models/group_member.dart';
 import 'package:my_praperation/core/models/group_message.dart';
 import 'package:my_praperation/core/models/group_rule.dart';
+import 'package:my_praperation/core/models/message_report_group.dart';
 import 'package:my_praperation/core/models/invite_limits.dart';
 import 'package:my_praperation/core/models/profile_match.dart';
 import 'package:my_praperation/features/group/data/group_repository.dart';
@@ -858,6 +859,11 @@ class _FailingRepository implements GroupRepository {
   Future<List<GroupMessage>> pinnedMessages(String groupId) async => const [];
   @override
   Future<GroupMessage?> messageById(String messageId) async => null;
+  @override
+  Future<List<MessageReportGroup>> messageReports(String groupId) async =>
+      const [];
+  @override
+  Future<void> dismissReports({required String messageId}) async {}
   @override
   Future<GroupPermissions> permissionsFor(
     String groupId, {

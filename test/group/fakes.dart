@@ -20,6 +20,7 @@ import 'package:my_praperation/core/models/group_join_request.dart';
 import 'package:my_praperation/core/models/group_member.dart';
 import 'package:my_praperation/core/models/group_message.dart';
 import 'package:my_praperation/core/models/group_rule.dart';
+import 'package:my_praperation/core/models/message_report_group.dart';
 import 'package:my_praperation/core/models/invite_limits.dart';
 import 'package:my_praperation/core/models/profile_match.dart';
 import 'package:my_praperation/features/group/data/group_repository.dart';
@@ -1444,7 +1445,8 @@ class InMemoryGroupRepository implements GroupRepository {
     throw const DataError(message: 'MESSAGE_NOT_FOUND');
   }
 
-  final List<Map<String, String?>> messageReports = [];
+  final List<Map<String, String?>> rawMessageReports = [];
+  int _reportSeq = 0;
 
   /// Mirrors fn_report_group_message (0120): active member, one report
   /// per caller per message (repeat is a silent no-op, not an error).
@@ -1462,20 +1464,85 @@ class InMemoryGroupRepository implements GroupRepository {
       if (!_isMemberOf(g.id)) {
         throw _notAuthorized(GroupErrorContext.chat);
       }
-      final already = messageReports.any(
+      final already = rawMessageReports.any(
         (r) => r['message_id'] == messageId && r['reporter_id'] == currentUser,
       );
       if (!already) {
-        messageReports.add({
+        _reportSeq++;
+        rawMessageReports.add({
           'message_id': messageId,
+          'group_id': g.id,
           'reporter_id': currentUser,
           'reason': reason,
           'details': details,
+          'created_at': DateTime(2026, 9, 20, 10, _reportSeq).toIso8601String(),
         });
       }
       return;
     }
     throw const DataError(message: 'MESSAGE_NOT_FOUND');
+  }
+
+  /// Mirrors "admins view message reports" (0120): admin/owner only, else
+  /// an empty list (RLS-shaped, not an error).
+  @override
+  Future<List<MessageReportGroup>> messageReports(String groupId) async {
+    calls.add('messageReports:$groupId');
+    final g = groups[groupId];
+    if (g == null) return const [];
+    final role = g.roles[currentUser];
+    if (role != 'owner' && role != 'admin') return const [];
+
+    final byMessage = <String, List<Map<String, String?>>>{};
+    for (final r in rawMessageReports) {
+      if (r['group_id'] != groupId) continue;
+      (byMessage[r['message_id']!] ??= []).add(r);
+    }
+    return [
+      for (final entry in byMessage.entries)
+        () {
+          final msg = g.messages.where((m) => m.id == entry.key).firstOrNull;
+          final reasonCounts = <String, int>{};
+          DateTime? latest;
+          final reporters = <String>{};
+          for (final r in entry.value) {
+            final reason = r['reason']!;
+            reasonCounts[reason] = (reasonCounts[reason] ?? 0) + 1;
+            final createdAt = DateTime.parse(r['created_at']!);
+            if (latest == null || createdAt.isAfter(latest)) latest = createdAt;
+            reporters.add(r['reporter_id']!);
+          }
+          return MessageReportGroup(
+            messageId: entry.key,
+            groupId: groupId,
+            messageBody: msg?.body,
+            messageDeleted: msg?.isDeleted ?? false,
+            messageSenderId: msg?.senderId,
+            reasonCounts: reasonCounts,
+            reporterCount: reporters.length,
+            latestReportAt: latest!,
+          );
+        }(),
+    ];
+  }
+
+  /// Mirrors "admins dismiss message reports" (0120): admin/owner only.
+  @override
+  Future<void> dismissReports({required String messageId}) async {
+    calls.add('dismissReports:$messageId');
+    _maybeFail();
+    for (final g in groups.values) {
+      if (!g.messages.any((m) => m.id == messageId) &&
+          !rawMessageReports.any((r) => r['message_id'] == messageId && r['group_id'] == g.id)) {
+        continue;
+      }
+      final role = g.roles[currentUser];
+      if (role != 'owner' && role != 'admin') {
+        throw _notAuthorized(GroupErrorContext.chat);
+      }
+      rawMessageReports.removeWhere((r) => r['message_id'] == messageId);
+      return;
+    }
   }
 
   @override
