@@ -291,6 +291,44 @@ void main() {
     });
   });
 
+  group('TEST 13 — reorder', () {
+    test('owner reorder → positions rewritten 0..n-1, re-read', () async {
+      final repo = _repo(user: 'u-owner');
+      final c = _hub(repo, user: 'u-owner');
+      await c.load();
+      final r1 = c.rules.firstWhere((r) => r.id == 'r-1');
+      final r2 = c.rules.firstWhere((r) => r.id == 'r-2');
+      expect(await c.reorderRules([r2, r1]), isTrue);
+      expect(c.rules.map((r) => r.id).toList(), ['r-2', 'r-1']);
+      expect(c.rules.map((r) => r.position).toList(), [0, 1]);
+      expect(repo.calls.where((x) => x == 'reorderRules:g-1').length, 1);
+    });
+
+    test('non-authorized reorder is refused; nothing changes', () async {
+      final repo = _repo(user: 'u-me');
+      final c = _hub(repo, user: 'u-me');
+      await c.load();
+      final before = c.rules.map((r) => r.id).toList();
+      final reversed = c.rules.reversed.toList();
+      expect(await c.reorderRules(reversed), isFalse);
+      expect(c.error, contains('permission'));
+      expect(c.rules.map((r) => r.id).toList(), before);
+      expect(repo.calls.any((x) => x.startsWith('reorderRules')), isFalse);
+    });
+
+    test('server rejection reverts the optimistic local order', () async {
+      final repo = _repo(user: 'u-owner');
+      final c = _hub(repo, user: 'u-owner');
+      await c.load();
+      final before = c.rules.map((r) => r.id).toList();
+      repo.failNextWith = const DataError(message: 'invalid rule id set');
+      final reversed = c.rules.reversed.toList();
+      expect(await c.reorderRules(reversed), isFalse);
+      expect(c.rules.map((r) => r.id).toList(), before);
+      expect(c.rulesSaving, isFalse);
+    });
+  });
+
   group('TEST 11/12 — hub widget', () {
     Future<GroupHubController> pump(
       WidgetTester tester,
@@ -444,6 +482,44 @@ void main() {
         find.byType(GroupRulesSection),
       );
       expect(identical(section.controller, c), isTrue);
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('member: no drag handles, plain list (no reorder UI)', (
+      tester,
+    ) async {
+      final c = await pump(tester, _repo());
+      expect(find.byKey(const Key('rules_reorderable_list')), findsNothing);
+      expect(find.byKey(const Key('drag_rule_r-1')), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('owner: drag handles shown, dragging reorders and persists', (
+      tester,
+    ) async {
+      final repo = _repo(user: 'u-owner');
+      final c = await pumpSettings(tester, repo, user: 'u-owner');
+      expect(find.byKey(const Key('rules_reorderable_list')), findsOneWidget);
+      expect(find.byKey(const Key('drag_rule_r-1')), findsOneWidget);
+      expect(find.byKey(const Key('drag_rule_r-2')), findsOneWidget);
+      expect(c.rules.map((r) => r.id).toList(), ['r-1', 'r-2']);
+
+      // Drag r-1's handle down past r-2 to reorder.
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byKey(const Key('drag_rule_r-1'))),
+      );
+      await tester.pump(const Duration(milliseconds: 50));
+      await gesture.moveBy(const Offset(0, 80));
+      await tester.pump(const Duration(milliseconds: 50));
+      await gesture.moveBy(const Offset(0, 80));
+      await tester.pump(const Duration(milliseconds: 50));
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      expect(c.rules.map((r) => r.id).toList(), ['r-2', 'r-1']);
+      expect(repo.calls.where((x) => x == 'reorderRules:g-1').length, 1);
       await tester.pumpWidget(const SizedBox());
       c.dispose();
     });

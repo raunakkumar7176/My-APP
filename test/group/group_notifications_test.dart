@@ -12,6 +12,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:my_praperation/core/errors/app_error.dart';
 import 'package:my_praperation/core/models/app_notification.dart';
 import 'package:my_praperation/features/group/data/notification_repository.dart';
+import 'package:my_praperation/features/group/domain/group_notification_grouping.dart';
 import 'package:my_praperation/features/group/screens/group_info_screen.dart';
 import 'package:my_praperation/features/group/screens/group_notifications_screen.dart';
 import 'package:my_praperation/features/group/state/group_hub_controller.dart';
@@ -1013,6 +1014,217 @@ void main() {
       await c.load();
       expect(c.items, isEmpty);
       expect(await c.dismiss('any-id'), isFalse);
+      c.dispose();
+    });
+  });
+
+  // ====================================================================
+  // R4.11 item 3: day grouping, test section, message collapsing.
+  // ====================================================================
+
+  group('grouping — day label', () {
+    test('today / yesterday / older date', () {
+      final now = DateTime(2026, 10, 14, 15);
+      expect(dayLabel(DateTime(2026, 10, 14, 2), now), 'Today');
+      expect(dayLabel(DateTime(2026, 10, 13, 23, 59), now), 'Yesterday');
+      expect(dayLabel(DateTime(2026, 10, 1, 12), now), '1/10/2026');
+    });
+  });
+
+  group('grouping — test section pulled out regardless of day', () {
+    test('test notifications never land in a day section', () {
+      final now = DateTime(2026, 10, 14, 12);
+      final items = [
+        AppNotification.fromJson({
+          'id': 't-1',
+          'user_id': 'u',
+          'category': 'TEST_INVITATION',
+          'title': 'New test',
+          'body': '',
+          'data': {'group_id': 'g-1', 'type': 'group_test'},
+          'read_at': null,
+          'created_at': now.toUtc().toIso8601String(),
+        }),
+        AppNotification.fromJson({
+          'id': 'm-1',
+          'user_id': 'u',
+          'category': 'GROUP_MESSAGE',
+          'title': 'msg',
+          'body': '',
+          'data': {'group_id': 'g-1', 'type': 'group_message'},
+          'read_at': null,
+          'created_at': now.toUtc().toIso8601String(),
+        }),
+      ];
+      final grouped = groupNotifications(items, now: now);
+      expect(grouped.testNotifications.map((n) => n.id), ['t-1']);
+      expect(grouped.daySections, hasLength(1));
+      expect(
+        grouped.daySections.single.rows,
+        [isA<SingleNotificationRow>()],
+      );
+    });
+  });
+
+  group('grouping — consecutive message collapsing', () {
+    AppNotification msg(String id, DateTime createdAt, {String type = 'group_message'}) =>
+        AppNotification.fromJson({
+          'id': id,
+          'user_id': 'u',
+          'category': 'GROUP_MESSAGE',
+          'title': id,
+          'body': '',
+          'data': {'group_id': 'g-1', 'type': type},
+          'read_at': null,
+          'created_at': createdAt.toUtc().toIso8601String(),
+        });
+
+    test('2+ consecutive messages collapse into one row', () {
+      final now = DateTime(2026, 10, 14, 12);
+      final items = [
+        msg('m-3', now.subtract(const Duration(minutes: 1))),
+        msg('m-2', now.subtract(const Duration(minutes: 2))),
+        msg('m-1', now.subtract(const Duration(minutes: 3))),
+      ];
+      final grouped = groupNotifications(items, now: now);
+      final rows = grouped.daySections.single.rows;
+      expect(rows, [isA<MessageGroupRow>()]);
+      final row = rows.single as MessageGroupRow;
+      expect(row.messages.map((m) => m.id), ['m-3', 'm-2', 'm-1']);
+      expect(row.label, '3 new messages');
+    });
+
+    test('a single message (no run) is not collapsed', () {
+      final now = DateTime(2026, 10, 14, 12);
+      final items = [msg('m-1', now)];
+      final grouped = groupNotifications(items, now: now);
+      expect(grouped.daySections.single.rows, [isA<SingleNotificationRow>()]);
+    });
+
+    test('a non-message item breaks the run; two separate groups stay separate', () {
+      final now = DateTime(2026, 10, 14, 12);
+      final announcement = AppNotification.fromJson({
+        'id': 'a-1',
+        'user_id': 'u',
+        'category': 'GROUP_ANNOUNCEMENT',
+        'title': 'a-1',
+        'body': '',
+        'data': {'group_id': 'g-1', 'type': 'group_announcement'},
+        'read_at': null,
+        'created_at': now.toUtc().toIso8601String(),
+      });
+      final items = [
+        msg('m-4', now.subtract(const Duration(minutes: 1))),
+        msg('m-3', now.subtract(const Duration(minutes: 2))),
+        announcement,
+        msg('m-2', now.subtract(const Duration(minutes: 4))),
+        msg('m-1', now.subtract(const Duration(minutes: 5))),
+      ];
+      final grouped = groupNotifications(items, now: now);
+      final rows = grouped.daySections.single.rows;
+      expect(rows, [
+        isA<MessageGroupRow>(),
+        isA<SingleNotificationRow>(),
+        isA<MessageGroupRow>(),
+      ]);
+      expect((rows[0] as MessageGroupRow).messages.map((m) => m.id), ['m-4', 'm-3']);
+      expect((rows[2] as MessageGroupRow).messages.map((m) => m.id), ['m-2', 'm-1']);
+    });
+
+    test('messages on different days never merge into one group', () {
+      final now = DateTime(2026, 10, 14, 12);
+      final items = [
+        msg('today-1', now),
+        msg('yesterday-1', now.subtract(const Duration(days: 1))),
+        msg('yesterday-2', now.subtract(const Duration(days: 1, minutes: 1))),
+      ];
+      final grouped = groupNotifications(items, now: now);
+      expect(grouped.daySections.map((s) => s.label), ['Today', 'Yesterday']);
+      expect(grouped.daySections[0].rows, [isA<SingleNotificationRow>()]);
+      expect(grouped.daySections[1].rows, [isA<MessageGroupRow>()]);
+    });
+  });
+
+  group('screen — day sections, test section, message collapse widget', () {
+    testWidgets(
+      'test notifications appear in their own section at the top; messages collapse and expand',
+      (tester) async {
+        final f = _fixture('u-me');
+        final now = DateTime(2026, 9, 20, 12);
+        f.notes.seed(
+          userId: 'u-me',
+          groupId: 'g-1',
+          title: 'New test: Weekly',
+          type: 'group_test',
+          category: 'TEST_INVITATION',
+          createdAt: now,
+        );
+        f.notes.seed(
+          userId: 'u-me',
+          groupId: 'g-1',
+          title: 'msg 1',
+          type: 'group_message',
+          createdAt: now.subtract(const Duration(minutes: 1)),
+        );
+        f.notes.seed(
+          userId: 'u-me',
+          groupId: 'g-1',
+          title: 'msg 2',
+          type: 'group_message',
+          createdAt: now.subtract(const Duration(minutes: 2)),
+        );
+        f.notes.seed(
+          userId: 'u-me',
+          groupId: 'g-1',
+          title: 'msg 3',
+          type: 'group_message',
+          createdAt: now.subtract(const Duration(minutes: 3)),
+        );
+        final c = _ctl(f, 'u-me');
+        await _pump(
+          tester,
+          GroupNotificationsScreen(groupId: 'g-1', controller: c),
+        );
+
+        expect(find.byKey(const Key('section_tests')), findsOneWidget);
+        expect(find.text('New test: Weekly'), findsOneWidget);
+
+        expect(find.text('3 new messages'), findsOneWidget);
+        expect(find.text('msg 1'), findsNothing);
+
+        await tester.tap(find.text('3 new messages'));
+        await tester.pumpAndSettle();
+        expect(find.text('msg 1'), findsOneWidget);
+        expect(find.text('msg 2'), findsOneWidget);
+        expect(find.text('msg 3'), findsOneWidget);
+
+        await tester.tap(find.text('3 new messages'));
+        await tester.pumpAndSettle();
+        expect(find.text('msg 1'), findsNothing);
+
+        await tester.pumpWidget(const SizedBox());
+        c.dispose();
+      },
+    );
+
+    testWidgets('a single message of the day is shown as a normal tile, not collapsed', (
+      tester,
+    ) async {
+      final f = _fixture('u-me');
+      f.notes.seed(
+        userId: 'u-me',
+        groupId: 'g-1',
+        title: 'lonely message',
+        type: 'group_message',
+      );
+      final c = _ctl(f, 'u-me');
+      await _pump(
+        tester,
+        GroupNotificationsScreen(groupId: 'g-1', controller: c),
+      );
+      expect(find.text('lonely message'), findsOneWidget);
+      expect(find.textContaining('new messages'), findsNothing);
+      await tester.pumpWidget(const SizedBox());
       c.dispose();
     });
   });

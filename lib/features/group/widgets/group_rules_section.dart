@@ -83,6 +83,8 @@ class GroupRulesSection extends StatelessWidget {
             key: const Key('rules_empty'),
             style: theme.textTheme.bodySmall,
           )
+        else if (canEdit)
+          _reorderableRules(context, c)
         else
           for (final rule in c.rules) _tile(context, rule, canEdit),
         if (c.rulesError != null && c.rules.isNotEmpty)
@@ -98,14 +100,45 @@ class GroupRulesSection extends StatelessWidget {
     );
   }
 
-  Widget _tile(BuildContext context, GroupRule rule, bool canEdit) {
+  Widget _reorderableRules(BuildContext context, GroupHubController c) {
+    return ReorderableListView(
+      key: const Key('rules_reorderable_list'),
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      buildDefaultDragHandles: false,
+      onReorderItem: (oldIndex, newIndex) {
+        if (c.rulesSaving) return;
+        final rules = [...c.rules];
+        final moved = rules.removeAt(oldIndex);
+        rules.insert(newIndex, moved);
+        c.reorderRules(rules);
+      },
+      children: [
+        for (var i = 0; i < c.rules.length; i++)
+          _tile(context, c.rules[i], true, index: i),
+      ],
+    );
+  }
+
+  Widget _tile(
+    BuildContext context,
+    GroupRule rule,
+    bool canEdit, {
+    int? index,
+  }) {
     final c = controller;
     final acting = c.actingRuleId == rule.id;
     final disabled = acting || c.rulesSaving;
     return ListTile(
       key: Key('rule_${rule.id}'),
       contentPadding: EdgeInsets.zero,
-      leading: const Icon(Icons.gavel_outlined),
+      leading: index != null
+          ? ReorderableDragStartListener(
+              key: Key('drag_rule_${rule.id}'),
+              index: index,
+              child: const Icon(Icons.drag_handle),
+            )
+          : const Icon(Icons.gavel_outlined),
       title: Text(rule.ruleText),
       subtitle: Text(_when(rule.createdAt)),
       trailing: canEdit

@@ -806,6 +806,11 @@ class _FailingRepository implements GroupRepository {
   @override
   Future<void> deleteRule(String ruleId) async {}
   @override
+  Future<void> reorderRules({
+    required String groupId,
+    required List<String> ruleIds,
+  }) async {}
+  @override
   Future<List<GroupAnnouncement>> announcements(String groupId) async =>
       const [];
   @override

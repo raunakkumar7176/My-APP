@@ -293,6 +293,14 @@ abstract interface class GroupRepository {
   /// Deletes a rule. RLS: GROUP_SETTINGS or owner (live groups UPDATE gate).
   Future<void> deleteRule(String ruleId);
 
+  /// Reorders a group's rules atomically via fn_reorder_group_rules.
+  /// [ruleIds] must be exactly the group's current rule ids, in the new
+  /// desired order. Backend: GROUP_SETTINGS or owner (0113).
+  Future<void> reorderRules({
+    required String groupId,
+    required List<String> ruleIds,
+  });
+
   // ── Group Announcements (G7) — existing `public.group_announcements` ──
 
   /// Announcements of one group, newest first. RLS "members read
@@ -1105,6 +1113,18 @@ class SupabaseGroupRepository implements GroupRepository {
         );
       }
     },
+  );
+
+  @override
+  Future<void> reorderRules({
+    required String groupId,
+    required List<String> ruleIds,
+  }) => _guard(
+    GroupErrorContext.update,
+    () => _client.rpc(
+      'fn_reorder_group_rules',
+      params: {'p_group_id': groupId, 'p_rule_ids': ruleIds},
+    ),
   );
 
   // ── Group Announcements (G7) ──

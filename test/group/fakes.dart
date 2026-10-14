@@ -1101,6 +1101,32 @@ class InMemoryGroupRepository implements GroupRepository {
     g.rules.removeAt(i);
   }
 
+  @override
+  Future<void> reorderRules({
+    required String groupId,
+    required List<String> ruleIds,
+  }) async {
+    calls.add('reorderRules:$groupId');
+    _maybeFail();
+    final g = groups[groupId];
+    if (g == null || !await canEditSettings(groupId)) {
+      throw _notAuthorized(GroupErrorContext.update);
+    }
+    final currentIds = g.rules.map((r) => r.id).toSet();
+    if (ruleIds.length != currentIds.length ||
+        ruleIds.toSet().length != currentIds.length ||
+        !ruleIds.every(currentIds.contains)) {
+      throw const DataError(message: 'invalid rule id set');
+    }
+    final byId = {for (final r in g.rules) r.id: r};
+    for (var i = 0; i < ruleIds.length; i++) {
+      byId[ruleIds[i]] = byId[ruleIds[i]]!.copyWith(position: i);
+    }
+    g.rules
+      ..clear()
+      ..addAll([for (final id in ruleIds) byId[id]!]);
+  }
+
   // ── Group Announcements (G7) ──
   // Mirrors the legacy-defined `group_announcements` RLS (0020/0033/0040):
   //   SELECT               → fn_is_member(group_id, uid)

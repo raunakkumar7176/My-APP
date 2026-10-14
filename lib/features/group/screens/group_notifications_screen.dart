@@ -5,6 +5,7 @@ import '../../../core/constants/theme/app_colors.dart';
 import '../../../core/models/app_notification.dart';
 import '../../notifications/state/notification_deep_link_handler.dart';
 import '../../test/widgets/test_formatters.dart';
+import '../domain/group_notification_grouping.dart';
 import '../state/group_notifications_controller.dart';
 
 /// G16 — `/groups/:groupId/notifications`: the caller's own notifications
@@ -29,6 +30,10 @@ class GroupNotificationsScreen extends StatefulWidget {
 class _GroupNotificationsScreenState extends State<GroupNotificationsScreen> {
   late final GroupNotificationsController _c;
   late final bool _owns;
+
+  /// Expanded message-group rows, keyed by the first message's id (stable
+  /// across rebuilds as long as that notification stays in the list).
+  final Set<String> _expandedGroups = {};
 
   @override
   void initState() {
@@ -171,7 +176,7 @@ class _GroupNotificationsScreenState extends State<GroupNotificationsScreen> {
                   ],
                 ),
               ),
-            for (final n in _c.items) _tile(context, n),
+            ..._buildGrouped(context),
             if (_c.hasOlder)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 12),
@@ -190,6 +195,92 @@ class _GroupNotificationsScreenState extends State<GroupNotificationsScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  List<Widget> _buildGrouped(BuildContext context) {
+    if (_c.items.isEmpty) return const [];
+    final grouped = groupNotifications(_c.items);
+    final widgets = <Widget>[];
+
+    if (grouped.testNotifications.isNotEmpty) {
+      widgets.add(_sectionHeader(context, 'Tests', key: 'section_tests'));
+      for (final n in grouped.testNotifications) {
+        widgets.add(_tile(context, n));
+      }
+    }
+
+    for (final section in grouped.daySections) {
+      widgets.add(
+        _sectionHeader(
+          context,
+          section.label,
+          key: 'section_day_${section.label}',
+        ),
+      );
+      for (final row in section.rows) {
+        widgets.add(switch (row) {
+          SingleNotificationRow(notification: final n) => _tile(context, n),
+          MessageGroupRow() => _messageGroupTile(context, row),
+        });
+      }
+    }
+    return widgets;
+  }
+
+  Widget _sectionHeader(BuildContext context, String label, {String? key}) {
+    return Padding(
+      key: key == null ? null : Key(key),
+      padding: const EdgeInsets.only(top: 12, bottom: 4),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
+  Widget _messageGroupTile(BuildContext context, MessageGroupRow group) {
+    final groupKey = group.messages.first.id;
+    final expanded = _expandedGroups.contains(groupKey);
+    return Column(
+      key: Key('message_group_$groupKey'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ListTile(
+          key: Key('message_group_header_$groupKey'),
+          contentPadding: EdgeInsets.zero,
+          leading: Icon(
+            Icons.chat_bubble_outline,
+            color: group.anyUnread
+                ? Theme.of(context).colorScheme.primary
+                : Theme.of(context).colorScheme.outline,
+          ),
+          title: Text(
+            group.label,
+            style: TextStyle(
+              fontWeight: group.anyUnread ? FontWeight.w600 : null,
+            ),
+          ),
+          subtitle: Text(TestFormatters.dateTime(group.messages.first.createdAt)),
+          trailing: Icon(expanded ? Icons.expand_less : Icons.expand_more),
+          onTap: () => setState(() {
+            if (expanded) {
+              _expandedGroups.remove(groupKey);
+            } else {
+              _expandedGroups.add(groupKey);
+            }
+          }),
+        ),
+        if (expanded)
+          Padding(
+            padding: const EdgeInsets.only(left: 24),
+            child: Column(
+              children: [for (final n in group.messages) _tile(context, n)],
+            ),
+          ),
+      ],
     );
   }
 

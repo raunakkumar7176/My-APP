@@ -1208,6 +1208,41 @@ class GroupHubController extends DisposableNotifier {
     }
   }
 
+  /// Reorders rules to match [newOrder] exactly (must be the same rules,
+  /// new order). Optimistic: applies locally first so the drag doesn't
+  /// snap back, then persists; reverts to the server order on failure.
+  Future<bool> reorderRules(List<GroupRule> newOrder) async {
+    if (_rulesSaving || _busy) return false;
+    if (!_ruleMutationAllowed()) return false;
+    final previous = _rules;
+    _rules = newOrder;
+    _rulesSaving = true;
+    _error = null;
+    notifyListeners();
+    try {
+      await _repo.reorderRules(
+        groupId: groupId,
+        ruleIds: [for (final r in newOrder) r.id],
+      );
+      await _loadRules();
+      return true;
+    } on AppError catch (e) {
+      _rules = previous;
+      _error = e.message;
+      notifyListeners();
+      return false;
+    } catch (e, st) {
+      AppLogger.error('Reorder rules failed: $e', stackTrace: st);
+      _rules = previous;
+      _error = GroupErrors.map(e.toString(), context: GroupErrorContext.update);
+      notifyListeners();
+      return false;
+    } finally {
+      _rulesSaving = false;
+      notifyListeners();
+    }
+  }
+
   Future<bool> _run(
     GroupErrorContext context,
     Future<void> Function() body,
